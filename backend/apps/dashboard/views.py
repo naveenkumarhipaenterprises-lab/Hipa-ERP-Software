@@ -12,11 +12,10 @@ from apps.customers.models import Customer
 from apps.finance.models import Transaction
 from apps.inventory.models import Product
 from apps.marketing.models import Campaign
-from apps.production.models import ProductionBatch
+from apps.purchase.models import Purchase, Supplier, SupplierPayment
 from apps.quality.models import QualityAudit
 from apps.sales import selectors
 from apps.sales.models import SalesOrder
-from apps.supply_chain.models import PurchaseOrder, Supplier
 
 
 def end_of(day):
@@ -37,15 +36,18 @@ def upcoming(user, today):
         for a in QualityAudit.objects.filter(status=QualityAudit.Status.SCHEDULED, date__range=(today, horizon)):
             items.append({"id": f"audit-{a.id}", "title": a.get_audit_type_display() + (f" ({a.auditor})" if a.auditor else ""),
                           "date": a.date, "category": "Quality"})
-    if can_read(user, "production"):
-        for b in ProductionBatch.objects.select_related("product").filter(stage__in=ProductionBatch.OPEN_STAGES, due_date__range=(today, horizon)):
-            items.append({"id": f"batch-{b.id}", "title": f"Batch {b.batch_number} due ({b.product.name})", "date": b.due_date, "category": "Production"})
+    if can_read(user, "purchase"):
+        for p in Purchase.objects.select_related("material", "product").filter(status__in=Purchase.OPEN,
+                                                                               expected_receipt_date__range=(today, horizon)):
+            items.append({"id": f"purchase-{p.id}", "title": f"{p.purchase_number} receipt ({p.item_name})",
+                          "date": p.expected_receipt_date, "category": "Purchase"})
+        for pm in SupplierPayment.objects.select_related("supplier").filter(status=SupplierPayment.Status.PENDING,
+                                                                            payment_date__range=(today, horizon)):
+            items.append({"id": f"supplier-payment-{pm.id}", "title": f"Supplier payment: {pm.supplier.name}",
+                          "date": pm.payment_date, "category": "Purchase"})
     if can_read(user, "finance"):
         for t in Transaction.objects.filter(status=Transaction.Status.PENDING, type=Transaction.Type.EXPENSE, due_date__range=(today, horizon)):
             items.append({"id": f"payment-{t.id}", "title": f"Payment due: {t.party or t.description}", "date": t.due_date, "category": "Finance"})
-    if can_read(user, "supply_chain"):
-        for po in PurchaseOrder.objects.select_related("material").filter(status__in=PurchaseOrder.OPEN, expected_delivery__range=(today, horizon)):
-            items.append({"id": f"po-{po.id}", "title": f"{po.po_number} delivery ({po.material.name})", "date": po.expected_delivery, "category": "Supply Chain"})
     if can_read(user, "marketing"):
         for c in Campaign.objects.filter(ended_on__isnull=True, start_date__range=(today, horizon)):
             items.append({"id": f"campaign-{c.id}", "title": f"Campaign starts: {c.name}", "date": c.start_date, "category": "Marketing"})
@@ -83,8 +85,8 @@ class SummaryView(ModuleAPIView):
             in_range = Q(orders__order_date__range=(cur.start, cur.end)) & ~Q(orders__status=SalesOrder.Status.CANCELLED)
             top = Customer.objects.annotate(amount=Sum("orders__total_amount", filter=in_range)).filter(amount__gt=0).order_by("-amount")[:5]
             data["top_customers"] = [{"id": c.id, "name": c.name, "amount": num(c.amount)} for c in top]
-        if can_read(user, "supply_chain"):
-            k["active_suppliers"] = kpi(Supplier.objects.filter(is_active=True).count(), compare=False)
+        if can_read(user, "purchase"):
+            k["active_suppliers"] = kpi(Supplier.objects.filter(status=Supplier.Status.ACTIVE).count(), compare=False)
         if can_read(user, "finance"):
             k["net_profit"] = kpi(net_profit(cur), net_profit(prev))
         if can_read(user, "inventory"):

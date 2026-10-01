@@ -8,6 +8,7 @@ from datetime import timedelta
 from django.core.management.base import BaseCommand
 from django.db import transaction
 from django.db.models import Count, Q
+from django.db.models.functions import Coalesce
 from django.utils import timezone
 
 from apps.ai_assistant.models import AnalyticsRun, Insight
@@ -34,7 +35,7 @@ def stock_insights():
         out.append(Insight(kind=Insight.Kind.STOCK, module="inventory", title=f"{r['product']} may run out in {r['days_left']:g} days",
                            text=f"{r['product']} has {r['stock_kg']:g} kg in stock and sells about {r['daily_demand_kg']:g} kg a day "
                                 f"(forecast from recent sales), so it lasts about {r['days_left']:g} days.",
-                           action=f"Schedule production of {r['product']} or reorder soon.", data=r))
+                           action=f"Plan a purchase of {r['product']} soon.", data=r))
     return result, out
 
 
@@ -69,19 +70,19 @@ def quality_insights():
     from apps.quality.models import QualityTest
 
     since = today() - timedelta(days=90)
-    rows = (QualityTest.objects.filter(test_date__gte=since).values("batch__product__name")
-            .annotate(n=Count("id"), failed=Count("id", filter=Q(result="fail"))).filter(n__gte=MIN_TESTS_PER_PRODUCT))
+    rows = (QualityTest.objects.filter(test_date__gte=since).annotate(item=Coalesce("product__name", "material__name"))
+            .values("item").annotate(n=Count("id"), failed=Count("id", filter=Q(result="fail"))).filter(n__gte=MIN_TESTS_PER_PRODUCT))
     rows = list(rows)
     if not rows:
-        return InsufficientData(f"Needs at least {MIN_TESTS_PER_PRODUCT} quality tests for a product in the last 90 days."), []
+        return InsufficientData(f"Needs at least {MIN_TESTS_PER_PRODUCT} quality tests for an item in the last 90 days."), []
     out = []
     for r in rows:
         rate = r["failed"] / r["n"] * 100
         if rate >= FAIL_RATE_ALERT_PCT:
-            out.append(Insight(kind=Insight.Kind.QUALITY, module="quality", title=f"{r['batch__product__name']}: {rate:.0f}% of tests failed",
-                               text=f"{r['failed']} of {r['n']} tests for {r['batch__product__name']} failed in the last 90 days.",
-                               action=f"Review raw material and process checks for {r['batch__product__name']}.",
-                               data={"product": r["batch__product__name"], "tests": r["n"], "failed": r["failed"]}))
+            out.append(Insight(kind=Insight.Kind.QUALITY, module="quality", title=f"{r['item']}: {rate:.0f}% of tests failed",
+                               text=f"{r['failed']} of {r['n']} tests for {r['item']} failed in the last 90 days.",
+                               action=f"Review supplier and incoming quality checks for {r['item']}.",
+                               data={"item": r["item"], "tests": r["n"], "failed": r["failed"]}))
     return {"products_checked": len(rows)}, out
 
 

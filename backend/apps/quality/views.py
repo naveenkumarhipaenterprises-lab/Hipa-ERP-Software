@@ -2,27 +2,33 @@ from datetime import timedelta
 
 from django.db import transaction
 from django.db.models import Count, Q
+from django.db.models.functions import Coalesce
 from django.utils.dateparse import parse_date
 from rest_framework import status
 from rest_framework.exceptions import ValidationError
 from rest_framework.response import Response
 
 from apps.ai_assistant import insights
-from apps.core import periods
+from apps.core import parsing, periods
 from apps.core.files import csv_response
 from apps.core.metrics import choices, kpi, ratio_pct, resolve_choice
 from apps.core.views import ModuleAPIView
-from apps.production.models import ProductionBatch
+from apps.inventory.models import Product
+from apps.purchase.models import GoodsReceipt, RawMaterial
 from services import audit, notifications
 
 from .models import Certification, QualityAudit, QualityStandard, QualityTest
 
 R = QualityTest.Result
+ITEM_NAME = Coalesce("product__name", "material__name")
 
 
 def test_row(t):
-    return {"id": t.id, "batch_number": t.batch.batch_number, "product": t.batch.product.name, "test_date": t.test_date,
-            "parameters": t.parameters, "result": t.get_result_display(), "status": t.status, "notes": t.notes or None}
+    grn = t.goods_receipt
+    return {"id": t.id, "batch_number": t.batch_number or None, "product": t.item.name,
+            "item_type": "product" if t.product_id else "material", "goods_receipt_id": t.goods_receipt_id,
+            "grn_number": grn.grn_number if grn else None, "test_date": t.test_date, "parameters": t.parameters,
+            "result": t.get_result_display(), "status": t.status, "notes": t.notes or None}
 
 
 def certification_status(c, today):
@@ -38,9 +44,9 @@ def certification_status(c, today):
 def test_stats(qs):
     total = qs.count()
     passed = qs.filter(result=R.PASS).count()
-    hours = [h for h in (t.testing_hours for t in qs.select_related("batch")) if h is not None]
+    hours = [h for h in (t.testing_hours for t in qs.select_related("goods_receipt")) if h is not None]
     return {
-        "tested": qs.values("batch").distinct().count(),
+        "tested": total,  # each test checks one lot
         "pass_rate": ratio_pct(passed, total),
         "failed": qs.filter(result=R.FAIL).count(),
         "avg_hours": round(sum(hours) / len(hours), 1) if hours else None,
@@ -57,9 +63,9 @@ class OverviewView(QualityView):
         now = test_stats(QualityTest.objects.filter(test_date__range=(cur.start, cur.end)))
         before = test_stats(QualityTest.objects.filter(test_date__range=(prev.start, prev.end)))
         per_product = (QualityTest.objects.filter(test_date__range=(cur.start, cur.end))
-                       .values("batch__product__name")
-                       .annotate(batches=Count("batch", distinct=True), n=Count("id"), passed=Count("id", filter=Q(result=R.PASS)))
-                       .order_by("batch__product__name"))
+                       .annotate(item=ITEM_NAME).values("item")
+                       .annotate(n=Count("id"), passed=Count("id", filter=Q(result=R.PASS)))
+                       .order_by("item"))
         today = periods.today()
         return Response({
             "kpis": {
@@ -68,7 +74,7 @@ class OverviewView(QualityView):
                 "failed_batches": kpi(now["failed"], before["failed"]),
                 "avg_testing_hours": kpi(now["avg_hours"], before["avg_hours"]),
             },
-            "product_quality": [{"name": r["batch__product__name"], "batches": r["batches"], "pass_rate_pct": ratio_pct(r["passed"], r["n"])}
+            "product_quality": [{"name": r["item"], "batches": r["n"], "pass_rate_pct": ratio_pct(r["passed"], r["n"])}
                                 for r in per_product],
             "certifications": [{"id": c.id, "name": c.name, "detail": c.detail or None, "valid_until": c.valid_until,
                                 "status": certification_status(c, today)} for c in Certification.objects.all()],
@@ -80,7 +86,7 @@ class TrendView(QualityView):
     def get(self, request):
         cur, _ = periods.resolve(self.param("range"))
         granularity = periods.parse_choice(self.param("granularity"), ["daily", "weekly"], "granularity", "daily")
-        tests = list(QualityTest.objects.filter(test_date__range=(cur.start, cur.end)).values("test_date", "result", "batch_id"))
+        tests = list(QualityTest.objects.filter(test_date__range=(cur.start, cur.end)).values("test_date", "result", "id"))
         if not tests:
             return Response([])
         step = 1 if granularity == "daily" else 7
@@ -90,7 +96,7 @@ class TrendView(QualityView):
             bucket = [t for t in tests if day <= t["test_date"] <= last]
             points.append({
                 "label": day.strftime("%d %b") if step == 1 else f"{day:%d %b}–{last:%d %b}",
-                "batches": len({t["batch_id"] for t in bucket}),
+                "batches": len(bucket),
                 "pass_rate_pct": ratio_pct(sum(t["result"] == R.PASS for t in bucket), len(bucket)),
             })
             day = last + timedelta(days=1)
@@ -99,22 +105,27 @@ class TrendView(QualityView):
 
 class OptionsView(QualityView):
     def get(self, request):
-        pending = (ProductionBatch.objects.select_related("product")
-                   .filter(stage__in=[ProductionBatch.Stage.PACKAGING, ProductionBatch.Stage.COMPLETED, ProductionBatch.Stage.HOLD])
-                   .exclude(quality_tests__result=R.PASS).exclude(quality_tests__result=R.FAIL)
-                   .order_by("-start_date"))
+        Q_ = GoodsReceipt.QualityStatus
+        pending = (GoodsReceipt.objects.select_related("purchase__supplier", "purchase__material", "purchase__product")
+                   .filter(quality_status__in=(Q_.PENDING, Q_.ON_HOLD)).order_by("-received_date", "-id"))
         return Response({
-            "pending_batches": [{"id": b.id, "batch_number": b.batch_number, "product": b.product.name} for b in pending],
+            "pending_receipts": [{"id": g.id, "grn_number": g.grn_number, "item": g.purchase.item_name,
+                                  "item_type": g.purchase.item_type, "supplier": g.purchase.supplier.name,
+                                  "received_date": g.received_date, "quality_status": g.get_quality_status_display()}
+                                 for g in pending],
+            "products": list(Product.objects.filter(is_active=True).values("id", "name")),
+            "materials": list(RawMaterial.objects.filter(status=RawMaterial.Status.ACTIVE).values("id", "name")),
             "results": choices(R),
             "audit_types": choices(QualityAudit.AuditType),
         })
 
 
 def filtered_tests(params, period=None):
-    qs = QualityTest.objects.select_related("batch__product")
+    qs = QualityTest.objects.select_related("product", "material", "goods_receipt")
     q = (params.get("search") or "").strip()
     if q:
-        qs = qs.filter(Q(batch__batch_number__icontains=q) | Q(batch__product__name__icontains=q) | Q(parameters__icontains=q))
+        qs = qs.filter(Q(batch_number__icontains=q) | Q(product__name__icontains=q) | Q(material__name__icontains=q) |
+                       Q(goods_receipt__grn_number__icontains=q) | Q(parameters__icontains=q))
     result = resolve_choice(R, params.get("result"), "result")
     if result:
         qs = qs.filter(result=result)
@@ -130,16 +141,25 @@ class TestsView(QualityView):
     def post(self, request):
         d = request.data
         errors = {}
-        batch = ProductionBatch.objects.select_related("product").filter(pk=d.get("batch_id")).first() if str(d.get("batch_id", "")).isdigit() else None
-        if not batch:
-            errors["batch_id"] = ["Choose a batch."]
+        grn, product, material = None, None, None
+        if d.get("goods_receipt_id") not in (None, ""):
+            grn = parsing.record(d, "goods_receipt_id", GoodsReceipt.objects.select_related("purchase__material", "purchase__product"),
+                                 errors, message="Choose a goods receipt.")
+            if grn:
+                product, material = grn.purchase.product, grn.purchase.material
+        elif d.get("product_id") not in (None, ""):
+            product = parsing.record(d, "product_id", Product.objects.all(), errors, message="Choose a product.")
+        else:
+            material = parsing.record(d, "material_id", RawMaterial.objects.all(), errors,
+                                      message="Choose a goods receipt, a product or a raw material.")
+        batch_number = parsing.text(d, "batch_number", 40)
         test_date = parse_date(str(d.get("test_date") or ""))
         if not test_date:
             errors["test_date"] = ["Enter the test date (YYYY-MM-DD)."]
         elif test_date > periods.today():
             errors["test_date"] = ["The test date can't be in the future."]
-        elif batch and test_date < batch.start_date:
-            errors["test_date"] = ["The test date can't be before the batch started."]
+        elif grn and test_date < grn.received_date:
+            errors["test_date"] = ["The test date can't be before the goods were received."]
         try:
             result = resolve_choice(R, d.get("result"), "result")
             if not result:
@@ -153,16 +173,18 @@ class TestsView(QualityView):
             raise ValidationError(errors)
 
         with transaction.atomic():
-            test = QualityTest.objects.create(batch=batch, test_date=test_date, result=result, parameters=parameters,
+            test = QualityTest.objects.create(product=product, material=material, goods_receipt=grn, batch_number=batch_number,
+                                              test_date=test_date, result=result, parameters=parameters,
                                               notes=str(d.get("notes") or "").strip(), tested_by=request.user)
-            # A failed or held batch that is still in production is put on hold
-            if result in (R.FAIL, R.HOLD) and batch.stage != ProductionBatch.Stage.COMPLETED:
-                batch.stage = ProductionBatch.Stage.HOLD
-                batch.save(update_fields=["stage", "updated_at"])
-        audit.record(request, f"Recorded quality test ({test.get_result_display()})", batch.batch_number)
+            # The goods receipt's inspection status follows its latest test
+            if grn:
+                grn.quality_status = QualityTest.GRN_STATUS_FOR_RESULT[result]
+                grn.save(update_fields=["quality_status"])
+        lot = " ".join(x for x in (test.item.name, batch_number, f"({grn.grn_number})" if grn else "") if x)
+        audit.record(request, f"Recorded quality test ({test.get_result_display()})", lot)
         if result in (R.FAIL, R.HOLD):
-            notifications.notify("quality_failures", f"Batch {batch.batch_number}: {test.get_result_display()}",
-                                 f"{batch.product.name}. {parameters[:150]}", type="error", link="/quality")
+            notifications.notify("quality_failures", f"{lot}: {test.get_result_display()}", parameters[:200], type="error",
+                                 link="/quality")
         return Response(test_row(test), status=status.HTTP_201_CREATED)
 
 
@@ -201,7 +223,8 @@ class AuditsView(QualityView):
 class ReportView(QualityView):
     def get(self, request):
         cur, _ = periods.resolve(self.param("range"))
-        rows = ([t.batch.batch_number, t.batch.product.name, t.test_date, t.parameters, t.get_result_display(), t.status, t.notes]
+        rows = ([t.batch_number, t.item.name, t.goods_receipt.grn_number if t.goods_receipt else "", t.test_date, t.parameters,
+                 t.get_result_display(), t.status, t.notes]
                 for t in filtered_tests(request.query_params, cur).order_by("test_date", "id"))
         return csv_response(f"hipa-quality-{self.param('range') or 'this_month'}-{periods.today():%Y%m%d}.csv",
-                            ["Batch", "Product", "Test date", "Parameters", "Result", "Status", "Notes"], rows)
+                            ["Lot / batch", "Item", "GRN", "Test date", "Parameters", "Result", "Status", "Notes"], rows)

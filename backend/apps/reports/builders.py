@@ -5,7 +5,8 @@ Formats: 'inr' | 'number' | 'kg' | 'percent' | 'date'.
 """
 from datetime import timedelta
 
-from django.db.models import Count, F, Q, Sum
+from django.db.models import Count, Q, Sum
+from django.db.models.functions import Coalesce
 
 from apps.core import periods
 from apps.core.metrics import num, ratio_pct
@@ -13,15 +14,15 @@ from apps.customers.models import Customer
 from apps.finance.models import Transaction
 from apps.inventory.models import Product
 from apps.marketing.models import Campaign, MarketingMetric, Platform
-from apps.production.models import ProductionBatch
+from apps.purchase.models import Purchase
 from apps.quality.models import QualityTest
 from apps.sales import selectors
 from apps.sales.models import SalesOrder
-from apps.supply_chain.models import PurchaseOrder, Shipment
+from apps.supply_chain.models import Shipment
 
 # report type -> module a role must be able to read
 MODULE_FOR_TYPE = {
-    "sales": "sales", "inventory": "inventory", "production": "production", "marketing": "marketing",
+    "sales": "sales", "inventory": "inventory", "purchase": "purchase", "marketing": "marketing",
     "customers": "customers", "supply_chain": "supply_chain", "quality": "quality", "finance": "finance",
 }
 
@@ -111,21 +112,25 @@ def inventory(p):
     }
 
 
-def production(p):
-    batches = ProductionBatch.objects.select_related("product", "line").filter(start_date__range=(p.start, p.end)).order_by("start_date", "id")
-    done = (ProductionBatch.objects.filter(stage=ProductionBatch.Stage.COMPLETED, completed_at__range=periods.moments(p.start, p.end))
-            .values("product__name").annotate(kg=Sum("quantity_kg")).order_by("-kg"))
+def purchase(p):
+    purchases = (Purchase.objects.select_related("supplier", "material", "product").exclude(status=Purchase.Status.CANCELLED)
+                 .filter(purchase_date__range=(p.start, p.end)).order_by("purchase_date", "id"))
+    trend = [{"label": label, "value": num(v)} for label, v in
+             ((label, purchases.filter(purchase_date__range=(s, e)).aggregate(t=Sum("total_amount"))["t"]) for s, e, label in day_buckets(p)) if v]
+    by_supplier = [{"name": r["supplier__name"], "value": num(r["v"])}
+                   for r in purchases.values("supplier__name").annotate(v=Sum("total_amount")).order_by("-v")]
     return {
-        "title": f"Production Report — {p.label}",
-        "chart": chart("Completed output by product", "bar", [{"label": r["product__name"], "kg": num(r["kg"])} for r in done],
-                       [{"key": "kg", "name": "Produced (kg)"}], "kg"),
-        "breakdown": breakdown("Batches by stage", [{"name": ProductionBatch.Stage(r["stage"]).label, "value": r["n"]}
-                                                    for r in batches.values("stage").annotate(n=Count("id")).order_by("-n")], "number"),
+        "title": f"Purchase Report — {p.label}",
+        "chart": chart("Purchase value", "bar", trend, [{"key": "value", "name": "Purchases"}], "inr"),
+        "breakdown": breakdown("Purchases by supplier", by_supplier, "inr"),
         "table": {
-            "columns": [col("batch_number", "Batch"), col("product", "Product"), col("quantity_kg", "Quantity", "kg"),
-                        col("line", "Line"), col("start_date", "Start", "date"), col("due_date", "Due", "date"), col("stage", "Stage")],
-            "rows": [{"batch_number": b.batch_number, "product": b.product.name, "quantity_kg": num(b.quantity_kg), "line": b.line.name,
-                      "start_date": b.start_date, "due_date": b.due_date, "stage": b.get_stage_display()} for b in batches],
+            "columns": [col("purchase_number", "Purchase"), col("date", "Date", "date"), col("supplier", "Supplier"), col("item", "Item"),
+                        col("quantity", "Quantity", "number"), col("unit", "Unit"), col("total_amount", "Total", "inr"),
+                        col("balance", "Balance due", "inr"), col("status", "Status"), col("payment_status", "Payment")],
+            "rows": [{"purchase_number": x.purchase_number, "date": x.purchase_date, "supplier": x.supplier.name, "item": x.item_name,
+                      "quantity": num(x.quantity), "unit": x.unit, "total_amount": num(x.total_amount), "balance": num(x.balance),
+                      "status": x.get_status_display(), "payment_status": Purchase.PaymentStatus(x.payment_status).label}
+                     for x in purchases],
         },
     }
 
@@ -178,10 +183,10 @@ def customers(p):
 
 
 def supply_chain(p):
-    pos = (PurchaseOrder.objects.select_related("supplier", "material").filter(order_date__range=(p.start, p.end))
-           .exclude(status=PurchaseOrder.Status.CANCELLED).order_by("order_date", "id"))
-    cost = (pos.exclude(rate_per_kg=None).values("supplier__name").annotate(v=Sum(F("quantity_kg") * F("rate_per_kg"))).order_by("-v"))
-    ships = Shipment.objects.filter(dispatched_on__range=(p.start, p.end))
+    ships = (Shipment.objects.select_related("supplier", "purchase", "material", "product")
+             .filter(dispatched_on__range=(p.start, p.end)).order_by("dispatched_on", "id"))
+    cost = (Purchase.objects.exclude(status=Purchase.Status.CANCELLED).filter(purchase_date__range=(p.start, p.end))
+            .values("supplier__name").annotate(v=Sum("total_amount")).order_by("-v"))
     return {
         "title": f"Supply Chain Report — {p.label}",
         "chart": chart("Procurement cost by supplier", "bar", [{"label": r["supplier__name"], "cost": num(r["v"])} for r in cost],
@@ -189,28 +194,33 @@ def supply_chain(p):
         "breakdown": breakdown("Shipments by status", [{"name": Shipment.Status(r["status"]).label, "value": r["n"]}
                                                        for r in ships.values("status").annotate(n=Count("id")).order_by("-n")], "number"),
         "table": {
-            "columns": [col("po_number", "PO"), col("date", "Date", "date"), col("supplier", "Supplier"), col("material", "Material"),
-                        col("quantity_kg", "Quantity", "kg"), col("amount", "Amount", "inr"), col("status", "Status")],
-            "rows": [{"po_number": po.po_number, "date": po.order_date, "supplier": po.supplier.name, "material": po.material.name,
-                      "quantity_kg": num(po.quantity_kg), "amount": num(po.amount), "status": po.get_status_display()} for po in pos],
+            "columns": [col("shipment_number", "Shipment"), col("dispatched_on", "Dispatched", "date"), col("supplier", "Supplier"),
+                        col("item", "Item"), col("quantity", "Quantity", "number"), col("unit", "Unit"), col("eta", "ETA", "date"),
+                        col("delivered_on", "Delivered", "date"), col("status", "Status")],
+            "rows": [{"shipment_number": s.shipment_number, "dispatched_on": s.dispatched_on, "supplier": s.supplier.name,
+                      "item": s.item.name, "quantity": num(s.quantity), "unit": s.unit, "eta": s.eta, "delivered_on": s.delivered_on,
+                      "status": s.get_status_display()} for s in ships],
         },
     }
 
 
 def quality(p):
-    tests = QualityTest.objects.select_related("batch__product").filter(test_date__range=(p.start, p.end)).order_by("test_date", "id")
-    per_product = tests.values("batch__product__name").annotate(n=Count("id"), ok=Count("id", filter=Q(result=QualityTest.Result.PASS)))
+    tests = (QualityTest.objects.select_related("product", "material", "goods_receipt")
+             .filter(test_date__range=(p.start, p.end)).order_by("test_date", "id"))
+    per_item = (tests.annotate(item=Coalesce("product__name", "material__name")).values("item")
+                .annotate(n=Count("id"), ok=Count("id", filter=Q(result=QualityTest.Result.PASS))).order_by("item"))
     return {
         "title": f"Quality Report — {p.label}",
-        "chart": chart("Pass rate by product", "bar", [{"label": r["batch__product__name"], "pass_rate": ratio_pct(r["ok"], r["n"])} for r in per_product],
+        "chart": chart("Pass rate by item", "bar", [{"label": r["item"], "pass_rate": ratio_pct(r["ok"], r["n"])} for r in per_item],
                        [{"key": "pass_rate", "name": "Pass rate"}], "percent"),
         "breakdown": breakdown("Results", [{"name": QualityTest.Result(r["result"]).label, "value": r["n"]}
                                            for r in tests.values("result").annotate(n=Count("id")).order_by("-n")], "number"),
         "table": {
-            "columns": [col("batch", "Batch"), col("product", "Product"), col("test_date", "Date", "date"), col("parameters", "Parameters"),
-                        col("result", "Result"), col("status", "Status")],
-            "rows": [{"batch": t.batch.batch_number, "product": t.batch.product.name, "test_date": t.test_date, "parameters": t.parameters,
-                      "result": t.get_result_display(), "status": t.status} for t in tests],
+            "columns": [col("batch", "Lot / batch"), col("product", "Item"), col("grn", "GRN"), col("test_date", "Date", "date"),
+                        col("parameters", "Parameters"), col("result", "Result"), col("status", "Status")],
+            "rows": [{"batch": t.batch_number or None, "product": t.item.name,
+                      "grn": t.goods_receipt.grn_number if t.goods_receipt else None, "test_date": t.test_date,
+                      "parameters": t.parameters, "result": t.get_result_display(), "status": t.status} for t in tests],
         },
     }
 
@@ -238,7 +248,7 @@ def finance(p):
     }
 
 
-BUILDERS = {"sales": sales, "inventory": inventory, "production": production, "marketing": marketing,
+BUILDERS = {"sales": sales, "inventory": inventory, "purchase": purchase, "marketing": marketing,
             "customers": customers, "supply_chain": supply_chain, "quality": quality, "finance": finance}
 
 

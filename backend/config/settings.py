@@ -54,8 +54,8 @@ INSTALLED_APPS = [
     "apps.inventory",
     "apps.sales",
     "apps.purchase",
-    # Retired: kept installed only until its folder and tables are removed (see README "Production removal")
-    "apps.production",
+    # Retired Production module: migration history only (its last migration drops the old tables)
+    "apps.legacy_production",
     "apps.marketing",
     "apps.supply_chain",
     "apps.quality",

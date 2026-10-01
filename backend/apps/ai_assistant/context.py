@@ -4,7 +4,7 @@ real figures, limited to the modules the asking user's role may read.
 """
 import json
 
-from django.db.models import Sum
+from django.db.models import Count, Sum
 
 from apps.core import periods
 from apps.core.metrics import num
@@ -17,14 +17,14 @@ def _record_models():
     from apps.finance.models import Transaction
     from apps.inventory.models import Product
     from apps.marketing.models import Campaign, MarketingMetric
-    from apps.production.models import ProductionBatch
+    from apps.purchase.models import Purchase, RawMaterial, Supplier
     from apps.quality.models import QualityTest
     from apps.sales.models import SalesOrder
-    from apps.supply_chain.models import PurchaseOrder, Supplier
+    from apps.supply_chain.models import Shipment
 
     return {
         "sales": [SalesOrder], "inventory": [Product], "customers": [Customer], "finance": [Transaction],
-        "production": [ProductionBatch], "quality": [QualityTest], "supply_chain": [Supplier, PurchaseOrder],
+        "purchase": [Purchase, Supplier, RawMaterial], "quality": [QualityTest], "supply_chain": [Shipment],
         "marketing": [Campaign, MarketingMetric],
     }
 
@@ -63,10 +63,18 @@ def company_summary(user):
         inc = tx.filter(type="income").aggregate(t=Sum("amount"))["t"] or 0
         exp = tx.filter(type="expense").aggregate(t=Sum("amount"))["t"] or 0
         out["finance_this_month"] = {"revenue_inr": num(inc), "expenses_inr": num(exp), "net_inr": num(inc - exp)}
-    if can_read(user, "production"):
-        from apps.production.models import ProductionBatch
+    if can_read(user, "purchase"):
+        from apps.purchase.models import Purchase, RawMaterial
+        from apps.purchase.views import outstanding_total
 
-        out["production_open_batches"] = ProductionBatch.objects.filter(stage__in=ProductionBatch.OPEN_STAGES).count()
+        live = Purchase.objects.exclude(status=Purchase.Status.CANCELLED)
+        now_p = live.filter(purchase_date__range=(cur.start, cur.end)).aggregate(n=Count("id"), v=Sum("total_amount"))
+        out["purchases_this_month"] = {"purchases": now_p["n"], "value_inr": num(now_p["v"] or 0),
+                                       "awaiting_receipt": live.filter(status__in=Purchase.OPEN).count(),
+                                       "outstanding_supplier_payments_inr": num(outstanding_total())}
+        out["raw_materials"] = [{"material": m.name, "stock": num(m.current_stock), "unit": m.unit,
+                                 "reorder_level": num(m.reorder_level), "status": m.stock_status}
+                                for m in RawMaterial.objects.filter(status=RawMaterial.Status.ACTIVE)[:40]]
     if can_read(user, "quality"):
         from apps.quality.models import QualityTest
 

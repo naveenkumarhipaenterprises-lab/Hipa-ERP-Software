@@ -2,10 +2,12 @@ from django.conf import settings
 from django.db import models
 
 from apps.inventory.models import Product
-from apps.production.models import ProductionBatch
+from apps.purchase.models import GoodsReceipt, RawMaterial
 
 
 class QualityTest(models.Model):
+    """A quality check of one lot of a finished product or raw material, optionally for a goods receipt."""
+
     class Result(models.TextChoices):
         PASS = "pass", "Pass"
         FAIL = "fail", "Fail"
@@ -13,8 +15,13 @@ class QualityTest(models.Model):
 
     # Status shown next to the result
     STATUS_FOR_RESULT = {"pass": "Approved", "fail": "Rejected", "hold": "On Hold"}
+    # Goods-receipt quality status set by a test result
+    GRN_STATUS_FOR_RESULT = {"pass": "passed", "fail": "failed", "hold": "on_hold"}
 
-    batch = models.ForeignKey(ProductionBatch, on_delete=models.PROTECT, related_name="quality_tests")
+    product = models.ForeignKey(Product, null=True, blank=True, on_delete=models.PROTECT, related_name="quality_tests")
+    material = models.ForeignKey(RawMaterial, null=True, blank=True, on_delete=models.PROTECT, related_name="quality_tests")
+    goods_receipt = models.ForeignKey(GoodsReceipt, null=True, blank=True, on_delete=models.PROTECT, related_name="quality_tests")
+    batch_number = models.CharField("lot / batch number", max_length=40, blank=True, db_index=True)
     test_date = models.DateField(db_index=True)
     parameters = models.TextField(help_text="What was checked and the readings")
     result = models.CharField(max_length=5, choices=Result.choices, db_index=True)
@@ -24,9 +31,17 @@ class QualityTest(models.Model):
 
     class Meta:
         ordering = ["-test_date", "-id"]
+        constraints = [
+            models.CheckConstraint(condition=models.Q(product__isnull=False, material__isnull=True) |
+                                   models.Q(product__isnull=True, material__isnull=False), name="quality_test_one_item"),
+        ]
 
     def __str__(self):
-        return f"{self.batch} {self.get_result_display()} {self.test_date}"
+        return f"{self.item} {self.batch_number} {self.get_result_display()} {self.test_date}".replace("  ", " ")
+
+    @property
+    def item(self):
+        return self.product or self.material
 
     @property
     def status(self):
@@ -34,11 +49,11 @@ class QualityTest(models.Model):
 
     @property
     def testing_hours(self):
-        """Hours from batch completion to the test being recorded (None if the batch has no completion time)."""
-        done = self.batch.completed_at
-        if not done or self.created_at < done:
+        """Hours from the goods receipt being recorded to the test being recorded (None without a goods receipt)."""
+        received = self.goods_receipt.created_at if self.goods_receipt else None
+        if not received or self.created_at < received:
             return None
-        return (self.created_at - done).total_seconds() / 3600
+        return (self.created_at - received).total_seconds() / 3600
 
 
 class QualityStandard(models.Model):

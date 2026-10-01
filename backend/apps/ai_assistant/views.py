@@ -30,7 +30,7 @@ PROMPTS = {
     "sales": "How are sales this month compared with last month?",
     "inventory": "Which products are low on stock right now?",
     "finance": "Summarise this month's revenue and expenses.",
-    "production": "What is in production at the moment?",
+    "purchase": "Which raw materials are at or below their reorder level?",
     "quality": "How many quality tests failed this month?",
     "customers": "How many active customers do we have?",
 }

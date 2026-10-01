@@ -1,17 +1,16 @@
 """CRUD and business rules with real records (created inside the test database only)."""
 import tempfile
 from datetime import timedelta
-from decimal import Decimal
 
 from django.core.files.uploadedfile import SimpleUploadedFile
 from django.test import TestCase, override_settings
 from django.utils import timezone
 
 from apps.core.periods import today
-from apps.inventory.models import Product, StockMovement
-from apps.production.models import ProductionBatch, ProductionLine
+from apps.inventory.models import Product
+from apps.purchase.models import GoodsReceipt, Supplier
 from apps.sales.models import SalesOrder
-from apps.supply_chain.models import RawMaterial, Shipment, Supplier
+from apps.supply_chain.models import Shipment
 from apps.system.models import AuditLog, Notification
 
 from .helpers import API, client_for, make_user
@@ -131,84 +130,74 @@ class WorkflowTests(TestCase):
                                            "order_date": (today() + timedelta(days=2)).isoformat()}, expected=400)
         self.assertIn("order_date", err)
 
-    # --- Production & quality --------------------------------------------------------
-    def test_batch_lifecycle_and_quality(self):
-        p = self.product(stock=0)
-        line = ProductionLine.objects.create(name="TEST Line", capacity_kg_per_day=200)
-        batch = self.post("/production/batches/", {"product_id": p["id"], "line_id": line.id, "quantity_kg": 50,
-                                                   "start_date": today().isoformat(), "due_date": today().isoformat()})
-        self.assertTrue(batch["batch_number"].startswith("B-"))
-        self.assertEqual(batch["stage"], "scheduled")
-        res = self.api.patch(f"{API}/production/batches/{batch['id']}/", {"stage": "completed"}, format="json")
-        self.assertEqual(res.status_code, 200)
-        self.assertFalse(res.data["can_update"])
-        self.assertEqual(Product.objects.get(pk=p["id"]).stock_kg, 50)
-        self.assertEqual(StockMovement.objects.filter(source="production").count(), 1)
-        self.assertEqual(self.api.patch(f"{API}/production/batches/{batch['id']}/", {"stage": "grinding"}, format="json").status_code, 400)
+    # --- Purchase receipt & quality ---------------------------------------------------
+    def purchase_received(self, qty=50):
+        s = self.post("/purchase/suppliers/", {"name": "TEST Farms", "city": "Erode"})
+        m = self.post("/purchase/raw-materials/", {"name": "TEST Raw Turmeric", "category": "whole_spice", "unit": "kg",
+                                                   "reorder_level": 100})
+        p = self.post("/purchase/purchases/", {"supplier_id": s["id"], "material_id": m["id"], "quantity": qty, "unit_price": 120,
+                                               "purchase_date": today().isoformat(), "expected_receipt_date": today().isoformat()})
+        grn = self.post("/purchase/goods-receipts/", {"purchase_id": p["id"], "received_date": today().isoformat(),
+                                                      "received_quantity": qty})
+        return s, m, p, grn
 
-        pending = self.api.get(f"{API}/quality/options/").data["pending_batches"]
-        self.assertEqual([b["id"] for b in pending], [batch["id"]])
-        test = self.post("/quality/tests/", {"batch_id": batch["id"], "test_date": today().isoformat(), "result": "pass",
-                                             "parameters": "TEST moisture 8%"})
-        self.assertEqual((test["result"], test["status"]), ("Pass", "Approved"))
-        self.assertEqual(self.api.get(f"{API}/quality/options/").data["pending_batches"], [])
+    def test_goods_receipt_quality_test(self):
+        _s, m, _p, grn = self.purchase_received()
+        pending = self.api.get(f"{API}/quality/options/").data["pending_receipts"]
+        self.assertEqual([g["id"] for g in pending], [grn["id"]])
+        test = self.post("/quality/tests/", {"goods_receipt_id": grn["id"], "batch_number": "LOT-7", "test_date": today().isoformat(),
+                                             "result": "pass", "parameters": "TEST moisture 8%"})
+        self.assertEqual((test["result"], test["status"], test["product"], test["grn_number"]),
+                         ("Pass", "Approved", "TEST Raw Turmeric", grn["grn_number"]))
+        self.assertEqual(GoodsReceipt.objects.get(pk=grn["id"]).quality_status, "passed")
+        self.assertEqual(self.api.get(f"{API}/quality/options/").data["pending_receipts"], [])
         ov = self.api.get(f"{API}/quality/overview/").data
         self.assertEqual(ov["kpis"]["pass_rate_pct"]["value"], 100.0)
         self.assertEqual(ov["kpis"]["batches_tested"]["value"], 1)
         self.assertIsNotNone(ov["kpis"]["avg_testing_hours"]["value"])
+        self.assertEqual(ov["product_quality"][0]["name"], "TEST Raw Turmeric")
+        self.assertEqual(self.api.get(f"{API}/quality/tests/?search=LOT-7").data["count"], 1)
+        self.assertEqual(self.api.get(f"{API}/purchase/goods-receipts/{grn['id']}/").data["quality_tests"][0]["result"], "Pass")
 
-    def test_failed_test_puts_batch_on_hold(self):
+    def test_failed_product_test_notifies(self):
         p = self.product()
-        line = ProductionLine.objects.create(name="TEST Line", capacity_kg_per_day=200)
-        batch = ProductionBatch.objects.create(product_id=p["id"], line=line, quantity_kg=10, start_date=today(),
-                                               due_date=today(), stage="packaging")
-        self.post("/quality/tests/", {"batch_id": batch.id, "test_date": today().isoformat(), "result": "fail", "parameters": "TEST"})
-        batch.refresh_from_db()
-        self.assertEqual(batch.stage, "hold")
+        self.post("/quality/tests/", {"product_id": p["id"], "test_date": today().isoformat(), "result": "fail", "parameters": "TEST"})
         self.assertTrue(Notification.objects.filter(key="quality_failures").exists())
-
-    def test_production_plan_uses_real_sales_history(self):
-        p, c = self.product(stock=500), self.customer()
-        ProductionLine.objects.create(name="TEST Line", capacity_kg_per_day=100)
-        # 8 weeks of TEST orders, backdated
-        for week in range(8):
-            order = SalesOrder.objects.create(customer_id=c["id"], order_date=today() - timedelta(days=7 * week + 1))
-            order.items.create(product_id=p["id"], quantity_kg=Decimal("40"), unit_price=Decimal("250"))
-            order.recalculate_total()
-        plan = self.api.get(f"{API}/production/plan/?horizon=30").data
-        self.assertEqual(plan["status"], "ok")
-        row = plan["rows"][0]
-        self.assertEqual(row["product"], "TEST Turmeric")
-        self.assertGreater(row["forecast_kg"], 0)
-        self.assertEqual(row["capacity_kg"], 3000)
-        self.assertIn(row["priority"], ("HIGH", "MEDIUM", "LOW"))
-        csv = self.api.get(f"{API}/production/plan/export/?horizon=30")
-        self.assertEqual(len(csv.content.decode("utf-8-sig").strip().splitlines()), 2)
+        err = self.post("/quality/tests/", {"test_date": today().isoformat(), "result": "pass", "parameters": "TEST"}, expected=400)
+        self.assertIn("material_id", err)
 
     # --- Supply chain ------------------------------------------------------------------
-    def test_supplier_po_and_delivery(self):
-        s = self.post("/supply-chain/suppliers/", {"name": "TEST Farms", "city": "Erode"})
-        self.post("/supply-chain/suppliers/", {"name": "test farms", "city": "Salem"}, expected=400)
-        m = RawMaterial.objects.create(name="TEST Raw Turmeric", reorder_level_kg=100)
-        po = self.post("/supply-chain/purchase-orders/", {"supplier_id": s["id"], "material_id": m.id, "quantity_kg": 500,
-                                                          "rate_per_kg": 120, "expected_delivery": today().isoformat()})
-        self.assertEqual(po["amount"], 60000)
+    def test_supply_chain_uses_purchases_and_shipments(self):
+        s, m, p, _grn = self.purchase_received()
         ov = self.api.get(f"{API}/supply-chain/overview/").data
-        self.assertEqual(ov["kpis"]["pending_orders"]["value"], 1)
-        self.assertEqual(ov["kpis"]["procurement_cost"]["value"], 60000)
+        self.assertEqual(ov["kpis"]["pending_purchases"]["value"], 0)
+        self.assertEqual(ov["kpis"]["procurement_cost"]["value"], 6000)
+        self.assertEqual(ov["raw_materials"][0]["status"], "Reorder")  # 50 kg against a 100 kg reorder level
         from apps.supply_chain.services import record_delivery
 
-        sh = Shipment.objects.create(supplier=Supplier.objects.get(pk=s["id"]), purchase_order_id=po["id"], material=m,
-                                     quantity_kg=500, destination="Main warehouse", dispatched_on=today(), eta=today(),
-                                     status="delivered", delivered_on=today(), quality_passed=True)
+        sh = Shipment.objects.create(supplier=Supplier.objects.get(pk=s["id"]), purchase_id=p["id"], material_id=m["id"],
+                                     quantity=50, destination="Main warehouse", dispatched_on=today(), eta=today(),
+                                     status="delivered", quality_passed=True)
         record_delivery(sh)
-        record_delivery(sh)  # idempotent
-        m.refresh_from_db()
-        self.assertEqual(m.stock_kg, 500)
+        sh.refresh_from_db()
+        self.assertEqual(sh.delivered_on, today())
         perf = self.api.get(f"{API}/supply-chain/supplier-performance/").data
         self.assertEqual(perf[0]["on_time_pct"], 100.0)
         self.assertEqual(perf[0]["quality_pct"], 100.0)
-        self.assertEqual(self.api.get(f"{API}/supply-chain/overview/").data["kpis"]["pending_orders"]["value"], 0)
+        self.assertEqual(perf[0]["cost_efficiency_pct"], 100.0)
+        rows = self.api.get(f"{API}/supply-chain/shipments/?search={p['purchase_number']}").data["results"]
+        self.assertEqual(rows[0]["item"], "TEST Raw Turmeric")
+        dash = self.api.get(f"{API}/dashboard/summary/").data
+        self.assertEqual(dash["kpis"]["active_suppliers"]["value"], 1)
+
+    @override_settings(MEDIA_ROOT=tempfile.mkdtemp(prefix="hipa-test-media-"))
+    def test_purchase_report(self):
+        self.purchase_received()
+        preview = self.api.get(f"{API}/reports/preview/?type=purchase&range=this_month").data
+        self.assertEqual(preview["table"]["rows"][0]["total_amount"], 6000)
+        self.assertEqual(preview["breakdown"]["data"][0]["name"], "TEST Farms")
+        report = self.post("/reports/", {"type": "purchase", "range": "this_month", "format": "pdf"})
+        self.assertEqual(report["status"], "Ready")
 
     # --- Finance -----------------------------------------------------------------------
     def test_finance_transactions_and_budget(self):

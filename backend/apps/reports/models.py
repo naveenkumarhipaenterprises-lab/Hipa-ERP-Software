@@ -6,7 +6,7 @@ class Report(models.Model):
     class Type(models.TextChoices):
         SALES = "sales", "Sales Report"
         INVENTORY = "inventory", "Inventory Report"
-        PRODUCTION = "production", "Production Report"
+        PURCHASE = "purchase", "Purchase Report"
         MARKETING = "marketing", "Marketing Report"
         CUSTOMERS = "customers", "Customer Report"
         SUPPLY_CHAIN = "supply_chain", "Supply Chain Report"

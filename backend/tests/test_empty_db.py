@@ -5,14 +5,15 @@ from .helpers import API, client_for, make_user
 
 LIST_ENDPOINTS = [
     "/settings/users/", "/settings/security/login-activity/", "/settings/audit-logs/",
-    "/sales/orders/", "/inventory/items/", "/inventory/movements/", "/customers/", "/production/batches/",
-    "/marketing/campaigns/", "/marketing/posts/?status=scheduled", "/supply-chain/shipments/", "/supply-chain/suppliers/",
+    "/sales/orders/", "/inventory/items/", "/inventory/movements/", "/customers/", "/purchase/purchases/",
+    "/purchase/suppliers/", "/purchase/raw-materials/", "/purchase/goods-receipts/", "/purchase/returns/", "/purchase/payments/",
+    "/marketing/campaigns/", "/marketing/posts/?status=scheduled", "/supply-chain/shipments/",
     "/quality/tests/", "/finance/transactions/", "/reports/",
 ]
 
 ARRAY_ENDPOINTS = [
     "/dashboard/sales-trend/", "/sales/trend/", "/customers/growth/", "/marketing/performance/", "/marketing/audience/",
-    "/supply-chain/supplier-performance/", "/quality/trend/", "/quality/standards/", "/finance/revenue-expenses/",
+    "/supply-chain/supplier-performance/", "/purchase/trend/", "/quality/trend/", "/quality/standards/", "/finance/revenue-expenses/",
     "/finance/cash-flow/",
 ]
 
@@ -59,7 +60,8 @@ class EmptyDatabaseTests(TestCase):
     def test_overviews_have_no_invented_numbers(self):
         for rng in RANGES:
             for path in ["/dashboard/summary/", "/sales/overview/", "/inventory/overview/", "/customers/overview/",
-                         "/marketing/overview/", "/supply-chain/overview/", "/quality/overview/", "/finance/overview/",
+                         "/marketing/overview/", "/purchase/overview/", "/supply-chain/overview/", "/quality/overview/",
+                         "/finance/overview/",
                          "/reports/overview/"]:
                 data = self.get(f"{path}?range={rng}")
                 self.assertTrue(all(n == 0 for n in all_numbers(data)), f"{path}?range={rng} -> {data}")
@@ -70,20 +72,12 @@ class EmptyDatabaseTests(TestCase):
             self.assertEqual(d[key], [], key)
         self.assertEqual(d["kpis"]["total_sales"], {"value": 0})
 
-    def test_production_plan_reports_insufficient_data(self):
-        for h in ("30", "15", "7"):
-            plan = self.get(f"/production/plan/?horizon={h}")
-            self.assertIsNone(plan["generated_at"])
-            self.assertEqual(plan["rows"], [])
-            self.assertEqual(plan["status"], "insufficient_data")
-            self.assertEqual(plan["summary"], {"total_products": 0, "high": 0, "medium": 0, "low": 0})
-
     def test_options_endpoints(self):
         self.assertEqual(self.get("/sales/options/")["customers"], [])
         self.assertEqual(self.get("/inventory/options/")["items"], [])
-        self.assertEqual(self.get("/production/options/")["lines"], [])
+        self.assertEqual(self.get("/purchase/options/")["suppliers"], [])
         self.assertEqual(self.get("/supply-chain/options/")["suppliers"], [])
-        self.assertEqual(self.get("/quality/options/")["pending_batches"], [])
+        self.assertEqual(self.get("/quality/options/")["pending_receipts"], [])
         self.assertEqual(self.get("/customers/options/")["offer_channels"], [])  # no e-mail configured
         self.assertTrue(self.get("/finance/options/")["expense_categories"])
         self.assertTrue(self.get("/marketing/options/")["platforms"])
@@ -115,7 +109,7 @@ class EmptyDatabaseTests(TestCase):
         self.assertEqual(res.status_code, 503)
 
     def test_report_previews_are_empty(self):
-        for t in ("sales", "inventory", "production", "marketing", "customers", "supply_chain", "quality", "finance"):
+        for t in ("sales", "inventory", "purchase", "marketing", "customers", "supply_chain", "quality", "finance"):
             d = self.get(f"/reports/preview/?type={t}&range=this_month")
             self.assertIsNone(d["chart"], t)
             self.assertIsNone(d["breakdown"], t)
@@ -123,7 +117,7 @@ class EmptyDatabaseTests(TestCase):
 
     def test_csv_exports_have_only_headers(self):
         for path in ("/inventory/items/export/", "/customers/export/", "/customers/import/template/",
-                     "/production/plan/export/", "/quality/report/"):
+                     "/quality/report/"):
             res = self.api.get(API + path)
             self.assertEqual(res.status_code, 200, path)
             self.assertIn("attachment; filename=", res["Content-Disposition"])

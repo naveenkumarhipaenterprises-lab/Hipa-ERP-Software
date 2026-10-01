@@ -27,12 +27,16 @@ class BlockedAnalyticsTests(TestCase):
             top_level = [line for line in path.read_text(encoding="utf-8").splitlines() if line.startswith(("from ml", "import ml"))]
             self.assertEqual(top_level, [], f"{path} imports ml at start-up")
 
-    def test_plan_is_503_but_everything_else_works(self):
+    def test_load_analytics_turns_a_blocked_library_into_503(self):
+        from apps.core.exceptions import AnalyticsUnavailable, load_analytics
+
+        with mock.patch("importlib.import_module", side_effect=blocked):
+            with self.assertRaises(AnalyticsUnavailable):
+                load_analytics("ml.forecasting", "forecast_product")
+
+    def test_pages_work_while_analytics_is_blocked(self):
         api = client_for(make_user("admin"))
         with mock.patch("importlib.import_module", side_effect=blocked):
-            res = api.get(f"{API}/production/plan/?horizon=30")
-            self.assertEqual(res.status_code, 503)
-            self.assertIn("analytics engine is unavailable", res.data["detail"])
-            self.assertEqual(api.get(f"{API}/production/plan/export/?horizon=30").status_code, 503)
-            for path in ("/production/batches/", "/dashboard/summary/", "/sales/overview/", "/inventory/overview/"):
+            for path in ("/dashboard/summary/", "/sales/overview/", "/inventory/overview/", "/purchase/overview/",
+                         "/purchase/purchases/", "/supply-chain/overview/", "/quality/overview/"):
                 self.assertEqual(api.get(API + path).status_code, 200, path)

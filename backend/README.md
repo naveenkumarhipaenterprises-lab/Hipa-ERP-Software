@@ -85,11 +85,12 @@ backend/
     core/          roles & permissions, pagination, errors, date ranges, KPI helpers
     accounts/      users (with role), login activity, auth endpoints
     system/        settings, notifications, audit log, backups
-    dashboard/  sales/  inventory/  production/  marketing/  customers/
+    dashboard/  sales/  inventory/  purchase/  marketing/  customers/
     supply_chain/  quality/  finance/  reports/  ai_assistant/
+    legacy_production/  migration history of the retired Production module only (label "production"; drops its tables)
   services/      audit trail, notifications, backups, report exporters, AI engine client
   scripts/       daily_tasks.py (run by Windows Task Scheduler)
-  ml/            forecasting, customer segmentation, anomaly detection, stock-out risk, production planning
+  ml/            forecasting, customer segmentation, anomaly detection, stock-out risk
   tests/         automated tests
 ```
 
@@ -107,10 +108,10 @@ The exact request and response shapes are documented in the frontend's `src/api/
 | Dashboard | `GET dashboard/summary/?range=` · `GET dashboard/sales-trend/?period=` |
 | Sales | `overview/` · `trend/` · `options/` · `orders/` (GET, POST) · `orders/<id>/cancel/` |
 | Inventory | `overview/` · `options/` · `items/` (GET, POST) · `items/export/` · `movements/` (GET, POST) |
-| Production | `plan/?horizon=` · `plan/export/` · `options/` · `batches/` (GET, POST) · `batches/<id>/` (PATCH stage) |
+| Purchase | `purchase/overview/` · `trend/` · `options/` · `suppliers/` (GET, POST) · `suppliers/<id>/` (GET, PATCH, DELETE) · `raw-materials/` (GET, POST) · `raw-materials/<id>/` (GET, PATCH, DELETE) · `material-movements/` (GET, POST) · `purchases/` (GET, POST) · `purchases/<id>/` (GET, PATCH, DELETE) · `purchases/<id>/cancel/` · `goods-receipts/` (GET, POST) · `goods-receipts/<id>/` · `returns/` (GET, POST) · `returns/<id>/` (GET, PATCH status) · `payments/` (GET, POST) · `payments/<id>/` (GET, DELETE scheduled) · `payments/<id>/mark-paid/` |
 | Marketing | `overview/` · `performance/` · `audience/` · `options/` · `campaigns/` (GET, POST) · `campaigns/<id>/end/` · `posts/` (GET, POST) |
 | Customers | `customers/` (GET, POST) · `customers/<id>/` (GET, PATCH) · `overview/` · `growth/` · `options/` · `export/` · `import/template/` · `import/` · `offers/` |
-| Supply chain | `supply-chain/overview/` · `supplier-performance/` · `options/` · `shipments/` · `suppliers/` (GET, POST) · `purchase-orders/` (POST) |
+| Supply chain | `supply-chain/overview/` · `supplier-performance/` · `options/` · `shipments/` (suppliers and purchases are in Purchase) |
 | Quality | `overview/` · `trend/` · `options/` · `tests/` (GET, POST) · `standards/` · `audits/` (POST) · `report/` |
 | Finance | `overview/` · `revenue-expenses/` · `cash-flow/` · `options/` · `transactions/` (GET, POST) · `budget/` (GET, PUT) |
 | Reports | `reports/` (GET, POST) · `overview/` · `preview/?type=&range=` · `export/?type=&range=&format=pdf|xlsx|csv` · `<id>/download/` |
@@ -132,12 +133,12 @@ Enforced on the server for every request (`apps/core/roles.py`), matching the fr
 |---|---|---|
 | Dashboard, AI Assistant, Reports | everyone | everyone (reports: only types for modules they can open) |
 | Sales | admin, management, sales, marketing, finance | admin, management, sales |
-| Inventory | admin, management, inventory, production | admin, management, inventory |
-| Production | admin, management, production, inventory, quality | admin, management, production |
+| Inventory | admin, management, inventory, purchase, supply_chain | admin, management, inventory |
+| Purchase | admin, management, purchase, inventory, finance, supply_chain | admin, management, purchase (supplier payments: also finance; raw-material usage: also inventory) |
 | Marketing | admin, management, marketing | admin, management, marketing |
 | Customers | admin, management, sales, marketing | admin, management, sales (offers: marketing) |
-| Supply Chain | admin, management, inventory, quality | admin, management, inventory |
-| Quality | admin, management, quality, production | admin, management, quality |
+| Supply Chain | admin, management, inventory, quality, purchase, supply_chain | admin, management, inventory, supply_chain |
+| Quality | admin, management, quality, purchase | admin, management, quality |
 | Finance | admin, management, finance | admin, management, finance |
 | Settings | admin, management | admin, management (only a Super Admin can manage Super Admins) |
 
@@ -149,14 +150,14 @@ Most records are entered in the portal. A few kinds are entered in the **Django 
 
 | Data | Admin section | Used by |
 |---|---|---|
-| Production lines and daily capacity | Production → Production lines | Scheduling batches, production plan capacity |
-| Raw materials, material usage | Supply chain → Raw materials / Material movements | Raw-material stock, days left |
-| Shipments (and marking them delivered / delayed) | Supply chain → Shipments | Delivered shipments add raw-material stock and close the purchase order |
+| Shipments (and marking them delivered / delayed) | Supply chain → Shipments | Shipment tracking, on-time delivery. Stock is added by the goods receipt in Purchase, not by the shipment |
 | Sales order delivery status | Sales → Sales orders | Order status (cancelling is done in the portal so stock is returned) |
 | Daily marketing numbers, top content, audience split | Marketing | Marketing overview, performance and audience charts |
 | Quality standards, certifications | Quality | Standards list, certification status |
 
-Stock always changes through movements, so product and material stock can't be edited directly: sales orders take stock out, cancellations and completed production batches put it back in.
+Stock always changes through movements, so product and material stock can't be edited directly: sales orders take stock out and cancellations put it back; goods receipts (GRN) add the accepted quantity of a purchase; purchase returns take stock out (and put it back if cancelled); raw-material usage is recorded under Purchase → material movements.
+
+**Purchase rules:** a purchase is one raw material or product from one supplier; total = subtotal − discount + GST. There are no purchase orders and no purchase invoices. Payment status (Pending / Partially Paid / Paid / Overdue) comes from completed supplier payments, completed returns and the payment due date (default: purchase date + the supplier's credit days).
 
 ---
 
@@ -164,7 +165,6 @@ Stock always changes through movements, so product and material stock can't be e
 
 `ml/` works only on real records:
 
-- **Production plan** (`GET production/plan/`): weekly demand trend per product (scikit-learn linear regression) + safety stock, minus stock and batches in progress, shared across line capacity by urgency. Needs at least 4 weeks of sales on 6+ days per product; otherwise the plan reports `insufficient_data` and names the products it skipped.
 - **Insights** (stock-out risk, unusual sales days, customer segments with KMeans, quality failure rates) are produced by:
 
   ```powershell
@@ -211,7 +211,7 @@ Each job can also be run by hand: `manage.py run_analytics`, `manage.py run_back
 .\.venv\Scripts\python.exe manage.py test tests
 ```
 
-The test runner creates a separate `test_hipa_masala` database and deletes it afterwards; the real database is never touched. The suite covers login, tokens, password reset, role permissions for every module, every endpoint on an empty database, validation errors, CORS, and full workflows (orders and stock, production and quality, supply chain deliveries, finance, reports in all three formats).
+The test runner creates a separate `test_hipa_masala` database and deletes it afterwards; the real database is never touched. The suite covers login, tokens, password reset, role permissions for every module, every endpoint on an empty database, validation errors, CORS, and full workflows (orders and stock, purchases with goods receipts / returns / supplier payments, quality tests on goods receipts, supply chain, finance, reports in all three formats).
 
 ---
 
@@ -219,7 +219,7 @@ The test runner creates a separate `test_hipa_masala` database and deletes it af
 
 - **MySQL driver:** the project uses PyMySQL (pure Python) instead of `mysqlclient`, because Windows Smart App Control blocks mysqlclient's unsigned DLL on this PC. `config/__init__.py` registers it as `MySQLdb`.
 - **scikit-learn is pinned to 1.9.0 and pandas to 3.0.5** for the same reason: Smart App Control blocks a compiled file in scikit-learn 1.9.1 and in pandas 3.0.6 (`groupby`). Smart App Control can change its verdict later. If a start-up error says `An Application Control policy has blocked this file`, note the package in the error and try its previous release with `python -m pip install "<package>==<version>"`, then update `requirements.txt`.
-- The analytics engine (`ml/`: pandas, scikit-learn) is loaded only when the production plan or `run_analytics` needs it. If one of its files is ever blocked, only those features return 503 "analytics engine unavailable"; login and every other page keep working.
+- The analytics engine (`ml/`: pandas, scikit-learn) is loaded only when an analytics feature or `run_analytics` needs it. If one of its files is ever blocked, only those features return 503 "analytics engine unavailable"; login and every other page keep working.
 - `No module named 'rest_framework'` (or `django`) → the command ran on a Python without the project packages and `.venv` is missing. Create it with the setup commands in section 1.
 - `Error: That port is already in use` → another backend is already running on 8000; use it, or stop it first.
 - `Access denied for user` → check `DB_USER` / `DB_PASSWORD` in `.env`. `Can't connect to MySQL server` → start the MySQL80/MySQL84 Windows service.
