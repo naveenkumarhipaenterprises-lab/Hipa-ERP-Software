@@ -101,8 +101,24 @@ class OverviewView(SalesView):
             ],
             "products": products,
             "top_customers": [{"id": c.id, "name": c.name, "type": c.get_type_display(), "amount": num(c.amount)} for c in top],
+            "quotations": quotation_summary(cur),
             "insights": insights.texts("sales"),
         })
+
+
+def quotation_summary(period):
+    """Quotations dated in the period: count, value and how many sit in each status now."""
+    services.expire_quotations()
+    qs = SalesQuotation.objects.filter(quotation_date__range=(period.start, period.end))
+    counts = dict(qs.values_list("status").annotate(n=Count("id")))
+    total = sum(counts.values())
+    decided = sum(counts.get(s, 0) for s in ("accepted", "rejected", "converted"))
+    return {
+        "count": total, "value": num(qs.aggregate(v=Sum("grand_total"))["v"] or 0),
+        **{s: counts.get(s, 0) for s in ("draft", "sent", "accepted", "rejected", "expired", "converted")},
+        "converted_value": num(qs.filter(status="converted").aggregate(v=Sum("grand_total"))["v"] or 0),
+        "conversion_rate_pct": round(counts.get("converted", 0) / decided * 100, 1) if decided else None,
+    }
 
 
 class TrendView(SalesView):

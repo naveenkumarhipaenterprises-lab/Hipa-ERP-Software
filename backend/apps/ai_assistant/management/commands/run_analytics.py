@@ -15,6 +15,8 @@ from apps.ai_assistant.models import AnalyticsRun, Insight
 from apps.core.periods import today
 from ml.anomaly import sales_anomalies
 from ml.data import InsufficientData
+from ml.purchasing import recommend
+from services import notifications
 from ml.segmentation import segment_customers
 from ml.stockout import stockout_risks
 
@@ -86,14 +88,35 @@ def quality_insights():
     return {"products_checked": len(rows)}, out
 
 
+def purchase_insights():
+    result = recommend(30)
+    if result["status"] != "ok":
+        return InsufficientData(result["message"]), []
+    out = []
+    for r in result["rows"]:
+        if r["priority"] != "HIGH":
+            continue
+        qty = f"{r['recommended_quantity']:g} {r['unit']}"
+        cover = f"about {r['days_of_cover']:g} days of {r['demand_basis']}" if r["days_of_cover"] is not None else "little cover"
+        lead = f", supplier lead time about {r['lead_time_days']:g} days" if r["lead_time_days"] is not None else ""
+        cost = f" (about {inr(r['estimated_cost'])} at the last price)" if r["estimated_cost"] else ""
+        out.append(Insight(kind=Insight.Kind.PURCHASE, module="purchase", title=f"Buy {qty} of {r['item']}",
+                           text=f"{r['item']} has {r['current_stock']:g} {r['unit']} in stock and {r['on_order']:g} on order: "
+                                f"{cover}{lead}.",
+                           action=f"Purchase {qty} of {r['item']}{cost}" + (f" — lowest recent price from {r['best_supplier']}."
+                                                                            if r["best_supplier"] else "."),
+                           data={k: v for k, v in r.items() if k != "notes"}))
+    return {"items": len(result["rows"])}, out
+
+
 class Command(BaseCommand):
-    help = "Generate insights (stock-out risk, sales anomalies, customer segments, quality) from real data."
+    help = "Generate insights (stock-out risk, sales anomalies, customer segments, quality, purchase recommendations) from real data."
 
     def handle(self, *args, **options):
         run = AnalyticsRun.objects.create()
         summary, insights = {}, []
         for name, fn in (("stockout", stock_insights), ("anomalies", anomaly_insights),
-                         ("segments", segment_insights), ("quality", quality_insights)):
+                         ("segments", segment_insights), ("quality", quality_insights), ("purchase", purchase_insights)):
             result, found = fn()
             summary[name] = result.as_dict() if isinstance(result, InsufficientData) else {"status": "ok", "insights": len(found)}
             insights += found
@@ -102,6 +125,10 @@ class Command(BaseCommand):
         with transaction.atomic():
             Insight.objects.all().delete()
             Insight.objects.bulk_create(insights)
+        buys = [i for i in insights if i.kind == Insight.Kind.PURCHASE]
+        if buys:
+            notifications.notify("purchase_recommendations", f"{len(buys)} item(s) need purchasing",
+                                 "; ".join(i.title for i in buys[:5]), type="warning", link="/purchase?tab=recommendations")
         run.finished_at = timezone.now()
         run.summary = summary
         run.save()

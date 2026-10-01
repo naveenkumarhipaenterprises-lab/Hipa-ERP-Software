@@ -5,6 +5,7 @@ from django.db import models
 class Report(models.Model):
     class Type(models.TextChoices):
         SALES = "sales", "Sales Report"
+        QUOTATIONS = "quotations", "Quotation Report"
         INVENTORY = "inventory", "Inventory Report"
         PURCHASE = "purchase", "Purchase Report"
         MARKETING = "marketing", "Marketing Report"
@@ -12,6 +13,7 @@ class Report(models.Model):
         SUPPLY_CHAIN = "supply_chain", "Supply Chain Report"
         QUALITY = "quality", "Quality Report"
         FINANCE = "finance", "Finance Report"
+        AI_BUSINESS = "ai_business", "AI Business Report"
 
     class Format(models.TextChoices):
         PDF = "pdf", "PDF"

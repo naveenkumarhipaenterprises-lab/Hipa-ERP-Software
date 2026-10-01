@@ -46,7 +46,16 @@ def company_summary(user):
         out["sales_previous_period"] = {"sales_inr": num(before["sales"]), "orders": before["orders"], "kg": num(before["kg"])}
         out["sales_by_product_this_month"] = [{"product": r["product__name"], "sales_inr": num(r["sales"]), "kg": num(r["kg"])}
                                               for r in selectors.by_product(cur.start, cur.end)[:15]]
-        out["monthly_sales_last_6_months"] = [{"month": l, "sales_inr": num(v)} for l, v in selectors.monthly_sales(periods.last_n_months(6))]
+        from apps.sales.models import SalesInvoice
+        from apps.sales.views import quotation_summary
+
+        out["quotations_this_month"] = quotation_summary(cur)
+        issued = SalesInvoice.objects.filter(status=SalesInvoice.Status.ISSUED)
+        balances = [i.balance for i in issued if i.balance > 0]
+        out["invoices"] = {"issued_this_month": issued.filter(invoice_date__range=(cur.start, cur.end)).count(),
+                           "unpaid_count": len(balances), "outstanding_inr": num(sum(balances)),
+                           "overdue_count": sum(1 for i in issued if i.balance > 0 and i.due_date and i.due_date < periods.today())}
+        out["monthly_sales_last_6_months"] =[{"month": l, "sales_inr": num(v)} for l, v in selectors.monthly_sales(periods.last_n_months(6))]
     if can_read(user, "inventory"):
         from apps.inventory.models import Product
 
@@ -75,6 +84,10 @@ def company_summary(user):
         out["raw_materials"] = [{"material": m.name, "stock": num(m.current_stock), "unit": m.unit,
                                  "reorder_level": num(m.reorder_level), "status": m.stock_status}
                                 for m in RawMaterial.objects.filter(status=RawMaterial.Status.ACTIVE)[:40]]
+        from apps.ai_assistant.insights import latest
+
+        out["purchase_recommendations_from_daily_analysis"] = [{"title": i.title, "detail": i.text, "action": i.action}
+                                                              for i in latest("purchase", 10)]
     if can_read(user, "quality"):
         from apps.quality.models import QualityTest
 

@@ -109,7 +109,8 @@ class EmptyDatabaseTests(TestCase):
         self.assertEqual(res.status_code, 503)
 
     def test_report_previews_are_empty(self):
-        for t in ("sales", "inventory", "purchase", "marketing", "customers", "supply_chain", "quality", "finance"):
+        for t in ("sales", "quotations", "inventory", "purchase", "marketing", "customers", "supply_chain", "quality", "finance",
+                  "ai_business"):
             d = self.get(f"/reports/preview/?type={t}&range=this_month")
             self.assertIsNone(d["chart"], t)
             self.assertIsNone(d["breakdown"], t)

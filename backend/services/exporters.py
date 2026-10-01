@@ -61,8 +61,8 @@ def to_xlsx(report):
 
 
 def _latin(text):
-    # Built-in PDF fonts are Latin-1 only
-    return str(text).replace("₹", "Rs.").replace("—", "-").replace("–", "-").encode("latin-1", "replace").decode("latin-1")
+    # Noto Sans (backend/assets/fonts) covers ₹, dashes and Indian-language Latin text
+    return str(text)
 
 
 def _pdf_value(value, fmt):
@@ -71,7 +71,9 @@ def _pdf_value(value, fmt):
     if isinstance(value, (date, datetime)):
         return value.strftime("%d-%m-%Y")
     if fmt == "inr":
-        return f"Rs. {value:,.2f}"
+        from apps.core.money import inr
+
+        return inr(value)
     if fmt == "kg":
         return f"{value:,} kg"
     if fmt == "percent":
@@ -82,35 +84,43 @@ def _pdf_value(value, fmt):
 
 
 def to_pdf(report):
+    import logging
+    from pathlib import Path
+
+    from django.conf import settings
     from fpdf import FPDF
 
+    logging.getLogger("fontTools").setLevel(logging.WARNING)
+    fonts = Path(settings.BASE_DIR) / "assets" / "fonts"
     cols = report["table"]["columns"]
     pdf = FPDF(orientation="L" if len(cols) > 5 else "P", unit="mm", format="A4")
+    pdf.add_font("NotoSans", "", str(fonts / "NotoSans-Regular.ttf"))
+    pdf.add_font("NotoSans", "B", str(fonts / "NotoSans-Bold.ttf"))
     pdf.set_auto_page_break(auto=True, margin=12)
     pdf.add_page()
-    pdf.set_font("Helvetica", "B", 15)
+    pdf.set_font("NotoSans", "B", 15)
     pdf.cell(0, 10, _latin("HIPA MASALA"), new_x="LMARGIN", new_y="NEXT")
-    pdf.set_font("Helvetica", "B", 12)
+    pdf.set_font("NotoSans", "B", 12)
     pdf.cell(0, 8, _latin(report.get("title", "Report")), new_x="LMARGIN", new_y="NEXT")
-    pdf.set_font("Helvetica", "", 8)
+    pdf.set_font("NotoSans", "", 8)
     pdf.cell(0, 6, _latin(f"Generated {datetime.now():%d-%m-%Y %H:%M}"), new_x="LMARGIN", new_y="NEXT")
     pdf.ln(2)
 
     if report.get("breakdown"):
-        pdf.set_font("Helvetica", "B", 10)
+        pdf.set_font("NotoSans", "B", 10)
         pdf.cell(0, 7, _latin(report["breakdown"]["title"]), new_x="LMARGIN", new_y="NEXT")
-        pdf.set_font("Helvetica", "", 9)
+        pdf.set_font("NotoSans", "", 9)
         for d in report["breakdown"]["data"]:
             pdf.cell(0, 5, _latin(f"{d['name']}: {_pdf_value(d['value'], report['breakdown'].get('format'))}"), new_x="LMARGIN", new_y="NEXT")
         pdf.ln(3)
 
     rows = report["table"]["rows"]
     if not rows:
-        pdf.set_font("Helvetica", "I", 10)
+        pdf.set_font("NotoSans", "", 10)
         pdf.cell(0, 8, "No records in this period.", new_x="LMARGIN", new_y="NEXT")
     else:
         with pdf.table(text_align="LEFT", line_height=5, first_row_as_headings=True) as table:
-            pdf.set_font("Helvetica", "", 8)
+            pdf.set_font("NotoSans", "", 8)
             head = table.row()
             for c in cols:
                 head.cell(_latin(c["header"]))

@@ -7,6 +7,7 @@ CENT = Decimal("0.01")
 
 def line_amounts(quantity, unit_price, discount_pct, gst_pct):
     """(subtotal, discount, gst, total) for one line: subtotal − discount + GST, each rounded to paise."""
+    quantity, unit_price, discount_pct, gst_pct = (Decimal(str(v)) for v in (quantity, unit_price, discount_pct, gst_pct))
     subtotal = (quantity * unit_price).quantize(CENT)
     discount = (subtotal * discount_pct / 100).quantize(CENT)
     gst = ((subtotal - discount) * gst_pct / 100).quantize(CENT)

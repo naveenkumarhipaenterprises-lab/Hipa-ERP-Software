@@ -37,6 +37,23 @@ def daily_sales(days=365, product_id=None):
     return df
 
 
+def daily_material_usage(material_id, days=120):
+    """DataFrame (date, quantity) of a raw material's recorded usage (stock out marked 'Used'), one row per day used."""
+    from apps.purchase.models import MaterialMovement
+    from django.db.models import Sum
+
+    start = today() - timedelta(days=days)
+    rows = list(MaterialMovement.objects.filter(material_id=material_id, type=MaterialMovement.Type.OUT,
+                                                source=MaterialMovement.Source.USAGE, date__gte=start)
+                .values("date").annotate(quantity=Sum("quantity")))
+    if not rows:
+        return pd.DataFrame(columns=["date", "quantity"])
+    df = pd.DataFrame(rows)
+    df["quantity"] = df["quantity"].astype(float)
+    df["date"] = pd.to_datetime(df["date"])
+    return df
+
+
 def continuous_daily(df, value="kg", end=None):
     """Sums per day and fills days without sales with 0, from the first sale to `end` (today)."""
     if df.empty:

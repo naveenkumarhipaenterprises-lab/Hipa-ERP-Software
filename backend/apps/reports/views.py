@@ -72,7 +72,7 @@ class PreviewView(ReportsView):
     def get(self, request):
         report_type = self.param("type")
         check_type(request.user, report_type)
-        data, _period = build(report_type, self.param("range"))
+        data, _period = build(report_type, self.param("range"), request.user)
         return Response(data)
 
 
@@ -81,7 +81,7 @@ class ExportView(ReportsView):
         report_type, range_key = self.param("type"), self.param("range") or "this_month"
         check_type(request.user, report_type)
         fmt = check_format(self.param("format") or "pdf")
-        data, _period = build(report_type, range_key)
+        data, _period = build(report_type, range_key, request.user)
         content, mime = export(data, fmt)
         response = HttpResponse(content, content_type=mime)
         response["Content-Disposition"] = f'attachment; filename="{file_name(report_type, range_key, fmt)}"'
@@ -105,7 +105,7 @@ class ReportListView(ReportsView):
         range_key = str(request.data.get("range") or "this_month")
         check_type(request.user, report_type)
         fmt = check_format(str(request.data.get("format") or "pdf"))
-        data, period = build(report_type, range_key)
+        data, period = build(report_type, range_key, request.user)
         report = Report.objects.create(name=f"{Report.Type(report_type).label} — {period.label}", type=report_type, range=range_key,
                                        range_label=f"{period.label} ({period.start:%d %b %Y} – {period.end:%d %b %Y})",
                                        format=fmt, created_by=request.user)

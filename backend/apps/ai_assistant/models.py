@@ -45,6 +45,7 @@ class Insight(models.Model):
         ANOMALY = "anomaly", "Anomaly"
         SEGMENT = "segment", "Customer segment"
         QUALITY = "quality", "Quality"
+        PURCHASE = "purchase", "Purchase recommendation"
 
     kind = models.CharField(max_length=10, choices=Kind.choices, db_index=True)
     module = models.CharField(max_length=20, db_index=True)  # which module's users may see it

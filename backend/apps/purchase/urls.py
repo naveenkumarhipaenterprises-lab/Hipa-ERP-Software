@@ -6,6 +6,8 @@ urlpatterns = [
     path("overview/", views.OverviewView.as_view()),
     path("trend/", views.TrendView.as_view()),
     path("options/", views.OptionsView.as_view()),
+    path("recommendations/", views.RecommendationsView.as_view()),
+    path("recommendations/export/", views.RecommendationsExportView.as_view()),
     path("suppliers/", views.SuppliersView.as_view()),
     path("suppliers/<int:pk>/", views.SupplierDetailView.as_view()),
     path("raw-materials/", views.MaterialsView.as_view()),

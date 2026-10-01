@@ -3,10 +3,12 @@ Report contents. Each builder returns { title, chart, breakdown, table } from re
 for one date range; chart / breakdown are None when there is nothing to draw.
 Formats: 'inr' | 'number' | 'kg' | 'percent' | 'date'.
 """
+from collections import Counter
 from datetime import timedelta
 
 from django.db.models import Count, Q, Sum
 from django.db.models.functions import Coalesce
+from django.utils import timezone
 
 from apps.core import periods
 from apps.core.metrics import num, ratio_pct
@@ -248,10 +250,75 @@ def finance(p):
     }
 
 
-BUILDERS = {"sales": sales, "inventory": inventory, "purchase": purchase, "marketing": marketing,
-            "customers": customers, "supply_chain": supply_chain, "quality": quality, "finance": finance}
+def quotations(p):
+    from apps.sales.models import SalesQuotation
+    from apps.sales.views import quotation_summary
+
+    summary = quotation_summary(p)
+    qs = (SalesQuotation.objects.select_related("sales_order").prefetch_related("invoices")
+          .filter(quotation_date__range=(p.start, p.end)).order_by("quotation_date", "id"))
+    trend = [{"label": label, "value": num(v)} for label, v in
+             ((label, qs.filter(quotation_date__range=(s, e)).aggregate(t=Sum("grand_total"))["t"]) for s, e, label in day_buckets(p)) if v]
+    rows = []
+    for q in qs:
+        order = getattr(q, "sales_order", None)
+        invoice = next((i for i in q.invoices.all() if i.status != "cancelled"), None)
+        rows.append({"quotation_number": q.quotation_number, "date": q.quotation_date, "customer": q.customer_name,
+                     "valid_until": q.valid_until, "grand_total": num(q.grand_total), "status": q.get_status_display(),
+                     "converted_to": ", ".join(x for x in (order.order_number if order else "", invoice.invoice_number if invoice else "") if x) or None})
+    title = f"Quotation Report — {p.label}"
+    if summary["count"]:
+        rate = f", conversion rate {summary['conversion_rate_pct']:g}%" if summary["conversion_rate_pct"] is not None else ""
+        title += f" ({summary['count']} quotations{rate})"
+    return {
+        "title": title,
+        "chart": chart("Quotation value", "bar", trend, [{"key": "value", "name": "Quoted"}], "inr"),
+        "breakdown": breakdown("Quotations by status", [{"name": label, "value": summary[key]} for key, label in (
+            ("draft", "Draft"), ("sent", "Sent"), ("accepted", "Accepted"), ("rejected", "Rejected"), ("expired", "Expired"),
+            ("converted", "Converted"))], "number"),
+        "table": {
+            "columns": [col("quotation_number", "Quotation"), col("date", "Date", "date"), col("customer", "Customer"),
+                        col("valid_until", "Valid until", "date"), col("grand_total", "Value", "inr"), col("status", "Status"),
+                        col("converted_to", "Converted to")],
+            "rows": rows,
+        },
+    }
 
 
-def build(report_type, range_key):
+def ai_business(p, user=None):
+    """Stored analytics insights (from run_analytics) the user's role may see, plus the latest run's status."""
+    from apps.ai_assistant.models import AnalyticsRun, Insight
+    from apps.core.roles import MODULE_READ, role_of
+
+    role = role_of(user) if user else None
+    modules = [m for m, roles in MODULE_READ.items() if role in roles] if user else list(MODULE_READ)
+    found = list(Insight.objects.filter(module__in=modules))
+    run = AnalyticsRun.objects.exclude(finished_at=None).first()
+    title = "AI Business Report"
+    if run:
+        title += f" — analysis of {timezone.localtime(run.finished_at):%d %b %Y %H:%M}"
+    return {
+        "title": title,
+        "chart": None,
+        "breakdown": breakdown("Insights by module", [{"name": m.replace("_", " ").title(), "value": n}
+                                                     for m, n in sorted(Counter(i.module for i in found).items())], "number"),
+        "table": {
+            "columns": [col("module", "Module"), col("kind", "Type"), col("title", "Finding"), col("text", "Details"),
+                        col("action", "Suggested action")],
+            "rows": [{"module": i.module.replace("_", " ").title(), "kind": i.get_kind_display(), "title": i.title, "text": i.text,
+                      "action": i.action or None} for i in found],
+        },
+    }
+
+
+BUILDERS = {"sales": sales, "quotations": quotations, "inventory": inventory, "purchase": purchase, "marketing": marketing,
+            "customers": customers, "supply_chain": supply_chain, "quality": quality, "finance": finance, "ai_business": ai_business}
+MODULE_FOR_TYPE["quotations"] = "sales"
+MODULE_FOR_TYPE["ai_business"] = "reports"
+
+
+def build(report_type, range_key, user=None):
     cur, _prev = periods.resolve(range_key)
+    if report_type == "ai_business":
+        return ai_business(cur, user), cur
     return BUILDERS[report_type](cur), cur

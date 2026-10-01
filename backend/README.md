@@ -111,13 +111,13 @@ The exact request and response shapes are documented in the frontend's `src/api/
 | Sales invoices | `sales/invoices/` (GET, POST direct or `sales_order_id`) · `invoices/<id>/` (GET, PATCH) · `invoices/<id>/cancel/` · `invoices/<id>/pdf/` |
 | Sales payments / returns | `sales/payments/` (GET, POST) · `payments/<id>/cancel/` · `sales/returns/` (GET, POST) · `returns/<id>/` (PATCH status) |
 | Inventory | `overview/` · `options/` · `items/` (GET, POST) · `items/export/` · `movements/` (GET, POST) |
-| Purchase | `purchase/overview/` · `trend/` · `options/` · `suppliers/` (GET, POST) · `suppliers/<id>/` (GET, PATCH, DELETE) · `raw-materials/` (GET, POST) · `raw-materials/<id>/` (GET, PATCH, DELETE) · `material-movements/` (GET, POST) · `purchases/` (GET, POST) · `purchases/<id>/` (GET, PATCH, DELETE) · `purchases/<id>/cancel/` · `goods-receipts/` (GET, POST) · `goods-receipts/<id>/` · `returns/` (GET, POST) · `returns/<id>/` (GET, PATCH status) · `payments/` (GET, POST) · `payments/<id>/` (GET, DELETE scheduled) · `payments/<id>/mark-paid/` |
+| Purchase | `purchase/overview/` · `trend/` · `options/` · `recommendations/?horizon=30|15|7` · `recommendations/export/` · `suppliers/` (GET, POST) · `suppliers/<id>/` (GET, PATCH, DELETE) · `raw-materials/` (GET, POST) · `raw-materials/<id>/` (GET, PATCH, DELETE) · `material-movements/` (GET, POST) · `purchases/` (GET, POST) · `purchases/<id>/` (GET, PATCH, DELETE) · `purchases/<id>/cancel/` · `goods-receipts/` (GET, POST) · `goods-receipts/<id>/` · `returns/` (GET, POST) · `returns/<id>/` (GET, PATCH status) · `payments/` (GET, POST) · `payments/<id>/` (GET, DELETE scheduled) · `payments/<id>/mark-paid/` |
 | Marketing | `overview/` · `performance/` · `audience/` · `options/` · `campaigns/` (GET, POST) · `campaigns/<id>/end/` · `posts/` (GET, POST) |
 | Customers | `customers/` (GET, POST) · `customers/<id>/` (GET, PATCH) · `overview/` · `growth/` · `options/` · `export/` · `import/template/` · `import/` · `offers/` |
 | Supply chain | `supply-chain/overview/` · `supplier-performance/` · `options/` · `shipments/` (suppliers and purchases are in Purchase) |
 | Quality | `overview/` · `trend/` · `options/` · `tests/` (GET, POST) · `standards/` · `audits/` (POST) · `report/` |
 | Finance | `overview/` · `revenue-expenses/` · `cash-flow/` · `options/` · `transactions/` (GET, POST) · `budget/` (GET, PUT) |
-| Reports | `reports/` (GET, POST) · `overview/` · `preview/?type=&range=` · `export/?type=&range=&format=pdf|xlsx|csv` · `<id>/download/` |
+| Reports | types: sales, quotations, inventory, purchase, marketing, customers, supply_chain, quality, finance, ai_business · `reports/` (GET, POST) · `overview/` · `preview/?type=&range=` · `export/?type=&range=&format=pdf|xlsx|csv` · `<id>/download/` |
 | AI assistant | `ai/status/` · `ai/home/` · `ai/chat/` · `ai/conversations/<id>/` |
 | Settings | `settings/options/` · `general/` · `company/` · `billing/` (tax & billing defaults, bank details) · `users/` · `users/<id>/` · `notifications/` · `backup/` · `backup/run/` · `integrations/` · `security/` · `security/login-activity/` · `audit-logs/` |
 | Notifications | `notifications/` · `notifications/<id>/read/` · `notifications/mark-all-read/` |
@@ -170,6 +170,10 @@ Stock always changes through movements, so product and material stock can't be e
 
 `ml/` works only on real records:
 
+- **Purchase recommendations** (`GET purchase/recommendations/?horizon=30|15|7`, `ml/purchasing.py`):
+  - *Raw materials:* average daily usage over the last 120 days (usage recorded under Purchase → material movements; needs 14+ days of history with usage on 3+ days), supplier lead time measured from past purchases to their first goods receipt, safety stock = 1.65 × std(daily usage) × √lead time. Recommended quantity = usage over the horizon + safety stock − stock − quantity still to be received. Without any measured lead time the material's own reorder level is used as the reorder point, and the row says so.
+  - *Finished products:* the sales forecast (`ml/forecasting.py`, 4+ weeks of sales on 6+ days; its safety stock uses a fixed 7-day lead time) + safety stock − stock − quantity on order.
+  - Each row also gives the last and average purchase price, the change since the previous purchase, the supplier with the lowest average price in the last 180 days, an estimated cost and a priority (HIGH when stock plus on-order is at or below the reorder point). Items without enough data are listed in `insufficient` with the reason; when no item qualifies the response is `status: insufficient_data` with "Insufficient data for AI recommendation."
 - **Insights** (stock-out risk, unusual sales days, customer segments with KMeans, quality failure rates) are produced by:
 
   ```powershell
@@ -195,8 +199,10 @@ Stock always changes through movements, so product and material stock can't be e
 
 The Windows Task Scheduler task **"HIPA MASALA daily tasks"** runs `scripts/daily_tasks.py` every day at 02:00. If the PC is off at that time, it runs as soon as the PC is next on. It uses `pythonw.exe`, so no window appears. It:
 
-1. runs `run_analytics` (insights);
-2. runs `run_backup --scheduled`, which backs up only when **Automatic backup** is on in Settings and deletes backups older than the chosen retention period.
+1. runs `expire_quotations` (draft / sent quotations past their valid-until date become Expired);
+2. runs `send_due_alerts` (purchases not received on time, supplier payments due within 2 days, overdue invoices — each alert once);
+3. runs `run_analytics` (insights, including HIGH-priority purchase recommendations shown on the Dashboard and in the AI Business Report);
+4. runs `run_backup --scheduled`, which backs up only when **Automatic backup** is on in Settings and deletes backups older than the chosen retention period.
 
 Output is appended to `backend/logs/daily_tasks.log`. To run it now: `Start-ScheduledTask -TaskName "HIPA MASALA daily tasks"`. To recreate it on another PC:
 

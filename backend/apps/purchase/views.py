@@ -10,6 +10,8 @@ from rest_framework.response import Response
 
 from apps.ai_assistant import insights
 from apps.core import parsing, periods
+from apps.core.exceptions import load_analytics
+from apps.core.files import csv_response
 from apps.core.metrics import choices, kpi, label_choices, num, ratio_pct, resolve_choice
 from apps.core.roles import can_write
 from apps.core.views import ModuleAPIView
@@ -295,6 +297,33 @@ class OptionsView(PurchaseView):
             "payment_methods": label_choices(SupplierPayment.Method),
             "supplier_payment_statuses": label_choices(SPSt),
         })
+
+
+# --- AI purchase recommendations -------------------------------------------------------------
+
+HORIZONS = ["30", "15", "7"]
+
+
+def recommendations(horizon):
+    return load_analytics("ml.purchasing", "recommend")(horizon)
+
+
+class RecommendationsView(PurchaseView):
+    def get(self, request):
+        horizon = int(periods.parse_choice(self.param("horizon"), HORIZONS, "horizon", "30"))
+        return Response(recommendations(horizon))
+
+
+class RecommendationsExportView(PurchaseView):
+    def get(self, request):
+        horizon = int(periods.parse_choice(self.param("horizon"), HORIZONS, "horizon", "30"))
+        data = recommendations(horizon)
+        header = ["Item", "Type", "Unit", "Stock", "On order", "Avg daily demand", "Lead time (days)", "Safety stock",
+                  "Reorder point", "Days of cover", "Recommended quantity", "Last price", "Estimated cost", "Best supplier", "Priority"]
+        rows = ([r["item"], r["item_type"], r["unit"], r["current_stock"], r["on_order"], r["avg_daily_demand"], r["lead_time_days"],
+                 r["safety_stock"], r["reorder_point"], r["days_of_cover"], r["recommended_quantity"], r["last_price"],
+                 r["estimated_cost"], r["best_supplier"], r["priority"]] for r in data["rows"])
+        return csv_response(f"hipa-purchase-recommendations-{horizon}d-{periods.today():%Y%m%d}.csv", header, rows)
 
 
 # --- Suppliers ------------------------------------------------------------------------------

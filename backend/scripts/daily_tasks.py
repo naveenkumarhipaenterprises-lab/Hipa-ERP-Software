@@ -1,8 +1,9 @@
 """
 HIPA MASALA daily jobs, run by Windows Task Scheduler with pythonw.exe (no console window):
   1. expire_quotations - quotations past their valid-until date become Expired
-  2. run_analytics     - insights from real data
-  3. run_backup        - only if "Automatic backup" is on in Settings
+  2. send_due_alerts   - late supplier deliveries, supplier payments due, overdue invoices
+  3. run_analytics     - insights (incl. purchase recommendations) from real data
+  4. run_backup        - only if "Automatic backup" is on in Settings
 Output goes to backend/logs/daily_tasks.log.
 """
 import io
@@ -28,7 +29,8 @@ def main():
             from django.core.management import call_command
 
             django.setup()
-            for name, args in (("expire_quotations", []), ("run_analytics", []), ("run_backup", ["--scheduled"])):
+            for name, args in (("expire_quotations", []), ("send_due_alerts", []), ("run_analytics", []),
+                               ("run_backup", ["--scheduled"])):
                 out = io.StringIO()
                 try:
                     call_command(name, *args, stdout=out, stderr=out)
