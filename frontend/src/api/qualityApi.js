@@ -14,11 +14,12 @@ import { api, cleanParams as clean } from './client'
  * GET /quality/trend/?range=&granularity=daily|weekly   ->  [{ label, batches, pass_rate_pct }]
  *
  * GET /quality/options/
- * { pending_batches: [{ id, batch_number, product }], results: [{ value, label }], audit_types: [{ value, label }] }
+ * { pending_receipts: [{ id, grn_number, item, item_type, supplier, received_date, quality_status }],   // goods awaiting inspection
+ *   products: [{ id, name }], materials: [{ id, name }], results: [{ value, label }], audit_types: [{ value, label }] }
  *
  * GET  /quality/tests/?page=&page_size=&search=&result=
- *      { count, results: [{ id, batch_number, product, test_date, parameters, result, status, notes? }] }
- * POST /quality/tests/      { batch_id, test_date, result, parameters, notes? }
+ *      { count, results: [{ id, batch_number, product, item_type, goods_receipt_id, grn_number, test_date, parameters, result, status, notes? }] }
+ * POST /quality/tests/      { goods_receipt_id | product_id | material_id, batch_number?, test_date, result, parameters, notes? }
  * GET  /quality/standards/  ->  [{ id, parameter, limit, applies_to? }]
  * POST /quality/audits/     { audit_type, date, auditor? }
  * GET  /quality/report/?range=   ->  CSV file

@@ -1,9 +1,10 @@
-import { Bell, Building2, DatabaseBackup, History, Link2, Settings, ShieldCheck, Users } from 'lucide-react'
+import { Bell, Building2, DatabaseBackup, History, Link2, ReceiptText, Settings, ShieldCheck, Users } from 'lucide-react'
 import { useSearchParams } from 'react-router-dom'
 import { settingsApi } from '../../api/settingsApi'
 import PageHeader from '../../components/common/PageHeader'
 import { useApi } from '../../hooks/useApi'
 import AuditSection from './sections/AuditSection'
+import BillingSection from './sections/BillingSection'
 import BackupSection from './sections/BackupSection'
 import CompanySection from './sections/CompanySection'
 import GeneralSection from './sections/GeneralSection'
@@ -15,6 +16,7 @@ import UsersSection from './sections/UsersSection'
 const SECTIONS = [
   { key: 'general', label: 'General', icon: Settings, Component: GeneralSection },
   { key: 'company', label: 'Company Profile', icon: Building2, Component: CompanySection },
+  { key: 'billing', label: 'Tax & Billing', icon: ReceiptText, Component: BillingSection },
   { key: 'users', label: 'Users', icon: Users, Component: UsersSection },
   { key: 'notifications', label: 'Notifications', icon: Bell, Component: NotificationsSection },
   { key: 'backup', label: 'Data & Backup', icon: DatabaseBackup, Component: BackupSection },

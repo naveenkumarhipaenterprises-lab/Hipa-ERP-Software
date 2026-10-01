@@ -11,8 +11,15 @@ import { api } from './client'
  *     total_orders:     { value, change? },
  *     total_customers:  { value, change? },
  *     active_suppliers: { value, change? },
+ *     purchase_value:   { value, change? },   // ₹, roles that can open Purchase
+ *     outstanding_supplier_payments: { value },   // ₹
  *     net_profit:       { value, change? },   // ₹
  *   },
+ *   purchase_overview:        { purchases, pending, received, returns },
+ *   purchase_trend:           [{ label, value }],              // last 6 months; [] when nothing was bought
+ *   purchase_recommendations: [{ id, title, text, action?, priority?, created_at }],   // from the daily analysis
+ *   supplier_performance:     [{ supplier_id, supplier, purchase_value, on_time_pct, accepted_pct, damaged_pct }],
+ *   low_stock_materials:      [{ id, material, current_stock, reorder_level, unit, status }],
  *   product_contribution: [{ name, value }],                       // ₹ sales per product
  *   order_status:         [{ status, count }],
  *   recent_orders:        [{ id, customer, product, amount, status }],

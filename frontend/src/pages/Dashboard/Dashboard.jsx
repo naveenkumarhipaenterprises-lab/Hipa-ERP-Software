@@ -1,16 +1,19 @@
 import {
   BarChart3,
   Bot,
+  FileText,
   House,
   IndianRupee,
   Megaphone,
   Package,
   PackageCheck,
   RefreshCw,
+  ShoppingBag,
   ShoppingCart,
   Truck,
   UserPlus,
   Users,
+  Wallet,
 } from 'lucide-react'
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
@@ -30,6 +33,7 @@ import { useApi } from '../../hooks/useApi'
 import { useAuth } from '../../hooks/useAuth'
 import BrandBanner from '../../modules/dashboard/components/BrandBanner'
 import OrderStatusList from '../../modules/dashboard/components/OrderStatusList'
+import PurchaseSection from '../../modules/dashboard/components/PurchaseSection'
 import UpcomingActivities from '../../modules/dashboard/components/UpcomingActivities'
 import { DATE_RANGES } from '../../utils/constants'
 import { formatINR, formatINRShort, formatKg, formatNumber, formatPercent } from '../../utils/formatters'
@@ -47,12 +51,16 @@ const KPIS = [
   { key: 'total_sales', label: 'Total Sales', icon: ShoppingCart, tone: 'green', module: 'sales', format: formatINR },
   { key: 'total_orders', label: 'Total Orders', icon: Package, tone: 'blue', module: 'sales', format: formatNumber },
   { key: 'total_customers', label: 'Total Customers', icon: Users, tone: 'orange', module: 'customers', format: formatNumber },
-  { key: 'active_suppliers', label: 'Active Suppliers', icon: Truck, tone: 'red', module: 'supplyChain', format: formatNumber },
+  { key: 'active_suppliers', label: 'Active Suppliers', icon: Truck, tone: 'red', module: 'purchase', format: formatNumber },
+  { key: 'purchase_value', label: 'Purchase Value', icon: ShoppingBag, tone: 'teal', module: 'purchase', format: formatINR },
+  { key: 'outstanding_supplier_payments', label: 'Supplier Payments Due', icon: Wallet, tone: 'yellow', module: 'purchase', format: formatINR },
   { key: 'net_profit', label: 'Net Profit', icon: IndianRupee, tone: 'purple', module: 'finance', format: formatINR },
 ]
 
 const QUICK_ACTIONS = [
   { label: 'New Order', icon: ShoppingCart, tone: 'green', to: '/sales?new=order', module: 'sales' },
+  { label: 'New Quotation', icon: FileText, tone: 'teal', to: '/sales?tab=quotations', module: 'sales' },
+  { label: 'Record Purchase', icon: ShoppingBag, tone: 'orange', to: '/purchase?tab=purchases', module: 'purchase' },
   { label: 'Add Customer', icon: UserPlus, tone: 'blue', to: '/customers?new=customer', module: 'customers' },
   { label: 'Update Inventory', icon: Package, tone: 'orange', to: '/inventory', module: 'inventory' },
   { label: 'Create Campaign', icon: Megaphone, tone: 'red', to: '/marketing?new=campaign', module: 'marketing' },
@@ -172,6 +180,8 @@ export default function Dashboard() {
           </Card>
         </div>
       )}
+
+      {can('purchase') && !failed && <PurchaseSection loading={loading} data={data} rangeLabel={rangeLabel} />}
 
       {!failed && (canSales || can('inventory') || can('customers')) && (
         <div className="dash-row">

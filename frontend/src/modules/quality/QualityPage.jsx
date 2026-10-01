@@ -32,9 +32,9 @@ const GRANULARITY = [
 ]
 
 const KPIS = [
-  { key: 'batches_tested', label: 'Batches Tested', icon: CircleCheck, tone: 'green', format: formatNumber },
+  { key: 'batches_tested', label: 'Lots Tested', icon: CircleCheck, tone: 'green', format: formatNumber },
   { key: 'pass_rate_pct', label: 'Pass Rate', icon: FlaskConical, tone: 'blue', format: (v) => formatPercent(v, 1) },
-  { key: 'failed_batches', label: 'Failed Batches', icon: TriangleAlert, tone: 'red', format: formatNumber, goodWhenDown: true },
+  { key: 'failed_batches', label: 'Failed Lots', icon: TriangleAlert, tone: 'red', format: formatNumber, goodWhenDown: true },
   { key: 'avg_testing_hours', label: 'Avg. Testing Time', icon: Clock, tone: 'yellow', format: (v) => `${formatNumber(v)} hrs`, goodWhenDown: true },
 ]
 
@@ -80,7 +80,7 @@ export default function QualityPage() {
 
   const saveTest = async (values) => {
     const test = await qualityApi.createTest(values)
-    toast.success(test?.batch_number ? `Result saved for batch ${test.batch_number}` : 'Test result saved')
+    toast.success(test?.product ? `Result saved for ${test.product}${test.batch_number ? ` lot ${test.batch_number}` : ''}` : 'Test result saved')
     refresh()
   }
 
@@ -153,7 +153,7 @@ export default function QualityPage() {
                   xKey="label"
                   showLegend
                   series={[
-                    { key: 'batches', name: 'Batches Tested', color: '#86d19a', type: 'bar' },
+                    { key: 'batches', name: 'Lots Tested', color: '#86d19a', type: 'bar' },
                     { key: 'pass_rate_pct', name: 'Pass Rate %', color: CHART_COLORS[1], type: 'line', axis: 'right', dots: true },
                   ]}
                   yFormatter={formatNumber}
@@ -161,23 +161,23 @@ export default function QualityPage() {
                   rightDomain={[0, 100]}
                   height={250}
                   emptyTitle="No tests in this period"
-                  emptyMessage="Batches tested and the pass rate appear once lab results are recorded."
+                  emptyMessage="Lots tested and the pass rate appear once lab results are recorded."
                 />
               )}
             </Card>
-            <Card title="Product-wise Quality" subtitle="Batches tested • pass rate">
+            <Card title="Item-wise Quality" subtitle="Lots tested • pass rate">
               {loading ? (
                 skeleton
               ) : (
                 <DonutChart
                   data={productQuality}
-                  valueFormatter={(v) => `${formatNumber(v)} batches`}
+                  valueFormatter={(v) => `${formatNumber(v)} lots`}
                   legendValue={(d) => (has(d.pass) ? formatPercent(d.pass, 0) : '—')}
                   centerValue={formatNumber(productTotal)}
-                  centerLabel="Batches"
+                  centerLabel="Lots"
                   size={170}
-                  emptyTitle="No batches tested"
-                  emptyMessage="Batches per product and their pass rate appear here."
+                  emptyTitle="No lots tested"
+                  emptyMessage="Lots per product or raw material and their pass rate appear here."
                 />
               )}
             </Card>

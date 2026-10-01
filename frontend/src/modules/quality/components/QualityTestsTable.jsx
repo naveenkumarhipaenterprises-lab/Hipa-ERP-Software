@@ -36,7 +36,7 @@ export default function QualityTestsTable({ refreshKey, results }) {
       <div className="toolbar">
         <label className="toolbar__search">
           <Search size={16} aria-hidden />
-          <input type="search" value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search batch or product" aria-label="Search tests" />
+          <input type="search" value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search lot, item or GRN" aria-label="Search tests" />
         </label>
         <Select
           className="field--inline"
@@ -58,19 +58,20 @@ export default function QualityTestsTable({ refreshKey, results }) {
           data={rows}
           emptyIcon={FlaskConical}
           emptyTitle={filtered ? 'No tests match your filters' : 'No test results yet'}
-          emptyMessage={filtered ? 'Try a different search or result.' : 'Lab results appear here once batches are tested.'}
+          emptyMessage={filtered ? 'Try a different search or result.' : 'Lab results appear here once lots are tested.'}
           pagination={{ page, pageSize: PAGE_SIZE, total, onPageChange: setPage }}
           columns={[
             {
-              key: 'batch_number',
-              header: 'Batch No.',
+              key: 'product',
+              header: 'Item',
               render: (r) => (
                 <button type="button" className="link link--strong table-link" onClick={() => setViewing(r)}>
-                  {r.batch_number ?? r.id}
+                  {r.product || `Test ${r.id}`}
                 </button>
               ),
             },
-            { key: 'product', header: 'Product', render: (r) => r.product || '—' },
+            { key: 'batch_number', header: 'Lot / Batch', render: (r) => r.batch_number || '—' },
+            { key: 'grn_number', header: 'GRN', render: (r) => r.grn_number || '—' },
             { key: 'test_date', header: 'Test Date', render: (r) => <span className="nowrap">{r.test_date ? formatDate(r.test_date) : '—'}</span> },
             { key: 'parameters', header: 'Parameters', render: (r) => <span className="cell-clip">{r.parameters || '—'}</span> },
             { key: 'result', header: 'Result', render: (r) => (r.result ? <Badge>{r.result}</Badge> : '—') },
@@ -79,7 +80,8 @@ export default function QualityTestsTable({ refreshKey, results }) {
         />
       )}
 
-      <Modal open={Boolean(viewing)} onClose={() => setViewing(null)} title={`Batch ${viewing?.batch_number ?? ''}`} subtitle={viewing?.product}>
+      <Modal open={Boolean(viewing)} onClose={() => setViewing(null)} title={viewing?.product ?? 'Quality test'}
+             subtitle={[viewing?.batch_number && `Lot ${viewing.batch_number}`, viewing?.grn_number].filter(Boolean).join(' · ') || undefined}>
         {viewing && (
           <dl className="detail-list">
             <dt>Test date</dt>

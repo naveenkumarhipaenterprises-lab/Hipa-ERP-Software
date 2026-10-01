@@ -2,7 +2,7 @@ import { settingsApi } from '../../../api/settingsApi'
 import { isGstin, isUrl } from '../../../utils/validation'
 import SettingsForm from '../components/SettingsForm'
 
-/** Business details used on invoices and reports. */
+/** Business details printed on quotations, invoices and reports. */
 export default function CompanySection() {
   return (
     <SettingsForm

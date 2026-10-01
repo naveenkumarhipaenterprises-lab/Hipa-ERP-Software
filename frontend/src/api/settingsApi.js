@@ -8,6 +8,10 @@ import { api, cleanParams as clean } from './client'
  *
  * GET/PUT  /settings/general/    { company_name, tagline?, timezone, date_format, time_format, currency, language }
  * GET/PUT  /settings/company/    { legal_name, address, email, phone, website?, gstin? }
+ * GET/PUT  /settings/billing/    { default_sales_gst_pct, default_purchase_gst_pct, quotation_validity_days, quotation_payment_terms,
+ *                                  quotation_delivery_terms, quotation_terms, invoice_due_days, invoice_payment_terms, invoice_terms,
+ *                                  bank_name, bank_account_name, bank_account_number, bank_ifsc, upi_id, authorised_signatory,
+ *                                  default_supplier_credit_days }   // all optional; blank numbers = not set
  *
  * GET   /settings/users/?page=&page_size=&search=   ->  { count, results: [{ id, name, email, role, status, last_login? }] }
  * POST  /settings/users/            { name, email, role }        // sends an invitation email
@@ -37,6 +41,8 @@ export const settingsApi = {
   saveGeneral: (values) => api.put('/settings/general/', values),
   getCompany: () => api.get('/settings/company/'),
   saveCompany: (values) => api.put('/settings/company/', values),
+  getBilling: () => api.get('/settings/billing/'),
+  saveBilling: (values) => api.put('/settings/billing/', values),
 
   listUsers: (params) => api.get('/settings/users/', clean(params)),
   inviteUser: (user) => api.post('/settings/users/', user),
