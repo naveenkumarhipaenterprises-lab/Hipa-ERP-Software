@@ -10,7 +10,7 @@ import Table from '../../../components/common/Table'
 import { usePagedList } from '../../../hooks/usePagedList'
 import { useToast } from '../../../hooks/useToast'
 import { choiceOptions, dash, date, idOptions, money, qty, withAll } from '../shared'
-import ListToolbar from './ListToolbar'
+import ListToolbar from '../../../components/common/ListToolbar'
 
 function ListBody({ l, caption, columns, icon, emptyTitle, emptyMessage }) {
   if (l.result.error && !l.result.loading)

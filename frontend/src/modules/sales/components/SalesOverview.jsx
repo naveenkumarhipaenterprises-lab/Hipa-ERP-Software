@@ -202,6 +202,7 @@ export default function SalesOverview({ range, product, rangeLabel, refreshKey }
         </Card>
 
         <div className="stack">
+          <QuotationSummary loading={loading} q={data?.quotations} rangeLabel={rangeLabel} />
           <Card title="Top Customers" subtitle={rangeLabel} viewAllTo={can('customers') ? '/customers' : undefined} bodyClassName="card__body--flush">
             <Table
               compact
@@ -234,5 +235,32 @@ export default function SalesOverview({ range, product, rangeLabel, refreshKey }
         </div>
       </div>
     </>
+  )
+}
+
+const QUOTATION_STATS = [
+  ['count', 'Quotations'], ['draft', 'Draft'], ['sent', 'Sent'], ['accepted', 'Accepted'],
+  ['rejected', 'Rejected'], ['expired', 'Expired'], ['converted', 'Converted'],
+]
+
+/** Quotations dated in the period, from GET /sales/overview/ → quotations. */
+function QuotationSummary({ loading, q, rangeLabel }) {
+  return (
+    <Card title="Quotations" subtitle={rangeLabel} viewAllTo="/sales?tab=quotations">
+      {loading ? (
+        <div className="skeleton skeleton--list" aria-label="Loading" />
+      ) : !q || !q.count ? (
+        <p className="muted">No quotations in this period.</p>
+      ) : (
+        <dl className="detail-grid">
+          {QUOTATION_STATS.map(([k, label]) => (
+            <div key={k}><dt>{label}</dt><dd>{formatNumber(q[k] ?? 0)}</dd></div>
+          ))}
+          <div><dt>Quoted value</dt><dd>{formatINR(q.value)}</dd></div>
+          <div><dt>Converted value</dt><dd>{formatINR(q.converted_value)}</dd></div>
+          <div><dt>Conversion rate</dt><dd>{has(q.conversion_rate_pct) ? `${q.conversion_rate_pct}%` : '—'}</dd></div>
+        </dl>
+      )}
+    </Card>
   )
 }

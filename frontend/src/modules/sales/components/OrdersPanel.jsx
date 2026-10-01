@@ -1,4 +1,4 @@
-﻿import { Search, ShoppingCart, XCircle } from 'lucide-react'
+﻿import { Eye, ReceiptText, Search, ShoppingCart, XCircle } from 'lucide-react'
 import { useState } from 'react'
 import { salesApi } from '../../../api/salesApi'
 import Badge from '../../../components/common/Badge'
@@ -7,7 +7,11 @@ import Card from '../../../components/common/Card'
 import ConfirmDialog from '../../../components/common/ConfirmDialog'
 import ErrorMessage from '../../../components/common/ErrorMessage'
 import { Select } from '../../../components/common/Input'
+import Loader from '../../../components/common/Loader'
+import Modal from '../../../components/common/Modal'
 import Table from '../../../components/common/Table'
+import TotalsSummary from '../../../components/common/TotalsSummary'
+import { ITEM_COLUMNS } from './documentColumns'
 import { useApi } from '../../../hooks/useApi'
 import { useDebouncedValue } from '../../../hooks/useDebouncedValue'
 import { usePageReset } from '../../../hooks/usePageReset'
@@ -26,6 +30,8 @@ export default function OrdersPanel({ range, product, rangeLabel, refreshKey, st
   const [search, setSearch] = useState('')
   const [status, setStatus] = useState('')
   const [cancelling, setCancelling] = useState(null)
+  const [invoicing, setInvoicing] = useState(null)
+  const [viewing, setViewing] = useState(null)
   const query = useDebouncedValue(search.trim())
 
   // Any filter change sends the list back to page 1
@@ -56,19 +62,32 @@ export default function OrdersPanel({ range, product, rangeLabel, refreshKey, st
     { key: 'amount', header: 'Amount', align: 'right', render: (r) => (has(r.amount) ? formatINR(r.amount) : '—') },
     { key: 'status', header: 'Status', render: (r) => (r.status ? <Badge>{r.status}</Badge> : '—') },
   ]
-  if (canManage) {
-    columns.push({
-      key: 'actions',
-      sticky: true,
-      header: <span className="sr-only">Actions</span>,
-      align: 'right',
-      render: (r) =>
-        r.can_cancel === true && (
+  columns.splice(6, 0, { key: 'invoice_number', header: 'Invoice', render: (r) => r.invoice_number || '—' })
+  columns.push({
+    key: 'actions',
+    sticky: true,
+    header: <span className="sr-only">Actions</span>,
+    align: 'right',
+    render: (r) => (
+      <span className="row-actions">
+        <Button variant="ghost" size="sm" icon={Eye} onClick={() => setViewing(r)} aria-label={`View order ${r.order_number ?? r.id}`} />
+        {canManage && r.can_invoice === true && (
+          <Button variant="ghost" size="sm" icon={ReceiptText} onClick={() => setInvoicing(r)} aria-label={`Convert ${r.order_number ?? r.id} to a sales invoice`} />
+        )}
+        {canManage && r.can_cancel === true && (
           <Button variant="ghost" size="sm" icon={XCircle} className="btn--tone-red" onClick={() => setCancelling(r)}>
             Cancel
           </Button>
-        ),
-    })
+        )}
+      </span>
+    ),
+  })
+
+  const invoice = async () => {
+    const inv = await salesApi.orderToInvoice(invoicing.id)
+    toast.success(`Sales invoice ${inv.invoice_number} created from ${invoicing.order_number}`)
+    if (onChanged) onChanged()
+    else orders.reload()
   }
 
   return (
@@ -127,6 +146,42 @@ export default function OrdersPanel({ range, product, rangeLabel, refreshKey, st
         confirmLabel="Cancel Order"
         cancelLabel="Keep Order"
       />
+      <ConfirmDialog
+        open={Boolean(invoicing)}
+        onClose={() => setInvoicing(null)}
+        onConfirm={invoice}
+        title="Convert to sales invoice?"
+        message={invoicing && `A new invoice is created for ${invoicing.order_number} with the same products, prices, discounts and GST. Stock already went out with the order, so it does not change.`}
+        confirmLabel="Create Invoice"
+        cancelLabel="Back"
+      />
+      <OrderDetail order={viewing} onClose={() => setViewing(null)} />
     </Card>
+  )
+}
+
+function OrderDetail({ order, onClose }) {
+  const detail = useApi(() => (order ? salesApi.getOrder(order.id) : Promise.resolve(null)), [order?.id])
+  if (!order) return null
+  const o = detail.data
+  return (
+    <Modal open onClose={onClose} size="lg" title={`Order ${order.order_number ?? order.id}`} subtitle={order.customer}>
+      {detail.error && !detail.loading ? (
+        <ErrorMessage message={detail.error.message} onRetry={detail.reload} />
+      ) : !o ? (
+        <Loader label="Loading order…" />
+      ) : (
+        <div className="stack">
+          <dl className="detail-grid">
+            {[['Date', o.date ? formatDate(o.date) : '—'], ['Status', <Badge key="s">{o.status}</Badge>], ['Quotation', o.quotation_number || '—'],
+              ['Invoice', o.invoice_number || '—'], ['Notes', o.notes || '—']].map(([k, v]) => (
+              <div key={k}><dt>{k}</dt><dd>{v}</dd></div>
+            ))}
+          </dl>
+          <Table compact caption="Order products" data={Array.isArray(o.items) ? o.items : []} columns={ITEM_COLUMNS} />
+          <TotalsSummary totals={{ subtotal: o.subtotal, discount: o.discount_amount, gst: o.gst_amount, total: o.amount }} totalLabel="Order Total" />
+        </div>
+      )}
+    </Modal>
   )
 }

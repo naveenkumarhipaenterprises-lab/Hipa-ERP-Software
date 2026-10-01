@@ -15,7 +15,7 @@ import { usePagedList } from '../../../hooks/usePagedList'
 import { useToast } from '../../../hooks/useToast'
 import { todayISO } from '../../../utils/formatters'
 import { choiceOptions, dash, date, idOptions, list, money, optionalNumber, optionalText, qty, withAll } from '../shared'
-import ListToolbar from './ListToolbar'
+import ListToolbar from '../../../components/common/ListToolbar'
 
 const STOCK_FILTERS = [
   { value: '', label: 'All stock levels' },

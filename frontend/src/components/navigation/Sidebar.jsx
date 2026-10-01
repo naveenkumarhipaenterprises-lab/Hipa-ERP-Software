@@ -49,6 +49,7 @@ export default function Sidebar({ id, drawer = false, open = false, onClose }) {
         {items.map(({ key, label, path, icon: Icon, children }) => {
           const open = Array.isArray(children) && pathname.startsWith(path)
           const activeTab = params.get('tab') || children?.[0]?.tab
+          const subItems = (children ?? []).filter((c) => !c.module || can(c.module))
           return (
             <div key={key}>
               <NavLink to={path} className="sidebar__link" onClick={drawer ? onClose : undefined}>
@@ -57,17 +58,20 @@ export default function Sidebar({ id, drawer = false, open = false, onClose }) {
               </NavLink>
               {open && (
                 <div className="sidebar__sub" aria-label={`${label} sections`}>
-                  {children.map((c, i) => (
-                    <Link
-                      key={c.tab}
-                      to={i === 0 ? path : `${path}?tab=${c.tab}`}
-                      className={`sidebar__sublink ${activeTab === c.tab ? 'sidebar__sublink--active' : ''}`}
-                      aria-current={activeTab === c.tab ? 'page' : undefined}
-                      onClick={drawer ? onClose : undefined}
-                    >
-                      {c.label}
-                    </Link>
-                  ))}
+                  {subItems.map((c) => {
+                    const active = c.tab && activeTab === c.tab
+                    return (
+                      <Link
+                        key={c.tab ?? c.to}
+                        to={c.to ?? (c.tab === children[0].tab ? path : `${path}?tab=${c.tab}`)}
+                        className={`sidebar__sublink ${active ? 'sidebar__sublink--active' : ''}`}
+                        aria-current={active ? 'page' : undefined}
+                        onClick={drawer ? onClose : undefined}
+                      >
+                        {c.label}
+                      </Link>
+                    )
+                  })}
                 </div>
               )}
             </div>

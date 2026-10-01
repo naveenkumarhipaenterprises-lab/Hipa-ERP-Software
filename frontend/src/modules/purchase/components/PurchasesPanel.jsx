@@ -14,7 +14,7 @@ import { useApi } from '../../../hooks/useApi'
 import { usePagedList } from '../../../hooks/usePagedList'
 import { useToast } from '../../../hooks/useToast'
 import { choiceOptions, dash, date, idOptions, list, money, qty, withAll } from '../shared'
-import ListToolbar from './ListToolbar'
+import ListToolbar from '../../../components/common/ListToolbar'
 import { PURCHASE_COLUMNS } from './purchaseColumns'
 
 /**

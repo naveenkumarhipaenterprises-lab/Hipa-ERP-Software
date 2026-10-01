@@ -98,6 +98,8 @@ export const api = {
     for (const [k, v] of Object.entries(cleanParams(extra))) form.append(k, typeof v === 'boolean' ? String(v) : v)
     return (await client.post(url, form, { headers: { 'Content-Type': 'multipart/form-data' } })).data
   },
+  /** Fetches a generated file (e.g. a quotation PDF) as a Blob, for previewing or printing in the browser. */
+  blob: async (url, params) => (await client.get(url, { params, responseType: 'blob' })).data,
   /** Saves a file the backend generates (reports, exports). Uses the server's filename when it sends one. */
   download: async (url, params, fallbackName) => {
     const res = await client.get(url, { params, responseType: 'blob' })

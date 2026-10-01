@@ -41,12 +41,28 @@ const ALL = Object.values(ROLES)
 
 /**
  * Sidebar navigation. `roles` controls who sees each module (role-based menus); it mirrors
- * MODULE_READ in backend/apps/core/roles.py. `children` are the module's views (?tab=), shown
- * as a sub-menu while the module is open.
+ * MODULE_READ in backend/apps/core/roles.py. `children` are shown as a sub-menu while the module is
+ * open: `{ tab }` opens a view of the module (?tab=), `{ to, module }` links to another module the role can open.
  */
 export const NAV_ITEMS = [
   { key: 'dashboard', label: 'Dashboard', path: '/dashboard', icon: House, roles: ALL },
-  { key: 'sales', label: 'Sales', path: '/sales', icon: BarChart3, roles: ['admin', 'management', 'sales', 'marketing', 'finance'] },
+  {
+    key: 'sales',
+    label: 'Sales',
+    path: '/sales',
+    icon: BarChart3,
+    roles: ['admin', 'management', 'sales', 'marketing', 'finance'],
+    children: [
+      { tab: 'overview', label: 'Overview' },
+      { label: 'Customers', to: '/customers', module: 'customers' },
+      { tab: 'quotations', label: 'Quotations' },
+      { tab: 'orders', label: 'Sales Orders' },
+      { tab: 'invoices', label: 'Sales Invoices' },
+      { tab: 'payments', label: 'Payments' },
+      { tab: 'returns', label: 'Returns' },
+      { label: 'Reports', to: '/reports?type=sales', module: 'reports' },
+    ],
+  },
   { key: 'inventory', label: 'Inventory', path: '/inventory', icon: Package, roles: ['admin', 'management', 'inventory', 'purchase', 'supply_chain'] },
   {
     key: 'purchase',

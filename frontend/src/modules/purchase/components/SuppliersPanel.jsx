@@ -15,7 +15,7 @@ import { usePagedList } from '../../../hooks/usePagedList'
 import { useToast } from '../../../hooks/useToast'
 import { isGstin } from '../../../utils/validation'
 import { choiceOptions, dash, date, list, money, optionalNumber, withAll } from '../shared'
-import ListToolbar from './ListToolbar'
+import ListToolbar from '../../../components/common/ListToolbar'
 import { PURCHASE_COLUMNS } from './purchaseColumns'
 
 const SORTS = [
