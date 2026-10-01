@@ -1,0 +1,28 @@
+# HIPA MASALA backend (Python 3.14). Install with: pip install -r requirements.txt
+Django==6.1.1
+djangorestframework==3.18.1
+djangorestframework_simplejwt==5.5.1
+django-cors-headers==4.9.0
+python-dotenv==1.2.3
+
+# MySQL driver (pure Python; installed as MySQLdb in config/__init__.py).
+# cryptography is needed for MySQL 8 "caching_sha2_password" logins.
+PyMySQL==1.2.3
+cryptography==50.0.1
+
+# Analytics / AI engine (ml/)
+# 3.0.5, not 3.0.6: Windows Smart App Control blocks 3.0.6's compiled groupby file on this PC
+pandas==3.0.5
+numpy==2.5.3
+# 1.9.0, not 1.9.1: Windows Smart App Control blocks one of 1.9.1's compiled files on this PC
+scikit-learn==1.9.0
+
+# AI Assistant chat: Google Gemini API (official SDK)
+google-genai==2.25.0
+
+# Report files (Excel, PDF)
+openpyxl==3.1.5
+fpdf2==2.8.8
+
+# Time-zone database (Windows has none built in)
+tzdata==2026.4

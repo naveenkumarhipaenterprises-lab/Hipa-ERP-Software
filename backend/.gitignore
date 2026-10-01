@@ -1,0 +1,15 @@
+# Secrets and local data
+.env
+media/
+backups/
+staticfiles/
+logs/
+*.sqlite3
+
+# Python
+.venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.coverage
+htmlcov/

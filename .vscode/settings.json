@@ -1,0 +1,9 @@
+{
+  // New terminals use the backend's virtual environment, so `python` and `pip` point at backend/.venv
+  "terminal.integrated.env.windows": {
+    "VIRTUAL_ENV": "${workspaceFolder}\\backend\\.venv",
+    "PATH": "${workspaceFolder}\\backend\\.venv\\Scripts;${env:PATH}"
+  },
+  // Used by the Python extension (if installed) for IntelliSense, linting and debugging
+  "python.defaultInterpreterPath": "${workspaceFolder}\\backend\\.venv\\Scripts\\python.exe"
+}
