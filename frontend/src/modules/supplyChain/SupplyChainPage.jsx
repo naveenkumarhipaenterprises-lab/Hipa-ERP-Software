@@ -1,5 +1,6 @@
-import { Clock, IndianRupee, Leaf, PackageCheck, Plus, Timer, Truck, Users } from 'lucide-react'
+import { Clock, IndianRupee, Leaf, PackageCheck, ShoppingCart, Timer, Truck, Users } from 'lucide-react'
 import { useState } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { supplyChainApi } from '../../api/supplyChainApi'
 import DonutChart from '../../components/charts/DonutChart'
 import SeriesChart from '../../components/charts/SeriesChart'
@@ -15,18 +16,12 @@ import QuickActions from '../../components/dashboard/QuickActions'
 import StatCard from '../../components/dashboard/StatCard'
 import { useApi } from '../../hooks/useApi'
 import { useAuth } from '../../hooks/useAuth'
-import { useToast } from '../../hooks/useToast'
 import { CHART_COLORS, DATE_RANGES } from '../../utils/constants'
-import { formatINR, formatKg, formatNumber, formatPercent } from '../../utils/formatters'
+import { formatINR, formatNumber, formatPercent } from '../../utils/formatters'
 import AlertFeed from './components/AlertFeed'
-import PurchaseOrderModal from './components/PurchaseOrderModal'
 import { SHIPMENT_COLUMNS } from './components/shipmentColumns'
 import ShipmentsModal from './components/ShipmentsModal'
-import SuppliersModal from './components/SuppliersModal'
 import SupplyFlow from './components/SupplyFlow'
-
-// Roles that may raise purchase orders and add suppliers (the backend enforces the same rule)
-const SUPPLY_MANAGERS = ['admin', 'management', 'inventory']
 
 const PERFORMANCE_MONTHS = [
   { value: '6', label: 'Last 6 Months' },
@@ -38,7 +33,7 @@ const KPIS = [
   { key: 'active_shipments', label: 'Active Shipments', icon: PackageCheck, tone: 'blue', format: formatNumber },
   { key: 'on_time_delivery_pct', label: 'On-Time Delivery', icon: Clock, tone: 'teal', format: (v) => formatPercent(v, 1) },
   { key: 'procurement_cost', label: 'Procurement Cost', icon: IndianRupee, tone: 'orange', format: formatINR, goodWhenDown: true },
-  { key: 'pending_orders', label: 'Pending Orders', icon: Timer, tone: 'yellow', format: formatNumber, goodWhenDown: true },
+  { key: 'pending_purchases', label: 'Awaiting Receipt', icon: Timer, tone: 'yellow', format: formatNumber, goodWhenDown: true },
 ]
 
 // Styling only: colour per shipment status
@@ -50,16 +45,18 @@ const SHIPMENT_STATUS = [
 
 const list = (v) => (Array.isArray(v) ? v : [])
 const has = (v) => v !== null && v !== undefined && v !== ''
+const amount = (v, unit) => (has(v) ? `${formatNumber(v)} ${unit ?? ''}`.trim() : '—')
 
 export default function SupplyChainPage() {
-  const { user } = useAuth()
-  const toast = useToast()
+  const { can } = useAuth()
+  const navigate = useNavigate()
   const [range, setRange] = useState(DATE_RANGES[0].value)
   const [months, setMonths] = useState(PERFORMANCE_MONTHS[0].value)
-  const [modal, setModal] = useState(null) // 'po' | 'shipments' | 'suppliers'
+  const [modal, setModal] = useState(null) // 'shipments'
   const [refreshKey, setRefreshKey] = useState(0)
 
-  const canManage = SUPPLY_MANAGERS.includes(user?.role)
+  // Suppliers, raw materials and purchases are managed in the Purchase module
+  const canOpenPurchase = can('purchase')
   const overview = useApi(() => supplyChainApi.getOverview({ range }), [range, refreshKey])
   const performance = useApi(() => supplyChainApi.getSupplierPerformance({ months }), [months, refreshKey])
   const options = useApi(() => supplyChainApi.getOptions(), [refreshKey])
@@ -77,16 +74,14 @@ export default function SupplyChainPage() {
 
   const refresh = () => setRefreshKey((k) => k + 1)
 
-  const createPO = async (values) => {
-    const po = await supplyChainApi.createPurchaseOrder(values)
-    toast.success(po?.po_number ? `Purchase order ${po.po_number} raised` : 'Purchase order raised')
-    refresh()
-  }
-
   const actions = [
-    ...(canManage ? [{ label: 'New Purchase Order', icon: Plus, tone: 'blue', onClick: () => setModal('po') }] : []),
     { label: 'Track Shipments', icon: Truck, tone: 'green', onClick: () => setModal('shipments') },
-    { label: 'Manage Suppliers', icon: Users, tone: 'purple', onClick: () => setModal('suppliers') },
+    ...(canOpenPurchase
+      ? [
+          { label: 'Purchases', icon: ShoppingCart, tone: 'blue', onClick: () => navigate('/purchase?tab=purchases') },
+          { label: 'Manage Suppliers', icon: Users, tone: 'purple', onClick: () => navigate('/purchase?tab=suppliers') },
+        ]
+      : []),
   ]
 
   const skeleton = <div className="skeleton skeleton--chart-inner" aria-label="Loading" />
@@ -96,9 +91,9 @@ export default function SupplyChainPage() {
       <title>Supply Chain | HIPA MASALA</title>
       <PageHeader icon={Truck} title="Supply Chain" subtitle="From farm to table. Faster, smarter, stronger.">
         <DateRangeSelect value={range} onChange={setRange} />
-        {canManage && (
-          <Button icon={Plus} onClick={() => setModal('po')}>
-            New Purchase Order
+        {canOpenPurchase && (
+          <Button icon={ShoppingCart} variant="outline" onClick={() => navigate('/purchase?tab=purchases')}>
+            Go to Purchases
           </Button>
         )}
       </PageHeader>
@@ -186,8 +181,8 @@ export default function SupplyChainPage() {
                 emptyMessage="Stock and usage of key raw materials will appear here."
                 columns={[
                   { key: 'material', header: 'Material', render: (r) => <strong>{r.material}</strong> },
-                  { key: 'stock_kg', header: 'Stock', align: 'right', render: (r) => (has(r.stock_kg) ? formatKg(r.stock_kg) : '—') },
-                  { key: 'monthly_usage_kg', header: 'Monthly Usage', align: 'right', render: (r) => (has(r.monthly_usage_kg) ? formatKg(r.monthly_usage_kg) : '—') },
+                  { key: 'current_stock', header: 'Stock', align: 'right', render: (r) => amount(r.current_stock, r.unit) },
+                  { key: 'monthly_usage', header: 'Monthly Usage', align: 'right', render: (r) => amount(r.monthly_usage, r.unit) },
                   { key: 'days_left', header: 'Days Left', align: 'right', render: (r) => (has(r.days_left) ? `${formatNumber(r.days_left)} days` : '—') },
                   { key: 'status', header: 'Status', render: (r) => (r.status ? <Badge>{r.status}</Badge> : '—') },
                 ]}
@@ -224,9 +219,7 @@ export default function SupplyChainPage() {
         </>
       )}
 
-      <PurchaseOrderModal open={modal === 'po'} options={options} onClose={() => setModal(null)} onCreate={createPO} />
       <ShipmentsModal open={modal === 'shipments'} statuses={options.data?.shipment_statuses} onClose={() => setModal(null)} />
-      <SuppliersModal open={modal === 'suppliers'} canManage={canManage} onClose={() => setModal(null)} onChanged={refresh} />
     </div>
   )
 }

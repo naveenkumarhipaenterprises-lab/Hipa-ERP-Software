@@ -16,7 +16,7 @@ const NotFound = lazy(() => import('../pages/NotFound/NotFound'))
 const SalesPage = lazy(() => import('../modules/sales/SalesPage'))
 const InventoryPage = lazy(() => import('../modules/inventory/InventoryPage'))
 const CustomersPage = lazy(() => import('../modules/customers/CustomersPage'))
-const ProductionPage = lazy(() => import('../modules/production/ProductionPage'))
+const PurchasePage = lazy(() => import('../modules/purchase/PurchasePage'))
 const MarketingPage = lazy(() => import('../modules/marketing/MarketingPage'))
 const SupplyChainPage = lazy(() => import('../modules/supplyChain/SupplyChainPage'))
 const QualityPage = lazy(() => import('../modules/quality/QualityPage'))
@@ -31,7 +31,7 @@ const MODULE_PAGES = {
   sales: SalesPage,
   inventory: InventoryPage,
   customers: CustomersPage,
-  production: ProductionPage,
+  purchase: PurchasePage,
   marketing: MarketingPage,
   supplyChain: SupplyChainPage,
   quality: QualityPage,

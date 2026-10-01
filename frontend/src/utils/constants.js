@@ -2,13 +2,13 @@ import {
   Bot,
   BarChart3,
   Database,
-  Factory,
   FileText,
   House,
   Megaphone,
   Package,
   Settings,
   ShieldCheck,
+  ShoppingCart,
   Truck,
   Users,
 } from 'lucide-react'
@@ -17,36 +17,58 @@ export const ROLES = {
   ADMIN: 'admin',
   MANAGEMENT: 'management',
   SALES: 'sales',
+  PURCHASE: 'purchase',
   INVENTORY: 'inventory',
-  PRODUCTION: 'production',
   MARKETING: 'marketing',
   FINANCE: 'finance',
   QUALITY: 'quality',
+  SUPPLY_CHAIN: 'supply_chain',
 }
 
 export const ROLE_LABELS = {
   admin: 'Super Admin',
   management: 'Management',
   sales: 'Sales Team',
+  purchase: 'Purchase Team',
   inventory: 'Inventory Team',
-  production: 'Production Team',
   marketing: 'Marketing Team',
   finance: 'Finance Team',
   quality: 'Quality Team',
+  supply_chain: 'Supply Chain Team',
 }
 
 const ALL = Object.values(ROLES)
 
-/** Sidebar navigation. `roles` controls who sees each module (role-based menus). */
+/**
+ * Sidebar navigation. `roles` controls who sees each module (role-based menus); it mirrors
+ * MODULE_READ in backend/apps/core/roles.py. `children` are the module's views (?tab=), shown
+ * as a sub-menu while the module is open.
+ */
 export const NAV_ITEMS = [
   { key: 'dashboard', label: 'Dashboard', path: '/dashboard', icon: House, roles: ALL },
   { key: 'sales', label: 'Sales', path: '/sales', icon: BarChart3, roles: ['admin', 'management', 'sales', 'marketing', 'finance'] },
-  { key: 'inventory', label: 'Inventory', path: '/inventory', icon: Package, roles: ['admin', 'management', 'inventory', 'production'] },
-  { key: 'production', label: 'Production', path: '/production', icon: Factory, roles: ['admin', 'management', 'production', 'inventory', 'quality'] },
+  { key: 'inventory', label: 'Inventory', path: '/inventory', icon: Package, roles: ['admin', 'management', 'inventory', 'purchase', 'supply_chain'] },
+  {
+    key: 'purchase',
+    label: 'Purchase',
+    path: '/purchase',
+    icon: ShoppingCart,
+    roles: ['admin', 'management', 'purchase', 'inventory', 'finance', 'supply_chain'],
+    children: [
+      { tab: 'overview', label: 'Overview' },
+      { tab: 'purchases', label: 'Purchases' },
+      { tab: 'receipts', label: 'Goods Receipts' },
+      { tab: 'returns', label: 'Purchase Returns' },
+      { tab: 'payments', label: 'Supplier Payments' },
+      { tab: 'suppliers', label: 'Suppliers' },
+      { tab: 'materials', label: 'Raw Materials' },
+      { tab: 'recommendations', label: 'AI Recommendations' },
+    ],
+  },
   { key: 'marketing', label: 'Marketing', path: '/marketing', icon: Megaphone, roles: ['admin', 'management', 'marketing'] },
   { key: 'customers', label: 'Customers', path: '/customers', icon: Users, roles: ['admin', 'management', 'sales', 'marketing'] },
-  { key: 'supplyChain', label: 'Supply Chain', path: '/supply-chain', icon: Truck, roles: ['admin', 'management', 'inventory', 'quality'] },
-  { key: 'quality', label: 'Quality', path: '/quality', icon: ShieldCheck, roles: ['admin', 'management', 'quality', 'production'] },
+  { key: 'supplyChain', label: 'Supply Chain', path: '/supply-chain', icon: Truck, roles: ['admin', 'management', 'inventory', 'quality', 'purchase', 'supply_chain'] },
+  { key: 'quality', label: 'Quality', path: '/quality', icon: ShieldCheck, roles: ['admin', 'management', 'quality', 'purchase'] },
   { key: 'finance', label: 'Finance', path: '/finance', icon: Database, roles: ['admin', 'management', 'finance'] },
   { key: 'aiAssistant', label: 'AI Assistant', path: '/ai-assistant', icon: Bot, roles: ALL },
   { key: 'reports', label: 'Reports', path: '/reports', icon: FileText, roles: ALL },

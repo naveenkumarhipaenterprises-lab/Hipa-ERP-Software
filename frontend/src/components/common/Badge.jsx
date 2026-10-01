@@ -1,8 +1,11 @@
 const TONE_BY_STATUS = {
-  green: ['delivered', 'active', 'approved', 'in stock', 'pass', 'received', 'paid', 'completed', 'ok', 'connected', 'enabled', 'low', 'income'],
-  blue: ['in transit', 'scheduled', 'grinding', 'packaging', 'cleaning', 'online'],
-  amber: ['processing', 'low stock', 'pending', 'medium', 'due in 3 days', 'due in 5 days'],
-  red: ['cancelled', 'critical', 'fail', 'hold', 'inactive', 'overdue', 'delayed', 'reorder', 'high', 'not connected', 'expense'],
+  green: ['delivered', 'active', 'approved', 'in stock', 'pass', 'passed', 'received', 'paid', 'completed', 'ok', 'connected', 'enabled', 'low',
+    'income', 'accepted', 'converted'],
+  blue: ['in transit', 'scheduled', 'online', 'sent', 'issued'],
+  amber: ['processing', 'low stock', 'pending', 'medium', 'due in 3 days', 'due in 5 days', 'partially received', 'partially paid',
+    'pending inspection', 'unpaid'],
+  red: ['cancelled', 'critical', 'fail', 'failed', 'hold', 'on hold', 'inactive', 'overdue', 'delayed', 'reorder', 'out of stock', 'high', 'not connected',
+    'expense', 'rejected', 'expired'],
 }
 
 function toneFor(status) {

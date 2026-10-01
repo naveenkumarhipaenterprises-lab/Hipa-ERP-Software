@@ -2,7 +2,7 @@
 
 React + Vite frontend for the HIPA MASALA Business Analytics Software.
 
-**The frontend contains no sample, mock or hard-coded business data.** Every number, table row, chart, insight and AI answer comes from the Django REST API. When the API has no data or cannot be reached, screens show empty, loading or error states instead. Forecasts, production plans and AI insights are produced by the backend / AI engine. The frontend only displays them.
+**The frontend contains no sample, mock or hard-coded business data.** Every number, table row, chart, insight and AI answer comes from the Django REST API. When the API has no data or cannot be reached, screens show empty, loading or error states instead. Forecasts, purchase recommendations and AI insights are produced by the backend / AI engine. The frontend only displays them.
 
 ## Run
 
@@ -27,7 +27,7 @@ The API files document each endpoint, including the exact request and response s
 | Login, logout, password reset | `src/api/authApi.js` |
 | Notifications | `src/api/notificationsApi.js` |
 | Dashboard | `src/api/dashboardApi.js` |
-| Sales, Inventory, Customers, Production | `src/api/salesApi.js`, `inventoryApi.js`, `customersApi.js`, `productionApi.js` |
+| Sales, Inventory, Customers, Purchase | `src/api/salesApi.js`, `inventoryApi.js`, `customersApi.js`, `purchaseApi.js` |
 | Marketing, Supply Chain, Quality, Finance | `src/api/marketingApi.js`, `supplyChainApi.js`, `qualityApi.js`, `financeApi.js` |
 | Reports, AI Assistant, Settings | `src/api/reportsApi.js`, `aiApi.js`, `settingsApi.js` |
 
@@ -48,12 +48,12 @@ Menu access is configured in `NAV_ITEMS` in `src/utils/constants.js`:
 |---|---|---|
 | Dashboard, AI Assistant, Reports | all | — |
 | Sales | admin, management, sales, marketing, finance | admin, management, sales |
-| Inventory | admin, management, inventory, production | admin, management, inventory |
-| Production | admin, management, production, inventory, quality | admin, management, production |
+| Inventory | admin, management, inventory, purchase, supply_chain | admin, management, inventory |
+| Purchase | admin, management, purchase, inventory, finance, supply_chain | admin, management, purchase · supplier payments: also finance · raw-material usage: also inventory |
 | Marketing | admin, management, marketing | admin, management, marketing |
 | Customers | admin, management, sales, marketing | edit: admin, management, sales · offers: admin, management, marketing |
-| Supply Chain | admin, management, inventory, quality | admin, management, inventory |
-| Quality | admin, management, quality, production | admin, management, quality |
+| Supply Chain | admin, management, inventory, quality, purchase, supply_chain | admin, management, inventory, supply_chain |
+| Quality | admin, management, quality, purchase | admin, management, quality |
 | Finance | admin, management, finance | admin, management, finance |
 | Settings | admin, management | admin, management |
 

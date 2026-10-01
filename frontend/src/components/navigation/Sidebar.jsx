@@ -1,6 +1,6 @@
 import { Lock, X } from 'lucide-react'
 import { useRef } from 'react'
-import { NavLink } from 'react-router-dom'
+import { Link, NavLink, useLocation, useSearchParams } from 'react-router-dom'
 import { useAuth } from '../../hooks/useAuth'
 import { useFocusTrap } from '../../hooks/useFocusTrap'
 import { NAV_ITEMS } from '../../utils/constants'
@@ -13,6 +13,8 @@ import SpiceArt from '../common/SpiceArt'
  */
 export default function Sidebar({ id, drawer = false, open = false, onClose }) {
   const { can } = useAuth()
+  const { pathname } = useLocation()
+  const [params] = useSearchParams()
   const ref = useRef(null)
   const items = NAV_ITEMS.filter((n) => can(n.key))
   const isModal = drawer && open
@@ -44,12 +46,33 @@ export default function Sidebar({ id, drawer = false, open = false, onClose }) {
       </div>
 
       <nav className="sidebar__nav" aria-label="Main">
-        {items.map(({ key, label, path, icon: Icon }) => (
-          <NavLink key={key} to={path} className="sidebar__link" onClick={drawer ? onClose : undefined}>
-            <Icon size={20} strokeWidth={2.1} aria-hidden />
-            <span>{label}</span>
-          </NavLink>
-        ))}
+        {items.map(({ key, label, path, icon: Icon, children }) => {
+          const open = Array.isArray(children) && pathname.startsWith(path)
+          const activeTab = params.get('tab') || children?.[0]?.tab
+          return (
+            <div key={key}>
+              <NavLink to={path} className="sidebar__link" onClick={drawer ? onClose : undefined}>
+                <Icon size={20} strokeWidth={2.1} aria-hidden />
+                <span>{label}</span>
+              </NavLink>
+              {open && (
+                <div className="sidebar__sub" aria-label={`${label} sections`}>
+                  {children.map((c, i) => (
+                    <Link
+                      key={c.tab}
+                      to={i === 0 ? path : `${path}?tab=${c.tab}`}
+                      className={`sidebar__sublink ${activeTab === c.tab ? 'sidebar__sublink--active' : ''}`}
+                      aria-current={activeTab === c.tab ? 'page' : undefined}
+                      onClick={drawer ? onClose : undefined}
+                    >
+                      {c.label}
+                    </Link>
+                  ))}
+                </div>
+              )}
+            </div>
+          )
+        })}
         {items.length === 0 && (
           <p className="sidebar__empty">
             <Lock size={16} aria-hidden />

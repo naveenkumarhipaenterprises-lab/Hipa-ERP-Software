@@ -1,4 +1,4 @@
-import { BarChart3, Factory, Lightbulb, Megaphone, MessageSquare, Package, Wallet } from 'lucide-react'
+import { BarChart3, Lightbulb, Megaphone, MessageSquare, Package, ShoppingCart, Wallet } from 'lucide-react'
 import Card from '../../../components/common/Card'
 import EmptyState from '../../../components/common/EmptyState'
 import ErrorMessage from '../../../components/common/ErrorMessage'
@@ -8,7 +8,7 @@ import { formatRelativeTime } from '../../../utils/formatters'
 const KIND = {
   sales: { icon: BarChart3, tone: 'green' },
   inventory: { icon: Package, tone: 'orange' },
-  production: { icon: Factory, tone: 'blue' },
+  purchase: { icon: ShoppingCart, tone: 'blue' },
   marketing: { icon: Megaphone, tone: 'purple' },
   finance: { icon: Wallet, tone: 'teal' },
 }

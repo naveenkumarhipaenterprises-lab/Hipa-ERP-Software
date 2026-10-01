@@ -43,7 +43,7 @@ function MovementForm({ type, data, onClose, onSubmit }) {
       open
       onClose={onClose}
       title={title}
-      subtitle={type === 'out' ? 'Record stock dispatched or used' : 'Record stock received (e.g. from production)'}
+      subtitle={type === 'out' ? 'Record stock dispatched or used' : 'Record a stock correction (purchases come in through goods receipts)'}
       submitLabel={`Record ${title}`}
       fields={[
         {

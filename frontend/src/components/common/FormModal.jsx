@@ -8,10 +8,12 @@ import Modal from './Modal'
 /**
  * Config-driven form in a modal.
  * fields: [{ name, label, type?: 'text'|'number'|'email'|'tel'|'date'|'select'|'textarea',
- *            options?, required?, placeholder?, min?, full? }]
+ *            options?, required?, placeholder?, min?, full?, visible?(values) }]
+ *   visible: show the field only when it returns true (hidden fields are neither validated nor sent)
+ * summary(values): optional live content under the fields (e.g. totals calculated as the user types)
  * onSubmit(values) may return a promise; the modal closes when it resolves.
  */
-export default function FormModal({ open, onClose, title, subtitle, fields, initialValues, submitLabel = 'Save', onSubmit }) {
+export default function FormModal({ open, onClose, title, subtitle, fields, initialValues, submitLabel = 'Save', onSubmit, summary }) {
   if (!open) return null
   // Keyed inner form so every open starts from fresh values
   return (
@@ -23,14 +25,16 @@ export default function FormModal({ open, onClose, title, subtitle, fields, init
       initialValues={initialValues}
       submitLabel={submitLabel}
       onSubmit={onSubmit}
+      summary={summary}
     />
   )
 }
 
-function FormModalInner({ onClose, title, subtitle, fields, initialValues = {}, submitLabel, onSubmit }) {
+function FormModalInner({ onClose, title, subtitle, fields: allFields, initialValues = {}, submitLabel, onSubmit, summary }) {
   const [values, setValues] = useState(() =>
-    Object.fromEntries(fields.map((f) => [f.name, initialValues[f.name] ?? f.defaultValue ?? ''])),
+    Object.fromEntries(allFields.map((f) => [f.name, initialValues[f.name] ?? f.defaultValue ?? ''])),
   )
+  const fields = allFields.filter((f) => !f.visible || f.visible(values))
   const [errors, setErrors] = useState({})
   const [submitError, setSubmitError] = useState(null)
   const [pending, setPending] = useState(false)
@@ -119,6 +123,7 @@ function FormModalInner({ onClose, title, subtitle, fields, initialValues = {}, 
             />
           )
         })}
+        {summary && <div className="form-grid__full">{summary(values)}</div>}
       </form>
     </Modal>
   )

@@ -1,4 +1,4 @@
-import { BarChart3, Bot, ChevronDown, Database, Factory, Globe, Megaphone, MessageSquarePlus, Package, Paperclip, SendHorizontal, X } from 'lucide-react'
+import { BarChart3, Bot, ChevronDown, Database, Globe, Megaphone, MessageSquarePlus, Package, Paperclip, SendHorizontal, ShoppingCart, X } from 'lucide-react'
 import { useEffect, useEffectEvent, useRef, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { aiApi } from '../../api/aiApi'
@@ -17,7 +17,7 @@ const FILE_TYPES = /\.(csv|pdf|xls|xlsx)$/i
 const TOPICS = [
   { module: 'sales', icon: BarChart3, tone: 'green', title: 'Sales Analysis', text: 'Trends, top products, regions', q: 'Summarise our sales performance for this month.' },
   { module: 'inventory', icon: Package, tone: 'orange', title: 'Inventory Check', text: 'Stock levels and reorder needs', q: 'Which products are low on stock and need reordering?' },
-  { module: 'production', icon: Factory, tone: 'blue', title: 'Production Planning', text: 'What to produce next', q: 'What should we prioritise in production next week?' },
+  { module: 'purchase', icon: ShoppingCart, tone: 'blue', title: 'Purchase Planning', text: 'What to buy and from whom', q: 'Which raw materials should we purchase soon, and from which supplier?' },
   { module: 'marketing', icon: Megaphone, tone: 'purple', title: 'Marketing Ideas', text: 'Campaigns and content', q: 'Suggest a marketing campaign idea for this season.' },
 ]
 
@@ -226,7 +226,7 @@ export default function AIAssistantPage() {
               <div className="chat__welcome">
                 <Bot size={34} aria-hidden />
                 <p>
-                  <strong>Hello{firstName ? ` ${firstName}` : ''}!</strong> Ask a question about sales, stock, production, marketing or finance.
+                  <strong>Hello{firstName ? ` ${firstName}` : ''}!</strong> Ask a question about sales, stock, purchases, marketing or finance.
                 </p>
                 {available && suggestions.length > 0 && (
                   <div className="chat__suggestions">

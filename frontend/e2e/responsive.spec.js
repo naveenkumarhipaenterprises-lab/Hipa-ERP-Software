@@ -1,7 +1,7 @@
 import { expect, test } from '@playwright/test'
 import { mockApi, SHELL, signIn } from './helpers'
 
-const PAGES = ['/dashboard', '/sales', '/inventory', '/customers', '/production', '/marketing', '/supply-chain', '/quality', '/finance', '/reports', '/ai-assistant', '/settings']
+const PAGES = ['/dashboard', '/sales', '/inventory', '/customers', '/purchase', '/marketing', '/supply-chain', '/quality', '/finance', '/reports', '/ai-assistant', '/settings']
 const WIDTHS = { laptop: 1366, tablet: 768, phone: 375 }
 
 // Pages get empty replies, so this checks the layout itself; long-data layouts were checked during the responsive step
