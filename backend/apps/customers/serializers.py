@@ -1,16 +1,26 @@
+import re
+
 from rest_framework import serializers
 
 from .models import Customer
+
+GSTIN = re.compile(r"^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z][1-9A-Z]Z[0-9A-Z]$")
 
 
 class CustomerWriteSerializer(serializers.ModelSerializer):
     class Meta:
         model = Customer
-        fields = ["name", "type", "contact_person", "phone", "email", "city", "address", "status"]
+        fields = ["name", "type", "contact_person", "phone", "email", "city", "address", "shipping_address", "gstin", "status"]
         extra_kwargs = {"status": {"required": False}}
 
     def validate_name(self, value):
         return value.strip()
+
+    def validate_gstin(self, value):
+        value = (value or "").strip().upper()
+        if value and not GSTIN.match(value):
+            raise serializers.ValidationError("Enter a valid 15-character GSTIN.")
+        return value
 
     def validate_city(self, value):
         return value.strip()
@@ -35,6 +45,8 @@ def customer_row(c):
         "type_label": c.get_type_display(),
         "city": c.city,
         "address": c.address,
+        "shipping_address": c.shipping_address,
+        "gstin": c.gstin,
         "contact_person": c.contact_person,
         "phone": c.phone,
         "email": c.email,

@@ -6,6 +6,7 @@ settings_urls = [
     path("options/", views.OptionsView.as_view()),
     path("general/", views.GeneralSettingsView.as_view()),
     path("company/", views.CompanySettingsView.as_view()),
+    path("billing/", views.BillingSettingsView.as_view()),
     path("users/", views.UsersView.as_view()),
     path("users/<int:pk>/", views.UserDetailView.as_view()),
     path("notifications/", views.NotificationPreferencesView.as_view()),

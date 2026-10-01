@@ -24,7 +24,7 @@ from services import audit, notifications
 from services.backup import run_backup
 
 from . import serializers as s
-from .models import AuditLog, BackupRun, BackupSettings, CompanySettings, Notification, NotificationPreference
+from .models import AuditLog, BackupRun, BackupSettings, BillingSettings, CompanySettings, Notification, NotificationPreference
 
 User = get_user_model()
 
@@ -53,13 +53,14 @@ class OptionsView(SettingsView):
 
 class _SingletonFormView(SettingsView):
     serializer_class = None
+    model = CompanySettings
     label = ""
 
     def get(self, request):
-        return Response(self.serializer_class(CompanySettings.load()).data)
+        return Response(self.serializer_class(self.model.load()).data)
 
     def put(self, request):
-        ser = self.serializer_class(CompanySettings.load(), data=request.data)
+        ser = self.serializer_class(self.model.load(), data=request.data)
         ser.is_valid(raise_exception=True)
         ser.save()
         audit.record(request, f"Updated {self.label}")
@@ -74,6 +75,12 @@ class GeneralSettingsView(_SingletonFormView):
 class CompanySettingsView(_SingletonFormView):
     serializer_class = s.CompanyDetailsSerializer
     label = "company details"
+
+
+class BillingSettingsView(_SingletonFormView):
+    serializer_class = s.BillingSettingsSerializer
+    model = BillingSettings
+    label = "tax & billing settings"
 
 
 def send_invitation(user):

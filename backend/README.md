@@ -106,7 +106,10 @@ The exact request and response shapes are documented in the frontend's `src/api/
 |---|---|
 | Auth | `POST auth/login/` (username **or** e-mail) · `POST auth/refresh/` · `GET auth/me/` · `POST auth/logout/` · `POST auth/password/forgot/` · `POST auth/password/reset/` · `POST auth/password/change/` |
 | Dashboard | `GET dashboard/summary/?range=` · `GET dashboard/sales-trend/?period=` |
-| Sales | `overview/` · `trend/` · `options/` · `orders/` (GET, POST) · `orders/<id>/cancel/` |
+| Sales | `overview/` · `trend/` · `options/` · `orders/` (GET, POST with `items[]` or single product) · `orders/<id>/` · `orders/<id>/cancel/` · `orders/<id>/convert-to-invoice/` |
+| Sales quotations | `sales/quotations/` (GET, POST) · `quotations/<id>/` (GET, PATCH, DELETE draft) · `quotations/<id>/status/` (POST) · `quotations/<id>/pdf/` (`?download=1` to download) · `quotations/<id>/convert-to-order/` · `quotations/<id>/convert-to-invoice/` |
+| Sales invoices | `sales/invoices/` (GET, POST direct or `sales_order_id`) · `invoices/<id>/` (GET, PATCH) · `invoices/<id>/cancel/` · `invoices/<id>/pdf/` |
+| Sales payments / returns | `sales/payments/` (GET, POST) · `payments/<id>/cancel/` · `sales/returns/` (GET, POST) · `returns/<id>/` (PATCH status) |
 | Inventory | `overview/` · `options/` · `items/` (GET, POST) · `items/export/` · `movements/` (GET, POST) |
 | Purchase | `purchase/overview/` · `trend/` · `options/` · `suppliers/` (GET, POST) · `suppliers/<id>/` (GET, PATCH, DELETE) · `raw-materials/` (GET, POST) · `raw-materials/<id>/` (GET, PATCH, DELETE) · `material-movements/` (GET, POST) · `purchases/` (GET, POST) · `purchases/<id>/` (GET, PATCH, DELETE) · `purchases/<id>/cancel/` · `goods-receipts/` (GET, POST) · `goods-receipts/<id>/` · `returns/` (GET, POST) · `returns/<id>/` (GET, PATCH status) · `payments/` (GET, POST) · `payments/<id>/` (GET, DELETE scheduled) · `payments/<id>/mark-paid/` |
 | Marketing | `overview/` · `performance/` · `audience/` · `options/` · `campaigns/` (GET, POST) · `campaigns/<id>/end/` · `posts/` (GET, POST) |
@@ -116,7 +119,7 @@ The exact request and response shapes are documented in the frontend's `src/api/
 | Finance | `overview/` · `revenue-expenses/` · `cash-flow/` · `options/` · `transactions/` (GET, POST) · `budget/` (GET, PUT) |
 | Reports | `reports/` (GET, POST) · `overview/` · `preview/?type=&range=` · `export/?type=&range=&format=pdf|xlsx|csv` · `<id>/download/` |
 | AI assistant | `ai/status/` · `ai/home/` · `ai/chat/` · `ai/conversations/<id>/` |
-| Settings | `settings/options/` · `general/` · `company/` · `users/` · `users/<id>/` · `notifications/` · `backup/` · `backup/run/` · `integrations/` · `security/` · `security/login-activity/` · `audit-logs/` |
+| Settings | `settings/options/` · `general/` · `company/` · `billing/` (tax & billing defaults, bank details) · `users/` · `users/<id>/` · `notifications/` · `backup/` · `backup/run/` · `integrations/` · `security/` · `security/login-activity/` · `audit-logs/` |
 | Notifications | `notifications/` · `notifications/<id>/read/` · `notifications/mark-all-read/` |
 
 **Ranges:** `range=this_month | last_month | last_3_months | this_year`. KPIs are `{ value, change? }`; `change` is the % difference from the previous period of the same length and is left out when there's nothing to compare with.
@@ -156,6 +159,8 @@ Most records are entered in the portal. A few kinds are entered in the **Django 
 | Quality standards, certifications | Quality | Standards list, certification status |
 
 Stock always changes through movements, so product and material stock can't be edited directly: sales orders take stock out and cancellations put it back; goods receipts (GRN) add the accepted quantity of a purchase; purchase returns take stock out (and put it back if cancelled); raw-material usage is recorded under Purchase → material movements.
+
+**Sales documents:** Customer → Quotation (Draft → Sent → Accepted / Rejected; Expired automatically after its valid-until date, daily and whenever quotations are listed) → Sales Order → Sales Invoice → Payment. Converting a quotation creates a new order or invoice with its own number and copies the customer and lines (price, discount, GST); a quotation converts once. Stock: an order takes stock out; an invoice made from an order does not move stock again; an invoice made without an order takes stock out (and puts it back if cancelled); a sales return marked "restock" puts goods back. Line totals: subtotal − discount + GST; sales figures in reports and analytics are net of GST. Quotation and invoice PDFs use company details from Settings → Company Profile and Tax & Billing, the original logo (`assets/hipa-logo.png`) and Noto Sans (`assets/fonts`, SIL Open Font License) so ₹ prints.
 
 **Purchase rules:** a purchase is one raw material or product from one supplier; total = subtotal − discount + GST. There are no purchase orders and no purchase invoices. Payment status (Pending / Partially Paid / Paid / Overdue) comes from completed supplier payments, completed returns and the payment due date (default: purchase date + the supplier's credit days).
 

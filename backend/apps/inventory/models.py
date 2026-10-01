@@ -60,6 +60,10 @@ class StockMovement(models.Model):
         MANUAL = "manual", "Manual entry"
         SALE = "sale", "Sales order"
         SALE_CANCEL = "sale_cancel", "Cancelled order"
+        INVOICE = "invoice", "Sales invoice"
+        INVOICE_CANCEL = "invoice_cancel", "Cancelled invoice"
+        SALE_RETURN = "sale_return", "Sales return"
+        SALE_RETURN_CANCEL = "sale_return_cancel", "Cancelled sales return"
         PURCHASE = "purchase", "Goods receipt"
         PURCHASE_RETURN = "purchase_return", "Purchase return"
         RETURN_CANCEL = "return_cancel", "Cancelled purchase return"
@@ -67,7 +71,7 @@ class StockMovement(models.Model):
     product = models.ForeignKey(Product, on_delete=models.PROTECT, related_name="movements")
     type = models.CharField(max_length=3, choices=Type.choices)
     quantity_kg = models.DecimalField(max_digits=12, decimal_places=3, validators=[MinValueValidator(Decimal("0.001"))])
-    source = models.CharField(max_length=15, choices=Source.choices, default=Source.MANUAL)
+    source = models.CharField(max_length=20, choices=Source.choices, default=Source.MANUAL)
     reference = models.CharField(max_length=50, blank=True)
     note = models.CharField(max_length=255, blank=True)
     created_by = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.SET_NULL, related_name="+")

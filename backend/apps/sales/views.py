@@ -16,27 +16,41 @@ from apps.core.views import ModuleAPIView
 from apps.customers.models import Customer
 from apps.inventory.models import Product, StockMovement
 from apps.inventory.services import move_stock
+from apps.system.models import BillingSettings
 from services import audit, notifications
 
-from . import selectors
-from .models import SalesOrder, SalesOrderItem
+from . import selectors, services
+from .models import PaymentMethod, SalesInvoice, SalesOrder, SalesQuotation, SalesReturn
 
 St = SalesOrder.Status
 
 
 def order_row(o):
     lines = list(o.items.all())
+    invoice = next((i for i in o.invoices.all() if i.status != SalesInvoice.Status.CANCELLED), None)
     return {
         "id": o.id,
         "order_number": o.order_number,
         "date": o.order_date,
+        "customer_id": o.customer_id,
         "customer": o.customer.name,
         "product": ", ".join(i.product.name for i in lines) or None,
         "quantity_kg": num(sum((i.quantity_kg for i in lines), Decimal("0"))),
+        "subtotal": num(o.subtotal),
+        "discount_amount": num(o.discount_amount),
+        "gst_amount": num(o.gst_amount),
         "amount": num(o.total_amount),
         "status": o.get_status_display(),
-        "can_cancel": o.status in SalesOrder.CANCELLABLE,
+        "quotation_number": o.quotation.quotation_number if o.quotation else None,
+        "invoice_id": invoice.id if invoice else None,
+        "invoice_number": invoice.invoice_number if invoice else None,
+        "can_cancel": o.status in SalesOrder.CANCELLABLE and invoice is None,
+        "can_invoice": o.status != St.CANCELLED and invoice is None,
     }
+
+
+def orders_qs():
+    return SalesOrder.objects.select_related("customer", "quotation").prefetch_related("items__product", "invoices")
 
 
 class SalesView(ModuleAPIView):
@@ -112,16 +126,31 @@ class TrendView(SalesView):
 
 class OptionsView(SalesView):
     def get(self, request):
+        b = BillingSettings.load()
         return Response({
-            "customers": list(Customer.objects.filter(status=Customer.Status.ACTIVE).values("id", "name")),
-            "products": list(Product.objects.filter(is_active=True).values("id", "name")),
+            "customers": list(Customer.objects.filter(status=Customer.Status.ACTIVE).values(
+                "id", "name", "contact_person", "phone", "email", "city", "address", "shipping_address", "gstin")),
+            "products": [{"id": p.id, "name": p.name, "price_per_kg": num(p.price_per_kg), "stock_kg": num(p.stock_kg)}
+                         for p in Product.objects.filter(is_active=True)],
             "statuses": label_choices(St),
+            "quotation_statuses": label_choices(SalesQuotation.Status),
+            "invoice_statuses": label_choices(SalesInvoice.Status),
+            "invoice_payment_statuses": label_choices(SalesInvoice.PaymentStatus),
+            "payment_methods": label_choices(PaymentMethod),
+            "return_reasons": label_choices(SalesReturn.Reason),
+            "return_statuses": label_choices(SalesReturn.Status),
+            "defaults": {
+                "gst_pct": num(b.default_sales_gst_pct), "quotation_validity_days": b.quotation_validity_days,
+                "quotation_payment_terms": b.quotation_payment_terms, "quotation_delivery_terms": b.quotation_delivery_terms,
+                "quotation_terms": b.quotation_terms, "invoice_due_days": b.invoice_due_days,
+                "invoice_payment_terms": b.invoice_payment_terms, "invoice_terms": b.invoice_terms,
+            },
         })
 
 
 class OrdersView(SalesView):
     def get(self, request):
-        qs = SalesOrder.objects.select_related("customer").prefetch_related("items__product")
+        qs = orders_qs()
         q = self.param("search")
         if q:
             qs = qs.filter(Q(order_number__icontains=q) | Q(customer__name__icontains=q) | Q(items__product__name__icontains=q)).distinct()
@@ -140,20 +169,29 @@ class OrdersView(SalesView):
         return self.paginated(qs.order_by("-order_date", "-id"), order_row)
 
     def post(self, request):
+        """Body: customer_id, order_date, notes and either items[] (several products, with discount / GST)
+        or the single-product fields product_id + quantity_kg (price from the product, no discount or GST)."""
         d = request.data
         errors = {}
         customer = Customer.objects.filter(pk=d.get("customer_id"), status=Customer.Status.ACTIVE).first() if str(d.get("customer_id", "")).isdigit() else None
         if not customer:
             errors["customer_id"] = ["Choose an active customer."]
-        product = Product.objects.filter(pk=d.get("product_id"), is_active=True).first() if str(d.get("product_id", "")).isdigit() else None
-        if not product:
-            errors["product_id"] = ["Choose a product."]
-        try:
-            qty = Decimal(str(d.get("quantity_kg")))
-            if qty <= 0 or qty.as_tuple().exponent < -3:
-                raise InvalidOperation
-        except (InvalidOperation, ValueError, TypeError):
-            errors["quantity_kg"] = ["Enter a quantity greater than 0 (up to 3 decimals)."]
+        if "items" in d:
+            lines = services.read_lines(d, errors)
+        else:
+            lines = []
+            product = Product.objects.filter(pk=d.get("product_id"), is_active=True).first() if str(d.get("product_id", "")).isdigit() else None
+            if not product:
+                errors["product_id"] = ["Choose a product."]
+            try:
+                qty = Decimal(str(d.get("quantity_kg")))
+                if qty <= 0 or qty.as_tuple().exponent < -3:
+                    raise InvalidOperation
+            except (InvalidOperation, ValueError, TypeError):
+                errors["quantity_kg"] = ["Enter a quantity greater than 0 (up to 3 decimals)."]
+            if product and "quantity_kg" not in errors:
+                lines = [{"product": product, "quantity_kg": qty, "unit_price": product.price_per_kg,
+                          "discount_pct": Decimal("0"), "gst_pct": Decimal("0")}]
         order_date = parse_date(str(d.get("order_date") or ""))
         if not order_date:
             errors["order_date"] = ["Enter the order date (YYYY-MM-DD)."]
@@ -163,16 +201,40 @@ class OrdersView(SalesView):
             raise ValidationError(errors)
 
         with transaction.atomic():
-            order = SalesOrder.objects.create(customer=customer, order_date=order_date,
-                                              notes=str(d.get("notes") or "").strip()[:500], created_by=request.user)
-            SalesOrderItem.objects.create(order=order, product=product, quantity_kg=qty, unit_price=product.price_per_kg)
-            order.recalculate_total()
-            move_stock(product, "out", qty, source=StockMovement.Source.SALE, reference=order.order_number, user=request.user)
+            order = services.create_order(customer=customer, order_date=order_date, lines=lines,
+                                          notes=str(d.get("notes") or "").strip()[:500], user=request.user)
         audit.record(request, "Created sales order", order.order_number)
-        notifications.notify("new_orders", f"New order {order.order_number}",
-                             f"{customer.name}: {qty.normalize():f} kg {product.name}", type="info", link="/sales")
-        order = SalesOrder.objects.select_related("customer").prefetch_related("items__product").get(pk=order.pk)
-        return Response(order_row(order), status=status.HTTP_201_CREATED)
+        summary = ", ".join(f"{line['quantity_kg'].normalize():f} kg {line['product'].name}" for line in lines)
+        notifications.notify("new_orders", f"New order {order.order_number}", f"{customer.name}: {summary}"[:500], type="info",
+                             link="/sales")
+        return Response(order_row(orders_qs().get(pk=order.pk)), status=status.HTTP_201_CREATED)
+
+
+def item_row(i):
+    return {"id": i.id, "product_id": i.product_id, "product": i.product.name, "quantity_kg": num(i.quantity_kg),
+            "unit_price": num(i.unit_price), "discount_pct": num(i.discount_pct), "gst_pct": num(i.gst_pct),
+            "subtotal": num(i.subtotal), "discount_amount": num(i.discount_amount), "gst_amount": num(i.gst_amount),
+            "amount": num(i.total)}
+
+
+class OrderDetailView(SalesView):
+    def get(self, request, pk):
+        o = get_object_or_404(orders_qs(), pk=pk)
+        row = order_row(o)
+        row["notes"] = o.notes or None
+        row["items"] = [item_row(i) for i in o.items.all()]
+        return Response(row)
+
+
+class OrderToInvoiceView(SalesView):
+    def post(self, request, pk):
+        from .document_views import invoice_detail, read_invoice_dates
+
+        order = get_object_or_404(SalesOrder, pk=pk)
+        invoice_date, due_date = read_invoice_dates(request.data)
+        invoice = services.order_to_invoice(order, request.user, invoice_date=invoice_date, due_date=due_date)
+        audit.record(request, "Created sales invoice", f"{invoice.invoice_number} from {order.order_number}")
+        return Response(invoice_detail(invoice.pk, True), status=status.HTTP_201_CREATED)
 
 
 class CancelOrderView(SalesView):
@@ -181,6 +243,9 @@ class CancelOrderView(SalesView):
             order = get_object_or_404(SalesOrder.objects.select_for_update(), pk=pk)
             if order.status not in SalesOrder.CANCELLABLE:
                 raise ValidationError({"detail": f"A {order.get_status_display().lower()} order can't be cancelled."})
+            invoice = services.active_invoice(sales_order=order)
+            if invoice:
+                raise ValidationError({"detail": f"This order is invoiced as {invoice.invoice_number}. Cancel the invoice first."})
             order.status = St.CANCELLED
             order.save(update_fields=["status", "updated_at"])
             for item in order.items.select_related("product"):
@@ -188,5 +253,4 @@ class CancelOrderView(SalesView):
                            reference=order.order_number, user=request.user)
         audit.record(request, "Cancelled sales order", order.order_number)
         notifications.notify("new_orders", f"Order {order.order_number} cancelled", order.customer.name, type="warning", link="/sales")
-        order = SalesOrder.objects.select_related("customer").prefetch_related("items__product").get(pk=pk)
-        return Response(order_row(order))
+        return Response(order_row(orders_qs().get(pk=pk)))

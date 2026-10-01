@@ -1,9 +1,11 @@
+import re
+
 from django.contrib.auth import get_user_model
 from rest_framework import serializers
 
 from apps.core.roles import Role
 
-from .models import AuditLog, BackupSettings, CompanySettings, Notification
+from .models import AuditLog, BackupSettings, BillingSettings, CompanySettings, Notification
 
 User = get_user_model()
 
@@ -60,6 +62,30 @@ class CompanyDetailsSerializer(serializers.ModelSerializer):
         value = (value or "").strip().upper()
         if value and len(value) != 15:
             raise serializers.ValidationError("A GSTIN has 15 characters.")
+        return value
+
+
+class BillingSettingsSerializer(serializers.ModelSerializer):
+    default_sales_gst_pct = serializers.DecimalField(max_digits=5, decimal_places=2, min_value=0, max_value=100, allow_null=True,
+                                                     required=False, coerce_to_string=False)
+    default_purchase_gst_pct = serializers.DecimalField(max_digits=5, decimal_places=2, min_value=0, max_value=100, allow_null=True,
+                                                        required=False, coerce_to_string=False)
+    quotation_validity_days = serializers.IntegerField(min_value=1, max_value=365, allow_null=True, required=False)
+    invoice_due_days = serializers.IntegerField(min_value=0, max_value=365, allow_null=True, required=False)
+    default_supplier_credit_days = serializers.IntegerField(min_value=0, max_value=365, allow_null=True, required=False)
+
+    class Meta:
+        model = BillingSettings
+        exclude = ["id", "updated_at"]
+
+    def to_internal_value(self, data):
+        data = {k: (None if v == "" and k.endswith(("_pct", "_days")) else v) for k, v in data.items()}
+        return super().to_internal_value(data)
+
+    def validate_bank_ifsc(self, value):
+        value = (value or "").strip().upper()
+        if value and not re.match(r"^[A-Z]{4}0[A-Z0-9]{6}$", value):
+            raise serializers.ValidationError("Enter a valid 11-character IFSC code.")
         return value
 
 

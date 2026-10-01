@@ -14,6 +14,7 @@ from apps.core.metrics import choices, kpi, label_choices, num, ratio_pct, resol
 from apps.core.roles import can_write
 from apps.core.views import ModuleAPIView
 from apps.inventory.models import Product
+from apps.system.models import BillingSettings
 from services import audit
 
 from . import services
@@ -587,7 +588,8 @@ class PurchasesView(PurchaseView):
         supplier = parsing.record(d, "supplier_id", Supplier.objects.filter(status=Supplier.Status.ACTIVE), errors,
                                   message="Choose an active supplier.")
         material, product, unit = read_item(d, errors)
-        amounts = read_amounts(d, errors, {"unit_price": material.purchase_price if material else None})
+        amounts = read_amounts(d, errors, {"unit_price": material.purchase_price if material else None,
+                                           "gst_pct": BillingSettings.load().default_purchase_gst_pct or ZERO})
         purchase_date = parsing.date(d, "purchase_date", errors, label="purchase date")
         expected = parsing.date(d, "expected_receipt_date", errors, required=False, label="expected receipt date")
         due = parsing.date(d, "payment_due_date", errors, required=False, label="payment due date")

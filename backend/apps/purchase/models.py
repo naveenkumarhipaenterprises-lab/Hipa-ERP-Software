@@ -10,6 +10,7 @@ from django.conf import settings
 from django.core.validators import MaxValueValidator, MinValueValidator, RegexValidator
 from django.db import models
 
+from apps.core.money import line_amounts
 from apps.core.numbering import save_with_number
 from apps.core.periods import today
 from apps.customers.models import phone_validator
@@ -160,14 +161,6 @@ class MaterialMovement(models.Model):
 
     def __str__(self):
         return f"{self.get_type_display()} {self.quantity} {self.material.unit} {self.material}"
-
-
-def line_amounts(quantity, unit_price, discount_pct, gst_pct):
-    """Subtotal − discount + GST = total, each rounded to paise."""
-    subtotal = (quantity * unit_price).quantize(CENT)
-    discount = (subtotal * discount_pct / 100).quantize(CENT)
-    gst = ((subtotal - discount) * gst_pct / 100).quantize(CENT)
-    return subtotal, discount, gst, subtotal - discount + gst
 
 
 class Purchase(models.Model):

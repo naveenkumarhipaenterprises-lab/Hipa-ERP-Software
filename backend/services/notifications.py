@@ -15,6 +15,9 @@ log = logging.getLogger(__name__)
 CATALOGUE = {
     "low_stock": ("Low stock alerts", "When a product falls to its reorder level", "inventory"),
     "new_orders": ("New sales orders", "When a sales order is created or cancelled", "sales"),
+    "quotation_updates": ("Quotation updates", "When a quotation is accepted, rejected or converted", "sales"),
+    "quotation_expiry": ("Quotation expiry", "When a quotation passes its valid-until date without a decision", "sales"),
+    "customer_payments": ("Customer payments", "When a payment is received against an invoice", "sales"),
     "material_low_stock": ("Raw material reorder alerts", "When a raw material falls to its reorder level", "purchase"),
     "purchase_price_increase": ("Purchase price increases", "When an item is bought at a higher price than last time", "purchase"),
     "goods_receipt_issues": ("Goods receipt issues", "When received goods are damaged, rejected or fail inspection", "purchase"),

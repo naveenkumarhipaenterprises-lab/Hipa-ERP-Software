@@ -48,6 +48,41 @@ class CompanySettings(SingletonModel):
         return self.company_name or "Company settings"
 
 
+class BillingSettings(SingletonModel):
+    """
+    Settings → Tax & Billing: GST defaults, quotation and invoice defaults, bank details printed on
+    invoices, and purchase defaults. Empty until an admin fills them in; nothing is assumed.
+    """
+
+    # Tax / GST
+    default_sales_gst_pct = models.DecimalField("default GST % on sales", max_digits=5, decimal_places=2, null=True, blank=True)
+    default_purchase_gst_pct = models.DecimalField("default GST % on purchases", max_digits=5, decimal_places=2, null=True, blank=True)
+    # Quotations
+    quotation_validity_days = models.PositiveSmallIntegerField(null=True, blank=True)
+    quotation_payment_terms = models.CharField(max_length=255, blank=True)
+    quotation_delivery_terms = models.CharField(max_length=255, blank=True)
+    quotation_terms = models.TextField("quotation terms & conditions", blank=True)
+    # Invoices
+    invoice_due_days = models.PositiveSmallIntegerField(null=True, blank=True)
+    invoice_payment_terms = models.CharField(max_length=255, blank=True)
+    invoice_terms = models.TextField("invoice terms & conditions", blank=True)
+    bank_name = models.CharField(max_length=120, blank=True)
+    bank_account_name = models.CharField(max_length=150, blank=True)
+    bank_account_number = models.CharField(max_length=30, blank=True)
+    bank_ifsc = models.CharField("IFSC", max_length=11, blank=True)
+    upi_id = models.CharField("UPI ID", max_length=80, blank=True)
+    authorised_signatory = models.CharField(max_length=120, blank=True)
+    # Purchase / suppliers
+    default_supplier_credit_days = models.PositiveSmallIntegerField(null=True, blank=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        verbose_name = verbose_name_plural = "billing settings"
+
+    def __str__(self):
+        return "Billing settings"
+
+
 class NotificationPreference(models.Model):
     """On/off switch for each kind of notification the system sends (keys are defined in notifications.CATALOGUE)."""
 

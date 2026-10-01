@@ -58,7 +58,11 @@ def move_item(material, product, type, quantity, *, reference, note="", date=Non
 
 
 def default_due_date(supplier, purchase_date):
-    return purchase_date + timedelta(days=supplier.credit_days) if supplier.credit_days is not None else None
+    """Purchase date + the supplier's credit days (or the default in Settings → Tax & Billing); None when neither is set."""
+    from apps.system.models import BillingSettings
+
+    days = supplier.credit_days if supplier.credit_days is not None else BillingSettings.load().default_supplier_credit_days
+    return purchase_date + timedelta(days=days) if days is not None else None
 
 
 def last_price(material=None, product=None, exclude_pk=None):

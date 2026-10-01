@@ -38,6 +38,7 @@ MODULE_READ = {
 # Who may create / change records in each module
 MODULE_WRITE = {
     "sales": ["admin", "management", "sales"],
+    "sales_payments": ["admin", "management", "sales", "finance"],
     "inventory": ["admin", "management", "inventory"],
     "purchase": ["admin", "management", "purchase"],
     "supplier_payments": ["admin", "management", "purchase", "finance"],
