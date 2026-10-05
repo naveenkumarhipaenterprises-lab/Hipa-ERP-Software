@@ -85,7 +85,7 @@ export const NAV_ITEMS = [
   { key: 'customers', label: 'Customers', path: '/customers', icon: Users, roles: ['admin', 'management', 'sales', 'marketing'] },
   { key: 'supplyChain', label: 'Supply Chain', path: '/supply-chain', icon: Truck, roles: ['admin', 'management', 'inventory', 'quality', 'purchase', 'supply_chain'] },
   { key: 'quality', label: 'Quality', path: '/quality', icon: ShieldCheck, roles: ['admin', 'management', 'quality', 'purchase'] },
-  { key: 'finance', label: 'Finance', path: '/finance', icon: Database, roles: ['admin', 'management', 'finance'] },
+  { key: 'finance', label: 'Accounts', path: '/finance', icon: Database, roles: ['admin', 'management', 'finance'] },
   { key: 'aiAssistant', label: 'AI Assistant', path: '/ai-assistant', icon: Bot, roles: ALL },
   { key: 'reports', label: 'Reports', path: '/reports', icon: FileText, roles: ALL },
   { key: 'settings', label: 'Settings', path: '/settings', icon: Settings, roles: ['admin', 'management'] },

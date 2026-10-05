@@ -121,8 +121,8 @@ export default function FinancePage() {
 
   return (
     <div className="page">
-      <title>Finance | HIPA MASALA</title>
-      <PageHeader icon={Database} title="Finance" subtitle="Control Today. Grow Tomorrow.">
+      <title>Accounts | HIPA MASALA</title>
+      <PageHeader icon={Database} title="Accounts" subtitle="Control Today. Grow Tomorrow.">
         <DateRangeSelect value={range} onChange={setRange} />
         {canManage && (
           <>
