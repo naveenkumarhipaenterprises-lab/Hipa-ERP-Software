@@ -7,6 +7,7 @@ loaded from backend/.env in development (see .env.example).
 import os
 from datetime import timedelta
 from pathlib import Path
+from urllib.parse import parse_qsl, unquote, urlsplit
 
 from django.core.exceptions import ImproperlyConfigured
 from dotenv import load_dotenv
@@ -95,23 +96,37 @@ TEMPLATES = [
 
 WSGI_APPLICATION = "config.wsgi.application"
 
-# --- Database (MySQL) ----------------------------------------------------------
-DATABASES = {
-    "default": {
-        "ENGINE": "django.db.backends.mysql",
-        "NAME": env("DB_NAME", "hipa_masala"),
-        "USER": env("DB_USER", required=True),
-        "PASSWORD": env("DB_PASSWORD", ""),
-        "HOST": env("DB_HOST", "127.0.0.1"),
-        "PORT": env("DB_PORT", "3306"),
-        "OPTIONS": {
-            "charset": "utf8mb4",
-            "init_command": "SET sql_mode='STRICT_TRANS_TABLES'",
-        },
+# --- Database (Supabase Postgres) ---------------------------------------------
+# Django talks to Supabase's Postgres directly. SUPABASE_DB_URL is the connection string from
+# Supabase → Connect → "Session pooler" (postgresql://postgres.<ref>:<password>@<host>:5432/postgres).
+def _database_from_url(url):
+    parts = urlsplit(url)
+    if parts.scheme not in ("postgres", "postgresql"):
+        raise ImproperlyConfigured("SUPABASE_DB_URL must start with postgresql:// (see .env.example).")
+    options = dict(parse_qsl(parts.query))
+    options.setdefault("sslmode", env("DB_SSLMODE", "require"))
+    return {
+        "ENGINE": "django.db.backends.postgresql",
+        "NAME": unquote(parts.path.lstrip("/")) or "postgres",
+        "USER": unquote(parts.username or ""),
+        "PASSWORD": unquote(parts.password or ""),
+        "HOST": parts.hostname or "",
+        "PORT": str(parts.port or 5432),
+        "OPTIONS": options,
         "CONN_MAX_AGE": int(env("DB_CONN_MAX_AGE", "60")),
-        "TEST": {"NAME": env("DB_TEST_NAME", "test_hipa_masala"), "CHARSET": "utf8mb4", "COLLATION": "utf8mb4_unicode_ci"},
+        "CONN_HEALTH_CHECKS": True,
+        # Supabase's transaction pooler (port 6543) can't hold server-side cursors open.
+        "DISABLE_SERVER_SIDE_CURSORS": parts.port == 6543,
+        "TEST": {"NAME": env("DB_TEST_NAME", "test_hipa_masala")},
     }
-}
+
+
+DATABASES = {"default": _database_from_url(env("SUPABASE_DB_URL", required=True))}
+
+# Supabase project API settings (Supabase → Project Settings → API). The backend reaches the
+# database through SUPABASE_DB_URL; these are for Supabase services such as Storage.
+SUPABASE_URL = env("SUPABASE_URL", "")
+SUPABASE_ANON_KEY = env("SUPABASE_ANON_KEY", "")
 
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 AUTH_USER_MODEL = "accounts.User"
@@ -135,7 +150,7 @@ STATIC_ROOT = BASE_DIR / "staticfiles"
 MEDIA_URL = "media/"
 MEDIA_ROOT = Path(env("MEDIA_ROOT", str(BASE_DIR / "media")))
 BACKUP_DIR = Path(env("BACKUP_DIR", str(BASE_DIR / "backups")))
-MYSQLDUMP_PATH = env("MYSQLDUMP_PATH", "mysqldump")
+PG_DUMP_PATH = env("PG_DUMP_PATH", "pg_dump")
 DATA_UPLOAD_MAX_MEMORY_SIZE = 10 * 1024 * 1024
 FILE_UPLOAD_MAX_MEMORY_SIZE = 10 * 1024 * 1024
 

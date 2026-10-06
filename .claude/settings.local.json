@@ -1,8 +1,0 @@
-{
-  "permissions": {
-    "allow": [
-      "PowerShell(Get-ChildItem -Recurse -Force frontend, backend -Exclude node_modules | Where-Object { $_.FullName -notmatch 'node_modules' } | Select-Object FullName, Length | Format-Table -AutoSize | Out-String -Width 300)",
-      "PowerShell(Remove-Item src\\\\App.css, src\\\\assets\\\\hero.png, src\\\\assets\\\\react.svg, src\\\\assets\\\\vite.svg, public\\\\icons.svg -Confirm:$false; Rename-Item src\\\\components\\\\common\\\\button.jsx Button.tmp; Rename-Item src\\\\components\\\\common\\\\Button.tmp Button.jsx; Rename-Item src\\\\components\\\\common\\\\input.jsx Input.tmp; Rename-Item src\\\\components\\\\common\\\\Input.tmp Input.jsx; $dirs = 'components\\\\navigation','components\\\\tables','components\\\\charts','components\\\\dashboard','layouts','pages\\\\Login','pages\\\\ForgotPassword','pages\\\\ResetPassword','pages\\\\Dashboard','pages\\\\NotFound','services','api','hooks','context','routes','utils','assets\\\\images','assets\\\\logos','assets\\\\icons'; foreach \\($m in 'dashboard','sales','inventory','production','marketing','customers','supplyChain','quality','finance','aiAssistant','reports','settings'\\) { $dirs += \"modules\\\\$m\\\\pages\"; $dirs += \"modules\\\\$m\\\\components\"; $dirs += \"modules\\\\$m\\\\services\" }; foreach \\($d in $dirs\\) { New-Item -ItemType Directory -Force \"src\\\\$d\" | Out-Null }; \"done\")"
-    ]
-  }
-}

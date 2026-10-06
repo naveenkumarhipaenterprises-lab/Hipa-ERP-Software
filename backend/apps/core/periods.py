@@ -58,7 +58,7 @@ def end_of(day):
 def moments(start_day, end_day):
     """
     (start, end) datetimes for filtering DateTimeFields by local dates. Use this instead of
-    `__date` lookups, which on MySQL need time-zone tables that Windows installs don't have.
+    `__date` lookups, which silently matched nothing on the old MySQL set-up (no time-zone tables).
     """
     return start_of(start_day), end_of(end_day)
 

@@ -1,4 +1,4 @@
-"""Database backups with mysqldump (Settings → Data & Backup, and the `run_backup` command)."""
+"""Database backups with pg_dump (Settings → Data & Backup, and the `run_backup` command)."""
 import gzip
 import logging
 import os
@@ -12,8 +12,8 @@ from django.utils import timezone
 log = logging.getLogger(__name__)
 
 
-def mysqldump_executable():
-    configured = settings.MYSQLDUMP_PATH
+def pg_dump_executable():
+    configured = settings.PG_DUMP_PATH
     if os.path.isfile(configured):
         return configured
     return shutil.which(configured)
@@ -24,11 +24,11 @@ def run_backup(user=None):
     from apps.system.models import BackupRun, BackupSettings
 
     run = BackupRun(triggered_by=user if user and user.is_authenticated else None)
-    exe = mysqldump_executable()
+    exe = pg_dump_executable()
     db = settings.DATABASES["default"]
     if not exe:
         run.status = BackupRun.Status.FAILED
-        run.error = "mysqldump was not found. Set MYSQLDUMP_PATH in .env to the mysqldump executable."
+        run.error = "pg_dump was not found. Set PG_DUMP_PATH in .env to the pg_dump executable."
         run.finished_at = timezone.now()
         run.save()
         return run
@@ -36,13 +36,15 @@ def run_backup(user=None):
     settings.BACKUP_DIR.mkdir(parents=True, exist_ok=True)
     name = f"{db['NAME']}-{timezone.localtime():%Y%m%d-%H%M%S}.sql.gz"
     path = settings.BACKUP_DIR / name
-    cmd = [exe, f"--host={db['HOST'] or '127.0.0.1'}", f"--port={db['PORT'] or 3306}", f"--user={db['USER']}",
-           "--single-transaction", "--routines", "--default-character-set=utf8mb4", db["NAME"]]
-    env = {**os.environ, "MYSQL_PWD": db["PASSWORD"] or ""}  # keeps the password off the command line
+    # Only the app's own tables (schema "public"); Supabase manages its auth/storage schemas itself.
+    cmd = [exe, f"--host={db['HOST']}", f"--port={db['PORT']}", f"--username={db['USER']}",
+           "--schema=public", "--no-owner", "--no-privileges", "--encoding=UTF8", db["NAME"]]
+    env = {**os.environ, "PGPASSWORD": db["PASSWORD"] or "",  # keeps the password off the command line
+           "PGSSLMODE": db["OPTIONS"].get("sslmode", "require")}
     try:
         proc = subprocess.run(cmd, capture_output=True, env=env, timeout=1800, check=False)
         if proc.returncode != 0:
-            raise RuntimeError(proc.stderr.decode(errors="replace").strip()[:1000] or f"mysqldump exited with {proc.returncode}")
+            raise RuntimeError(proc.stderr.decode(errors="replace").strip()[:1000] or f"pg_dump exited with {proc.returncode}")
         with gzip.open(path, "wb") as fh:
             fh.write(proc.stdout)
         run.status = BackupRun.Status.COMPLETED

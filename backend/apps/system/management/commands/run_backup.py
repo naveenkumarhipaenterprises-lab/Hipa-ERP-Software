@@ -5,7 +5,7 @@ from services.backup import run_backup
 
 
 class Command(BaseCommand):
-    help = "Backs up the database with mysqldump. Schedule it daily with --scheduled (it then runs only when automatic backup is on)."
+    help = "Backs up the database with pg_dump. Schedule it daily with --scheduled (it then runs only when automatic backup is on)."
 
     def add_arguments(self, parser):
         parser.add_argument("--scheduled", action="store_true", help="Skip unless automatic backup is enabled in Settings.")

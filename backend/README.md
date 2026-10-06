@@ -2,7 +2,7 @@
 
 Django REST API for the HIPA MASALA business portal. It serves the React app in `../frontend`.
 
-**Stack:** Python 3.14 · Django 6.1 · Django REST Framework · MySQL 8.4 · JWT (SimpleJWT) · django-cors-headers · pandas · scikit-learn · python-dotenv
+**Stack:** Python 3.14 · Django 6.1 · Django REST Framework · Supabase (Postgres) · JWT (SimpleJWT) · django-cors-headers · pandas · scikit-learn · python-dotenv
 
 **Data rule:** there is no seed or demo data. Every figure the API returns is calculated from records people enter. On an empty database, lists are empty, counts are 0, and anything that can't be calculated is `null` or reports `insufficient_data`.
 
@@ -23,18 +23,19 @@ All packages live in the project's virtual environment `backend/.venv` (nothing 
 - In VS Code, new terminals put `.venv\Scripts` first on `PATH` (`.vscode/settings.json`), so `python` and `pip` there are the venv's.
 - Add a package: `python -m pip install <name>` in a VS Code terminal (or `.\.venv\Scripts\python.exe -m pip install <name>`), then add it with its version to `requirements.txt`.
 
-### Create the MySQL database
+### Create the Supabase project
 
-In MySQL (for example `mysql -u root -p`):
+The database is Postgres hosted on [Supabase](https://supabase.com). Django connects to it directly.
 
-```sql
-CREATE DATABASE hipa_masala CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
--- Recommended: a dedicated user instead of root
-CREATE USER 'hipa'@'localhost' IDENTIFIED BY 'a-strong-password';
-GRANT ALL PRIVILEGES ON hipa_masala.* TO 'hipa'@'localhost';
--- The test runner creates and drops test_hipa_masala:
-GRANT ALL PRIVILEGES ON test_hipa_masala.* TO 'hipa'@'localhost';
-```
+1. Sign in at <https://supabase.com/dashboard> and click **New project**. Pick a name (e.g. `hipa-masala`), a strong **database password** (keep it in a password manager), and the region nearest you (`South Asia (Mumbai)`). The Free plan is enough to start.
+2. When the project is ready, click **Connect** at the top of the dashboard, choose the **Session pooler** connection, and copy the URI. It looks like `postgresql://postgres.<project-ref>:[YOUR-PASSWORD]@aws-0-<region>.pooler.supabase.com:5432/postgres`.
+3. In `backend/.env`, set `SUPABASE_DB_URL` to that URI with `[YOUR-PASSWORD]` replaced by your database password. If the password has characters like `@ : / ? #`, URL-encode them (e.g. `@` → `%40`).
+4. From **Project Settings → API**, copy the **Project URL** into `SUPABASE_URL` and the **anon public** key into `SUPABASE_ANON_KEY`.
+5. Create the tables: `python manage.py migrate` (below). Alternatively paste `supabase/schema.sql` into the dashboard's **SQL Editor** and run it once on the empty project; `migrate` then has nothing left to do.
+
+Every app table has row level security turned on (with no policies), so Supabase's public REST API returns nothing to anyone holding the anon key. Django connects as the table owner and is not affected. This happens automatically after each `migrate`.
+
+To regenerate `supabase/schema.sql` after adding migrations: `python scripts/export_supabase_schema.py` (it migrates a throwaway database on the same server and drops it afterwards).
 
 ### `.env`
 
@@ -43,12 +44,13 @@ GRANT ALL PRIVILEGES ON test_hipa_masala.* TO 'hipa'@'localhost';
 | `DJANGO_SECRET_KEY` | yes | Long random string. Generate: `python -c "from django.core.management.utils import get_random_secret_key as g; print(g())"` |
 | `DEBUG` | | `True` only on a developer PC |
 | `ALLOWED_HOSTS` | | Comma-separated host names |
-| `DB_NAME`, `DB_USER`, `DB_PASSWORD`, `DB_HOST`, `DB_PORT` | yes | MySQL connection |
+| `SUPABASE_DB_URL` | yes | Supabase Postgres connection string (Session pooler URI) |
+| `SUPABASE_URL`, `SUPABASE_ANON_KEY` | | Supabase project URL and anon key (Project Settings → API) |
 | `CORS_ALLOWED_ORIGINS` | | Frontend origin(s); default `http://localhost:5173` |
 | `FRONTEND_URL` | | Used in password-reset and invitation links |
 | `EMAIL_*`, `DEFAULT_FROM_EMAIL` | | SMTP for resets, invitations and customer offers. Without it, e-mails are printed to the server console |
 | `GEMINI_API_KEY`, `GEMINI_MODEL` | | AI Assistant chat with Google Gemini (default model `gemini-3.8-flash`). Empty key = assistant shows "not connected" |
-| `MYSQLDUMP_PATH`, `BACKUP_DIR` | | Database backups |
+| `PG_DUMP_PATH`, `BACKUP_DIR` | | Database backups |
 | `JWT_ACCESS_MINUTES` | | Access-token lifetime (default 480 = one working day) |
 
 `.env` holds secrets: never commit or share it. `.gitignore` already excludes it.
@@ -80,7 +82,7 @@ The frontend's dev server forwards `/api` to `http://localhost:8000`, and its `V
 ```
 backend/
   manage.py  requirements.txt  .env  .env.example  README.md
-  config/        settings (all from .env), URLs, WSGI/ASGI, PyMySQL driver set-up
+  config/        settings (all from .env), URLs, WSGI/ASGI
   apps/
     core/          roles & permissions, pagination, errors, date ranges, KPI helpers
     accounts/      users (with role), login activity, auth endpoints
@@ -88,6 +90,7 @@ backend/
     dashboard/  sales/  inventory/  purchase/  marketing/  customers/
     supply_chain/  quality/  finance/  reports/  ai_assistant/
     legacy_production/  migration history of the retired Production module only (label "production"; drops its tables)
+  supabase/      schema.sql: the Postgres schema the migrations create (generated)
   services/      audit trail, notifications, backups, report exporters, AI engine client
   scripts/       daily_tasks.py (run by Windows Task Scheduler)
   ml/            forecasting, customer segmentation, anomaly detection, stock-out risk
@@ -193,7 +196,7 @@ Stock always changes through movements, so product and material stock can't be e
 
 ## 6. Backups
 
-**Settings → Data & Backup → Back Up Now** runs `mysqldump` and saves a compressed `.sql.gz` file in `BACKUP_DIR` (default `backend/backups`).
+**Settings → Data & Backup → Back Up Now** runs `pg_dump` on the app's tables (schema `public`) and saves a compressed `.sql.gz` file in `BACKUP_DIR` (default `backend/backups`). Install the PostgreSQL command-line tools with the same major version as your Supabase server (Project Settings → Infrastructure), or newer, and set `PG_DUMP_PATH` if `pg_dump` is not on `PATH`. Supabase also keeps its own daily backups on paid plans.
 
 ### Daily scheduled task
 
@@ -222,17 +225,17 @@ Each job can also be run by hand: `manage.py run_analytics`, `manage.py run_back
 .\.venv\Scripts\python.exe manage.py test tests
 ```
 
-The test runner creates a separate `test_hipa_masala` database and deletes it afterwards; the real database is never touched. The suite covers login, tokens, password reset, role permissions for every module, every endpoint on an empty database, validation errors, CORS, and full workflows (orders and stock, purchases with goods receipts / returns / supplier payments, quality tests on goods receipts, supply chain, finance, reports in all three formats).
+The test runner creates a separate `test_hipa_masala` database on the Supabase server and deletes it afterwards; the real database is never touched. The suite covers login, tokens, password reset, role permissions for every module, every endpoint on an empty database, validation errors, CORS, and full workflows (orders and stock, purchases with goods receipts / returns / supplier payments, quality tests on goods receipts, supply chain, finance, reports in all three formats).
 
 ---
 
 ## 8. Notes and troubleshooting
 
-- **MySQL driver:** the project uses PyMySQL (pure Python) instead of `mysqlclient`, because Windows Smart App Control blocks mysqlclient's unsigned DLL on this PC. `config/__init__.py` registers it as `MySQLdb`.
+- **Postgres driver:** `psycopg[binary]`, whose wheel bundles `libpq`, so no local PostgreSQL install is needed. It loads under Windows Smart App Control on this PC.
 - **scikit-learn is pinned to 1.9.0 and pandas to 3.0.5** for the same reason: Smart App Control blocks a compiled file in scikit-learn 1.9.1 and in pandas 3.0.6 (`groupby`). Smart App Control can change its verdict later. If a start-up error says `An Application Control policy has blocked this file`, note the package in the error and try its previous release with `python -m pip install "<package>==<version>"`, then update `requirements.txt`.
 - The analytics engine (`ml/`: pandas, scikit-learn) is loaded only when an analytics feature or `run_analytics` needs it. If one of its files is ever blocked, only those features return 503 "analytics engine unavailable"; login and every other page keep working.
 - `No module named 'rest_framework'` (or `django`) → the command ran on a Python without the project packages and `.venv` is missing. Create it with the setup commands in section 1.
 - `Error: That port is already in use` → another backend is already running on 8000; use it, or stop it first.
-- `Access denied for user` → check `DB_USER` / `DB_PASSWORD` in `.env`. `Can't connect to MySQL server` → start the MySQL80/MySQL84 Windows service.
-- The server refuses to start without `DJANGO_SECRET_KEY` and `DB_USER`, and says which variable is missing.
-- For production: `DEBUG=False`, real `ALLOWED_HOSTS`, HTTPS, a dedicated MySQL user, SMTP e-mail, and serve the built frontend with `/api/` proxied to Django.
+- `password authentication failed` → check the password inside `SUPABASE_DB_URL` (URL-encode special characters). `connection timed out` / `could not translate host name` → use the **Session pooler** URI (the direct `db.<ref>.supabase.co` host is IPv6-only), and check that the project isn't paused in the Supabase dashboard (free projects pause after a week without use).
+- The server refuses to start without `DJANGO_SECRET_KEY` and `SUPABASE_DB_URL`, and says which variable is missing.
+- For production: `DEBUG=False`, real `ALLOWED_HOSTS`, HTTPS, a strong Supabase database password, SMTP e-mail, and serve the built frontend with `/api/` proxied to Django.
