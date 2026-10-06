@@ -132,7 +132,7 @@ def default_validity(quotation_date):
 
 @transaction.atomic
 def change_quotation_status(quotation, new, user, note=""):
-    q = SalesQuotation.objects.select_for_update().get(pk=quotation.pk)
+    q = SalesQuotation.objects.select_for_update(of=("self",)).get(pk=quotation.pk)
     if new not in SalesQuotation.TRANSITIONS[q.status]:
         allowed = ", ".join(QS(s).label for s in SalesQuotation.TRANSITIONS[q.status]) or "none (it is final)"
         raise ValidationError({"status": [f"A {q.get_status_display().lower()} quotation can be moved to: {allowed}."]})
@@ -153,7 +153,7 @@ def expire_quotations():
     count = 0
     for q in SalesQuotation.objects.filter(status__in=(QS.DRAFT, QS.SENT), valid_until__lt=today()):
         with transaction.atomic():
-            locked = SalesQuotation.objects.select_for_update().get(pk=q.pk)
+            locked = SalesQuotation.objects.select_for_update(of=("self",)).get(pk=q.pk)
             if locked.status not in (QS.DRAFT, QS.SENT) or locked.valid_until >= today():
                 continue
             old, locked.status = locked.status, QS.EXPIRED
@@ -201,7 +201,7 @@ def create_order(*, customer, order_date, lines, notes, user, quotation=None):
 
 @transaction.atomic
 def quotation_to_order(quotation, user, order_date=None):
-    q = SalesQuotation.objects.select_for_update().get(pk=quotation.pk)
+    q = SalesQuotation.objects.select_for_update(of=("self",)).get(pk=quotation.pk)
     if SalesOrder.objects.filter(quotation=q).exists():
         raise ValidationError({"detail": f"{q.quotation_number} has already been converted to sales order "
                                          f"{q.sales_order.order_number}."})
@@ -247,7 +247,7 @@ def active_invoice(**lookup):
 
 @transaction.atomic
 def order_to_invoice(order, user, *, invoice_date=None, due_date=None, quotation=None):
-    order = SalesOrder.objects.select_for_update().select_related("customer", "quotation").get(pk=order.pk)
+    order = SalesOrder.objects.select_for_update(of=("self",)).select_related("customer", "quotation").get(pk=order.pk)
     if order.status == SalesOrder.Status.CANCELLED:
         raise ValidationError({"detail": "A cancelled order can't be invoiced."})
     existing = active_invoice(sales_order=order)
@@ -266,7 +266,7 @@ def order_to_invoice(order, user, *, invoice_date=None, due_date=None, quotation
 
 @transaction.atomic
 def quotation_to_invoice(quotation, user, *, invoice_date=None, due_date=None):
-    q = SalesQuotation.objects.select_for_update().get(pk=quotation.pk)
+    q = SalesQuotation.objects.select_for_update(of=("self",)).get(pk=quotation.pk)
     existing = active_invoice(quotation=q)
     if existing:
         raise ValidationError({"detail": f"{q.quotation_number} is already invoiced as {existing.invoice_number}."})
@@ -285,7 +285,7 @@ def quotation_to_invoice(quotation, user, *, invoice_date=None, due_date=None):
 
 @transaction.atomic
 def replace_invoice_lines(invoice, lines, user):
-    inv = SalesInvoice.objects.select_for_update().get(pk=invoice.pk)
+    inv = SalesInvoice.objects.select_for_update(of=("self",)).get(pk=invoice.pk)
     if inv.sales_order_id:
         raise ValidationError({"items": ["Products on an invoice made from a sales order can't be changed."]})
     if inv.payments.filter(status=SalesPayment.Status.RECEIVED).exists() or inv.returns.exists():
@@ -301,7 +301,7 @@ def replace_invoice_lines(invoice, lines, user):
 
 @transaction.atomic
 def cancel_invoice(invoice, user):
-    inv = SalesInvoice.objects.select_for_update().get(pk=invoice.pk)
+    inv = SalesInvoice.objects.select_for_update(of=("self",)).get(pk=invoice.pk)
     if inv.status == SalesInvoice.Status.CANCELLED:
         raise ValidationError({"detail": "This invoice is already cancelled."})
     if inv.payments.filter(status=SalesPayment.Status.RECEIVED).exists():
@@ -325,7 +325,7 @@ def refresh_invoice_money(inv):
 
 @transaction.atomic
 def receive_payment(invoice, *, amount, payment_date, method, reference, notes, user):
-    inv = SalesInvoice.objects.select_for_update().get(pk=invoice.pk)
+    inv = SalesInvoice.objects.select_for_update(of=("self",)).get(pk=invoice.pk)
     if inv.status == SalesInvoice.Status.CANCELLED:
         raise ValidationError({"invoice_id": ["This invoice is cancelled."]})
     if amount > inv.balance:
@@ -343,12 +343,12 @@ def receive_payment(invoice, *, amount, payment_date, method, reference, notes, 
 
 @transaction.atomic
 def cancel_payment(payment):
-    p = SalesPayment.objects.select_for_update().get(pk=payment.pk)
+    p = SalesPayment.objects.select_for_update(of=("self",)).get(pk=payment.pk)
     if p.status == SalesPayment.Status.CANCELLED:
         raise ValidationError({"detail": "This payment is already cancelled."})
     p.status = SalesPayment.Status.CANCELLED
     p.save(update_fields=["status", "updated_at"])
-    refresh_invoice_money(SalesInvoice.objects.select_for_update().get(pk=p.invoice_id))
+    refresh_invoice_money(SalesInvoice.objects.select_for_update(of=("self",)).get(pk=p.invoice_id))
     return p
 
 
@@ -356,7 +356,7 @@ def cancel_payment(payment):
 
 @transaction.atomic
 def create_return(invoice, *, product, quantity_kg, return_date, reason, amount, restock, remarks, user):
-    inv = SalesInvoice.objects.select_for_update().get(pk=invoice.pk)
+    inv = SalesInvoice.objects.select_for_update(of=("self",)).get(pk=invoice.pk)
     if inv.status == SalesInvoice.Status.CANCELLED:
         raise ValidationError({"invoice_id": ["This invoice is cancelled."]})
     line = inv.items.filter(product=product).first()
@@ -379,12 +379,12 @@ def create_return(invoice, *, product, quantity_kg, return_date, reason, amount,
 
 @transaction.atomic
 def set_return_status(ret, new_status, user):
-    r = SalesReturn.objects.select_for_update().select_related("product").get(pk=ret.pk)
+    r = SalesReturn.objects.select_for_update(of=("self",)).select_related("product").get(pk=ret.pk)
     if r.status != SalesReturn.Status.PENDING:
         raise ValidationError({"status": [f"A {r.get_status_display().lower()} return can't be changed."]})
     if new_status == SalesReturn.Status.CANCELLED and r.restock:
         move_stock(r.product, "out", r.quantity_kg, source=StockMovement.Source.SALE_RETURN_CANCEL, reference=r.return_number, user=user)
     r.status = new_status
     r.save(update_fields=["status", "updated_at"])
-    refresh_invoice_money(SalesInvoice.objects.select_for_update().get(pk=r.invoice_id))
+    refresh_invoice_money(SalesInvoice.objects.select_for_update(of=("self",)).get(pk=r.invoice_id))
     return r

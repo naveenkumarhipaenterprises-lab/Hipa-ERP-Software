@@ -31,7 +31,7 @@ The database is Postgres hosted on [Supabase](https://supabase.com). Django conn
 2. When the project is ready, click **Connect** at the top of the dashboard, choose the **Session pooler** connection, and copy the URI. It looks like `postgresql://postgres.<project-ref>:[YOUR-PASSWORD]@aws-0-<region>.pooler.supabase.com:5432/postgres`.
 3. In `backend/.env`, set `SUPABASE_DB_URL` to that URI with `[YOUR-PASSWORD]` replaced by your database password. If the password has characters like `@ : / ? #`, URL-encode them (e.g. `@` → `%40`).
 4. From **Project Settings → API**, copy the **Project URL** into `SUPABASE_URL` and the **anon public** key into `SUPABASE_ANON_KEY`.
-5. Create the tables: `python manage.py migrate` (below). Alternatively paste `supabase/schema.sql` into the dashboard's **SQL Editor** and run it once on the empty project; `migrate` then has nothing left to do.
+5. Create the tables: `python manage.py migrate` (below). Alternatively paste `supabase/schema.sql` into the dashboard's **SQL Editor** and run it once on the empty project, then run `migrate` once anyway: it only adds Django's content types and permissions.
 
 Every app table has row level security turned on (with no policies), so Supabase's public REST API returns nothing to anyone holding the anon key. Django connects as the table owner and is not affected. This happens automatically after each `migrate`.
 

@@ -256,7 +256,7 @@ class OrderToInvoiceView(SalesView):
 class CancelOrderView(SalesView):
     def post(self, request, pk):
         with transaction.atomic():
-            order = get_object_or_404(SalesOrder.objects.select_for_update(), pk=pk)
+            order = get_object_or_404(SalesOrder.objects.select_for_update(of=("self",)), pk=pk)
             if order.status not in SalesOrder.CANCELLABLE:
                 raise ValidationError({"detail": f"A {order.get_status_display().lower()} order can't be cancelled."})
             invoice = services.active_invoice(sales_order=order)

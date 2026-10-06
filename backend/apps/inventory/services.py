@@ -14,7 +14,7 @@ def move_stock(product, type, quantity_kg, *, source=StockMovement.Source.MANUAL
     quantity_kg = Decimal(str(quantity_kg))
     if quantity_kg <= 0:
         raise ValidationError({"quantity_kg": ["Quantity must be greater than 0."]})
-    locked = Product.objects.select_for_update().get(pk=product.pk)
+    locked = Product.objects.select_for_update(of=("self",)).get(pk=product.pk)
     was_low = locked.stock_status != Product.StockStatus.IN_STOCK
     if type == StockMovement.Type.OUT:
         if quantity_kg > locked.stock_kg:

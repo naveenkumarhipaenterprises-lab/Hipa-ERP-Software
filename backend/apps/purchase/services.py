@@ -29,7 +29,7 @@ def move_material(material, type, quantity, *, source=MaterialMovement.Source.AD
     quantity = Decimal(str(quantity))
     if quantity <= 0:
         raise ValidationError({"quantity": ["Quantity must be greater than 0."]})
-    locked = RawMaterial.objects.select_for_update().get(pk=material.pk)
+    locked = RawMaterial.objects.select_for_update(of=("self",)).get(pk=material.pk)
     was_ok = locked.stock_status == "In Stock"
     if type == MaterialMovement.Type.OUT:
         if quantity > locked.current_stock:
@@ -108,7 +108,7 @@ def refresh_money(purchase):
 
 @transaction.atomic
 def receive_goods(purchase, *, received_date, received_quantity, damaged_quantity, accepted_quantity, quality_status, remarks, user):
-    purchase = Purchase.objects.select_for_update().select_related("supplier", "material", "product").get(pk=purchase.pk)
+    purchase = Purchase.objects.select_for_update(of=("self",)).select_related("supplier", "material", "product").get(pk=purchase.pk)
     if purchase.status == Purchase.Status.CANCELLED:
         raise ValidationError({"purchase_id": ["This purchase is cancelled."]})
     if received_date < purchase.purchase_date:
@@ -144,7 +144,7 @@ def receive_goods(purchase, *, received_date, received_quantity, damaged_quantit
 @transaction.atomic
 def create_return(*, purchase, supplier, material, product, quantity, unit, return_date, reason, amount, remarks, user):
     if purchase:
-        purchase = Purchase.objects.select_for_update().get(pk=purchase.pk)
+        purchase = Purchase.objects.select_for_update(of=("self",)).get(pk=purchase.pk)
         already = purchase.returns.exclude(status=PurchaseReturn.Status.CANCELLED).aggregate(q=Sum("quantity"))["q"] or ZERO
         if quantity > purchase.received_quantity - already:
             left = purchase.received_quantity - already
@@ -161,7 +161,7 @@ def create_return(*, purchase, supplier, material, product, quantity, unit, retu
 
 @transaction.atomic
 def set_return_status(ret, new_status, user):
-    ret = PurchaseReturn.objects.select_for_update().select_related("supplier", "material", "product").get(pk=ret.pk)
+    ret = PurchaseReturn.objects.select_for_update(of=("self",)).select_related("supplier", "material", "product").get(pk=ret.pk)
     if ret.status != PurchaseReturn.Status.PENDING:
         raise ValidationError({"status": [f"A {ret.get_status_display().lower()} return can't be changed."]})
     if new_status == PurchaseReturn.Status.CANCELLED:
@@ -171,7 +171,7 @@ def set_return_status(ret, new_status, user):
     ret.status = new_status
     ret.save(update_fields=["status", "updated_at"])
     if ret.purchase_id:
-        refresh_money(Purchase.objects.select_for_update().get(pk=ret.purchase_id))
+        refresh_money(Purchase.objects.select_for_update(of=("self",)).get(pk=ret.purchase_id))
     return ret
 
 
@@ -185,7 +185,7 @@ def payment_status_after(purchase, amount):
 @transaction.atomic
 def record_payment(*, supplier, purchase, amount, payment_date, method, reference, notes, paid, user):
     if purchase:
-        purchase = Purchase.objects.select_for_update().get(pk=purchase.pk)
+        purchase = Purchase.objects.select_for_update(of=("self",)).get(pk=purchase.pk)
         open_scheduled = purchase.payments.filter(status=SupplierPayment.Status.PENDING).aggregate(t=Sum("amount"))["t"] or ZERO
         if amount > purchase.balance - (ZERO if paid else open_scheduled):
             raise ValidationError({"amount": [f"Only ₹{purchase.balance - (ZERO if paid else open_scheduled):,.2f} is outstanding on "
@@ -206,10 +206,10 @@ def record_payment(*, supplier, purchase, amount, payment_date, method, referenc
 
 @transaction.atomic
 def mark_payment_made(payment, *, payment_date, reference, user):
-    payment = SupplierPayment.objects.select_for_update().get(pk=payment.pk)
+    payment = SupplierPayment.objects.select_for_update(of=("self",)).get(pk=payment.pk)
     if payment.status != SupplierPayment.Status.PENDING:
         raise ValidationError({"detail": "This payment has already been made."})
-    purchase = Purchase.objects.select_for_update().get(pk=payment.purchase_id) if payment.purchase_id else None
+    purchase = Purchase.objects.select_for_update(of=("self",)).get(pk=payment.purchase_id) if payment.purchase_id else None
     if purchase and payment.amount > purchase.balance:
         raise ValidationError({"amount": [f"Only ₹{purchase.balance:,.2f} is outstanding on {purchase.purchase_number}."]})
     payment.status = payment_status_after(purchase, payment.amount)

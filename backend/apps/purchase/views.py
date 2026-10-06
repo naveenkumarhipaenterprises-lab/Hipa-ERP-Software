@@ -652,7 +652,7 @@ class PurchaseDetailView(PurchaseView):
     def patch(self, request, pk):
         d, errors = request.data, {}
         with transaction.atomic():
-            p = get_object_or_404(Purchase.objects.select_for_update().select_related("supplier", "material", "product"), pk=pk)
+            p = get_object_or_404(Purchase.objects.select_for_update(of=("self",)).select_related("supplier", "material", "product"), pk=pk)
             if p.status == PSt.CANCELLED:
                 raise ValidationError({"detail": "A cancelled purchase can't be edited."})
             full = p.status == PSt.PENDING and not (p.goods_receipts.exists() or p.payments.exists() or p.returns.exists())
@@ -696,7 +696,7 @@ class PurchaseDetailView(PurchaseView):
 
     def delete(self, request, pk):
         with transaction.atomic():
-            p = get_object_or_404(Purchase.objects.select_for_update(), pk=pk)
+            p = get_object_or_404(Purchase.objects.select_for_update(of=("self",)), pk=pk)
             if p.goods_receipts.exists() or p.payments.exists() or p.returns.exists():
                 return Response({"detail": "This purchase has goods receipts, payments or returns, so it can't be deleted."},
                                 status=status.HTTP_409_CONFLICT)
@@ -709,7 +709,7 @@ class PurchaseDetailView(PurchaseView):
 class CancelPurchaseView(PurchaseView):
     def post(self, request, pk):
         with transaction.atomic():
-            p = get_object_or_404(Purchase.objects.select_for_update(), pk=pk)
+            p = get_object_or_404(Purchase.objects.select_for_update(of=("self",)), pk=pk)
             if p.status != PSt.PENDING:
                 raise ValidationError({"detail": f"A {p.get_status_display().lower()} purchase can't be cancelled."})
             if p.goods_receipts.exists() or p.payments.exists() or p.returns.exists():
@@ -917,7 +917,7 @@ class PaymentDetailView(PurchaseView):
 
     def delete(self, request, pk):
         with transaction.atomic():
-            pm = get_object_or_404(SupplierPayment.objects.select_for_update(), pk=pk)
+            pm = get_object_or_404(SupplierPayment.objects.select_for_update(of=("self",)), pk=pk)
             if pm.status != SPSt.PENDING:
                 return Response({"detail": "A payment that has been made can't be deleted."}, status=status.HTTP_409_CONFLICT)
             number = pm.payment_number

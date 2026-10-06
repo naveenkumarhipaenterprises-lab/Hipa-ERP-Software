@@ -129,6 +129,7 @@ SUPABASE_URL = env("SUPABASE_URL", "")
 SUPABASE_ANON_KEY = env("SUPABASE_ANON_KEY", "")
 
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
+TEST_RUNNER = "config.test_runner.SupabaseTestRunner"
 AUTH_USER_MODEL = "accounts.User"
 
 AUTH_PASSWORD_VALIDATORS = [

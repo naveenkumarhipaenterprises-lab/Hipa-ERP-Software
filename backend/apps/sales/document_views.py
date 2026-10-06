@@ -151,7 +151,7 @@ class QuotationDetailView(SalesView):
     def patch(self, request, pk):
         d, errors = request.data, {}
         with transaction.atomic():
-            q = get_object_or_404(SalesQuotation.objects.select_for_update(), pk=pk)
+            q = get_object_or_404(SalesQuotation.objects.select_for_update(of=("self",)), pk=pk)
             if q.status not in (*SalesQuotation.EDITABLE, QS.EXPIRED):
                 raise ValidationError({"detail": f"A {q.get_status_display().lower()} quotation can't be edited."})
             customer = q.customer
