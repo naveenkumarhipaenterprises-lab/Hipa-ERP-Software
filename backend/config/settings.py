@@ -16,10 +16,25 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 load_dotenv(BASE_DIR / ".env")
 
 
+# Vercel imports these settings during the build (to find WSGI_APPLICATION and run collectstatic).
+# The build never opens the database, so a missing secret there must not fail the deploy: Vercel
+# sets CI=1 only while building. At runtime the same variables are still strictly required.
+VERCEL_BUILD = bool(os.environ.get("VERCEL")) and bool(os.environ.get("CI"))
+_BUILD_PLACEHOLDERS = {
+    "DJANGO_SECRET_KEY": "vercel-build-only-placeholder-not-used-at-runtime",
+    "SUPABASE_DB_URL": "postgresql://build:build@localhost:5432/postgres",
+}
+
+
 def env(name, default=None, required=False):
     value = os.environ.get(name, default)
     if required and (value is None or value == ""):
-        raise ImproperlyConfigured(f"Environment variable {name} is required (see .env.example).")
+        if VERCEL_BUILD and name in _BUILD_PLACEHOLDERS:
+            return _BUILD_PLACEHOLDERS[name]
+        raise ImproperlyConfigured(
+            f"Environment variable {name} is required (see .env.example). "
+            "On Vercel, add it under Project Settings -> Environment Variables and redeploy."
+        )
     return value
 
 
@@ -35,6 +50,11 @@ def env_list(name, default=""):
 SECRET_KEY = env("DJANGO_SECRET_KEY", required=True)
 DEBUG = env_bool("DEBUG", False)
 ALLOWED_HOSTS = env_list("ALLOWED_HOSTS", "localhost,127.0.0.1")
+# On Vercel, also accept the deployment's own domains (otherwise every request returns 400).
+for _var in ("VERCEL_URL", "VERCEL_BRANCH_URL", "VERCEL_PROJECT_PRODUCTION_URL"):
+    _host = os.environ.get(_var, "").strip()
+    if _host and _host not in ALLOWED_HOSTS:
+        ALLOWED_HOSTS.append(_host)
 
 INSTALLED_APPS = [
     "django.contrib.admin",
