@@ -20,13 +20,19 @@ import { api, cleanParams as clean } from './client'
  * [{ supplier, quality_pct, on_time_pct, cost_efficiency_pct }]
  *
  * GET /supply-chain/options/
- * { suppliers: [{ id, name }], materials: [{ id, name }], shipment_statuses: [{ value, label }] }
+ * { suppliers: [{ id, name }], materials: [{ id, name }], shipment_statuses: [{ value, label }], units: [{ value, label }],
+ *   purchases: [{ id, purchase_number, supplier, item, quantity, unit }] }   // open purchases; quantity = still to receive
  *
  * GET  /supply-chain/shipments/?page=&page_size=&search=&status=   ->  { count, results: [shipment] }
+ *      shipment: { ..., dispatched_on, delivered_on, quality_passed, can_update }
+ * POST /supply-chain/shipments/   { purchase_id? | supplier_id + material_id + unit, quantity?, destination, dispatched_on?, eta }
+ * POST /supply-chain/shipments/<id>/status/   { status: 'in_transit' | 'delayed' | 'delivered', delivered_on?, quality_passed? }
  */
 export const supplyChainApi = {
   getOverview: ({ range }) => api.get('/supply-chain/overview/', clean({ range })),
   getSupplierPerformance: ({ months }) => api.get('/supply-chain/supplier-performance/', clean({ months })),
   getOptions: () => api.get('/supply-chain/options/'),
   listShipments: (params) => api.get('/supply-chain/shipments/', clean(params)),
+  createShipment: (shipment) => api.post('/supply-chain/shipments/', shipment),
+  setShipmentStatus: (id, body) => api.post(`/supply-chain/shipments/${id}/status/`, body),
 }

@@ -25,3 +25,48 @@ test('a product can be edited (not its stock) and switched off', async ({ page }
   expect(sent(calls, 'PATCH /api/inventory/items/5/')).toEqual({ product_name: 'TEST Turmeric', price_per_kg: 280, min_stock_kg: 10,
     reorder_level_kg: 30, is_active: false })
 })
+
+const SUPPLY_SHELL = {
+  'GET /api/supply-chain/overview/': {},
+  'GET /api/supply-chain/supplier-performance/': [],
+  'GET /api/supply-chain/options/': {
+    suppliers: [{ id: 3, name: 'TEST Farms' }], materials: [{ id: 4, name: 'TEST Raw Chilli' }], units: [{ value: 'kg', label: 'Kilogram (kg)' }],
+    shipment_statuses: [{ value: 'in_transit', label: 'In Transit' }],
+    purchases: [{ id: 9, purchase_number: 'TEST-PUR-1', supplier: 'TEST Farms', item: 'TEST Raw Chilli', quantity: 80, unit: 'kg' }],
+  },
+}
+
+test('a shipment is created from a purchase', async ({ page }) => {
+  await signIn(page, 'supply_chain')
+  const calls = await mockApi(page, { ...SHELL, ...SUPPLY_SHELL, 'POST /api/supply-chain/shipments/': { id: 1, shipment_number: 'TEST-SH-1' } })
+  await page.goto('/supply-chain')
+  await page.getByRole('button', { name: 'New Shipment' }).first().click()
+  const form = page.getByRole('dialog', { name: 'New Shipment' })
+  await form.getByLabel('Purchase').selectOption('9')
+  await expect(form.getByLabel(/Supplier/)).toHaveCount(0) // comes from the purchase
+  await form.getByLabel(/Destination/).fill('TEST Warehouse')
+  await form.getByLabel(/Expected arrival/).fill('2099-01-05')
+  await form.getByRole('button', { name: 'Create Shipment' }).click()
+  await expect(page.getByText('Shipment TEST-SH-1 created')).toBeVisible()
+  const body = sent(calls, 'POST /api/supply-chain/shipments/')
+  expect(body).toMatchObject({ purchase_id: '9', quantity: '', destination: 'TEST Warehouse', eta: '2099-01-05' })
+})
+
+test('a shipment is marked delivered with its quality result', async ({ page }) => {
+  await signIn(page, 'supply_chain')
+  const calls = await mockApi(page, {
+    ...SHELL,
+    ...SUPPLY_SHELL,
+    'GET /api/supply-chain/shipments/': { count: 1, results: [{ id: 1, shipment_number: 'TEST-SH-1', supplier: 'TEST Farms', item: 'TEST Raw Chilli',
+      status: 'In Transit', can_update: true }] },
+    'POST /api/supply-chain/shipments/1/status/': { id: 1, shipment_number: 'TEST-SH-1', status: 'Delivered' },
+  })
+  await page.goto('/supply-chain')
+  await page.getByRole('button', { name: 'Track Shipments' }).click()
+  await page.getByRole('button', { name: 'Mark TEST-SH-1 delivered' }).click()
+  const form = page.getByRole('dialog', { name: 'Mark TEST-SH-1 delivered' })
+  await form.getByLabel('Inward quality check').selectOption('true')
+  await form.getByRole('button', { name: 'Mark Delivered' }).click()
+  await expect(page.getByText('TEST-SH-1 marked Delivered')).toBeVisible()
+  expect(sent(calls, 'POST /api/supply-chain/shipments/1/status/')).toMatchObject({ status: 'delivered', quality_passed: 'true' })
+})

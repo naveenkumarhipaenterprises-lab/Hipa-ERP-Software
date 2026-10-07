@@ -1,4 +1,4 @@
-import { Clock, IndianRupee, Leaf, PackageCheck, ShoppingCart, Timer, Truck, Users } from 'lucide-react'
+import { Clock, IndianRupee, Leaf, PackageCheck, Plus, ShoppingCart, Timer, Truck, Users } from 'lucide-react'
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { supplyChainApi } from '../../api/supplyChainApi'
@@ -16,12 +16,17 @@ import QuickActions from '../../components/dashboard/QuickActions'
 import StatCard from '../../components/dashboard/StatCard'
 import { useApi } from '../../hooks/useApi'
 import { useAuth } from '../../hooks/useAuth'
+import { useToast } from '../../hooks/useToast'
 import { CHART_COLORS, DATE_RANGES } from '../../utils/constants'
 import { formatINR, formatNumber, formatPercent } from '../../utils/formatters'
 import AlertFeed from './components/AlertFeed'
 import { SHIPMENT_COLUMNS } from './components/shipmentColumns'
+import { NewShipmentModal } from './components/ShipmentForms'
 import ShipmentsModal from './components/ShipmentsModal'
 import SupplyFlow from './components/SupplyFlow'
+
+// Roles that may create shipments and update their status (the backend enforces the same rule)
+const SHIPMENT_MANAGERS = ['admin', 'management', 'inventory', 'supply_chain']
 
 const PERFORMANCE_MONTHS = [
   { value: '6', label: 'Last 6 Months' },
@@ -48,15 +53,17 @@ const has = (v) => v !== null && v !== undefined && v !== ''
 const amount = (v, unit) => (has(v) ? `${formatNumber(v)} ${unit ?? ''}`.trim() : '—')
 
 export default function SupplyChainPage() {
-  const { can } = useAuth()
+  const { user, can } = useAuth()
+  const toast = useToast()
   const navigate = useNavigate()
   const [range, setRange] = useState(DATE_RANGES[0].value)
   const [months, setMonths] = useState(PERFORMANCE_MONTHS[0].value)
-  const [modal, setModal] = useState(null) // 'shipments'
+  const [modal, setModal] = useState(null) // 'shipments' | 'new-shipment'
   const [refreshKey, setRefreshKey] = useState(0)
 
   // Suppliers, raw materials and purchases are managed in the Purchase module
   const canOpenPurchase = can('purchase')
+  const canManage = SHIPMENT_MANAGERS.includes(user?.role)
   const overview = useApi(() => supplyChainApi.getOverview({ range }), [range, refreshKey])
   const performance = useApi(() => supplyChainApi.getSupplierPerformance({ months }), [months, refreshKey])
   const options = useApi(() => supplyChainApi.getOptions(), [refreshKey])
@@ -74,7 +81,14 @@ export default function SupplyChainPage() {
 
   const refresh = () => setRefreshKey((k) => k + 1)
 
+  const createShipment = async (values) => {
+    const s = await supplyChainApi.createShipment(values)
+    toast.success(s?.shipment_number ? `Shipment ${s.shipment_number} created` : 'Shipment created')
+    refresh()
+  }
+
   const actions = [
+    ...(canManage ? [{ label: 'New Shipment', icon: Plus, tone: 'orange', onClick: () => setModal('new-shipment') }] : []),
     { label: 'Track Shipments', icon: Truck, tone: 'green', onClick: () => setModal('shipments') },
     ...(canOpenPurchase
       ? [
@@ -91,6 +105,11 @@ export default function SupplyChainPage() {
       <title>Supply Chain | HIPA MASALA</title>
       <PageHeader icon={Truck} title="Supply Chain" subtitle="From farm to table. Faster, smarter, stronger.">
         <DateRangeSelect value={range} onChange={setRange} />
+        {canManage && (
+          <Button icon={Plus} onClick={() => setModal('new-shipment')}>
+            New Shipment
+          </Button>
+        )}
         {canOpenPurchase && (
           <Button icon={ShoppingCart} variant="outline" onClick={() => navigate('/purchase?tab=purchases')}>
             Go to Purchases
@@ -219,7 +238,8 @@ export default function SupplyChainPage() {
         </>
       )}
 
-      <ShipmentsModal open={modal === 'shipments'} statuses={options.data?.shipment_statuses} onClose={() => setModal(null)} />
+      <ShipmentsModal open={modal === 'shipments'} statuses={options.data?.shipment_statuses} canManage={canManage} onChanged={refresh} onClose={() => setModal(null)} />
+      <NewShipmentModal open={modal === 'new-shipment'} options={options.data} onClose={() => setModal(null)} onSubmit={createShipment} />
     </div>
   )
 }

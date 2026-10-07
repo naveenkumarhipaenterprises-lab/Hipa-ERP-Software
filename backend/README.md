@@ -119,7 +119,7 @@ The exact request and response shapes are documented in the frontend's `src/api/
 | Purchase | `purchase/overview/` · `trend/` · `options/` · `recommendations/?horizon=30|15|7` · `recommendations/export/` · `suppliers/` (GET, POST) · `suppliers/<id>/` (GET, PATCH, DELETE) · `raw-materials/` (GET, POST) · `raw-materials/<id>/` (GET, PATCH, DELETE) · `material-movements/` (GET, POST) · `purchases/` (GET, POST) · `purchases/<id>/` (GET, PATCH, DELETE) · `purchases/<id>/cancel/` · `goods-receipts/` (GET, POST) · `goods-receipts/<id>/` · `returns/` (GET, POST) · `returns/<id>/` (GET, PATCH status) · `payments/` (GET, POST) · `payments/<id>/` (GET, DELETE scheduled) · `payments/<id>/mark-paid/` |
 | Marketing | `overview/` · `performance/` · `audience/` · `options/` · `campaigns/` (GET, POST) · `campaigns/<id>/end/` · `posts/` (GET, POST) |
 | Customers | `customers/` (GET, POST) · `customers/<id>/` (GET, PATCH) · `overview/` · `growth/` · `options/` · `export/` · `import/template/` · `import/` · `offers/` |
-| Supply chain | `supply-chain/overview/` · `supplier-performance/` · `options/` · `shipments/` (suppliers and purchases are in Purchase) |
+| Supply chain | `supply-chain/overview/` · `supplier-performance/` · `options/` · `shipments/` (GET, POST from an open purchase or supplier + material) · `shipments/<id>/status/` (POST: In Transit ↔ Delayed, Delivered with date and inward quality result; final) (suppliers and purchases are in Purchase) |
 | Quality | `overview/` · `trend/` · `options/` · `tests/` (GET, POST) · `standards/` · `audits/` (POST) · `report/` |
 | Finance | `overview/` · `revenue-expenses/` · `cash-flow/` · `options/` · `transactions/` (GET, POST) · `budget/` (GET, PUT) |
 | Reports | types: sales, quotations, inventory, purchase, marketing, customers, supply_chain, quality, finance, ai_business · `reports/` (GET, POST) · `overview/` · `preview/?type=&range=` · `export/?type=&range=&format=pdf|xlsx|csv` · `<id>/download/` |
@@ -158,11 +158,12 @@ Most records are entered in the portal. A few kinds are entered in the **Django 
 
 | Data | Admin section | Used by |
 |---|---|---|
-| Shipments (and marking them delivered / delayed) | Supply chain → Shipments | Shipment tracking, on-time delivery. Stock is added by the goods receipt in Purchase, not by the shipment |
 | Daily marketing numbers, top content, audience split | Marketing | Marketing overview, performance and audience charts |
 | Quality standards, certifications | Quality | Standards list, certification status |
 
 Stock always changes through movements, so product and material stock can't be edited directly: sales orders take stock out and cancellations put it back; goods receipts (GRN) add the accepted quantity of a purchase; purchase returns take stock out (and put it back if cancelled); raw-material usage is recorded under Purchase → material movements.
+
+**Shipments** are created and tracked in Supply Chain (New Shipment, Track Shipments). Marking one delivered doesn't add stock: the goods receipt in Purchase does.
 
 **Sales orders** move forward one step at a time in the portal: Pending → Processing → In Transit → Delivered (final). Pending and Processing orders can be cancelled, which puts the stock back.
 

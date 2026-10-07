@@ -1,16 +1,22 @@
 from datetime import timedelta
 from decimal import Decimal
 
+from django.db import transaction
 from django.db.models import Avg, Count, F, Q, Sum
+from django.shortcuts import get_object_or_404
+from rest_framework import status
+from rest_framework.exceptions import ValidationError
 from rest_framework.response import Response
 
 from apps.ai_assistant import insights
 from apps.core import periods
-from apps.core.metrics import kpi, label_choices, num, ratio_pct, resolve_choice
+from apps.core import parsing
+from apps.core.metrics import choices, kpi, label_choices, num, ratio_pct, resolve_choice
 from apps.core.views import ModuleAPIView
 from apps.customers.models import Customer
-from apps.purchase.models import Purchase, RawMaterial, Supplier
+from apps.purchase.models import Purchase, RawMaterial, Supplier, Unit
 from apps.sales.models import SalesOrder
+from services import audit, notifications
 
 from .models import Shipment
 from .services import monthly_usage_by_material
@@ -22,7 +28,8 @@ def shipment_row(s):
     return {"id": s.id, "shipment_number": s.shipment_number, "supplier": s.supplier.name,
             "purchase_number": s.purchase.purchase_number if s.purchase else None, "item": s.item.name,
             "quantity": num(s.quantity), "unit": s.unit, "destination": s.destination, "eta": s.eta,
-            "delivered_on": s.delivered_on, "status": s.get_status_display()}
+            "dispatched_on": s.dispatched_on, "delivered_on": s.delivered_on, "status": s.get_status_display(),
+            "quality_passed": s.quality_passed, "can_update": s.status != Sh.DELIVERED}
 
 
 def supplier_scores(supplier_ids=None, since=None):
@@ -168,6 +175,11 @@ class OptionsView(SupplyView):
             "suppliers": list(Supplier.objects.filter(status=Supplier.Status.ACTIVE).values("id", "name")),
             "materials": list(RawMaterial.objects.filter(status=RawMaterial.Status.ACTIVE).values("id", "name")),
             "shipment_statuses": label_choices(Sh),
+            "units": choices(Unit),
+            # Open purchases a shipment can be linked to (supplier, item and unit are copied from it)
+            "purchases": [{"id": p.id, "purchase_number": p.purchase_number, "supplier": p.supplier.name, "item": p.item_name,
+                           "quantity": num(p.quantity - p.received_quantity), "unit": p.unit}
+                          for p in Purchase.objects.select_related("supplier", "material", "product").filter(status__in=Purchase.OPEN)],
         })
 
 
@@ -182,3 +194,67 @@ class ShipmentsView(SupplyView):
         if st:
             qs = qs.filter(status=st)
         return self.paginated(qs, shipment_row)
+
+    def post(self, request):
+        d, errors = request.data, {}
+        purchase = parsing.record(d, "purchase_id", Purchase.objects.select_related("supplier", "material", "product")
+                                  .filter(status__in=Purchase.OPEN), errors, required=False, message="Choose an open purchase.")
+        if purchase:  # supplier, item and unit come from the purchase
+            supplier, material, product, unit = purchase.supplier, purchase.material, purchase.product, purchase.unit
+        else:
+            supplier = parsing.record(d, "supplier_id", Supplier.objects.filter(status=Supplier.Status.ACTIVE), errors,
+                                      message="Choose the supplier (or a purchase).")
+            material = parsing.record(d, "material_id", RawMaterial.objects.filter(status=RawMaterial.Status.ACTIVE), errors,
+                                      message="Choose the raw material (or a purchase).")
+            product = None
+            unit = parsing.choice(d, "unit", Unit, errors, default=Unit.KG)
+        quantity = parsing.decimal(d, "quantity", errors, places=3, positive=True,
+                                   default=(purchase.quantity - purchase.received_quantity) if purchase else None,
+                                   message="Enter the quantity shipped.")
+        destination = parsing.text(d, "destination", 120, required=True, errors=errors)
+        dispatched_on = parsing.date(d, "dispatched_on", errors, required=False, label="dispatch date") or periods.today()
+        eta = parsing.date(d, "eta", errors, label="expected arrival date")
+        if dispatched_on > periods.today():
+            errors["dispatched_on"] = ["The dispatch date can't be in the future."]
+        if eta and eta < dispatched_on:
+            errors["eta"] = ["The expected arrival can't be before the dispatch date."]
+        if errors:
+            raise ValidationError(errors)
+        s = Shipment.objects.create(supplier=supplier, purchase=purchase, material=material, product=product, quantity=quantity,
+                                    unit=unit, destination=destination, dispatched_on=dispatched_on, eta=eta)
+        audit.record(request, "Created shipment", f"{s.shipment_number} from {supplier.name}")
+        return Response(shipment_row(s), status=status.HTTP_201_CREATED)
+
+
+class ShipmentStatusView(SupplyView):
+    """
+    POST {status, delivered_on?, quality_passed?}: In Transit <-> Delayed, either -> Delivered (final).
+    Delivery doesn't add stock: that is the goods receipt in Purchase.
+    """
+
+    def post(self, request, pk):
+        d, errors = request.data, {}
+        with transaction.atomic():
+            s = get_object_or_404(Shipment.objects.select_for_update(of=("self",)).select_related("supplier"), pk=pk)
+            if s.status == Sh.DELIVERED:
+                raise ValidationError({"status": ["A delivered shipment can't change status."]})
+            new = parsing.choice(d, "status", Sh, errors, message="Choose the new status.")
+            if new and new == s.status:
+                errors["status"] = [f"The shipment is already {s.get_status_display().lower()}."]
+            if new == Sh.DELIVERED:
+                s.delivered_on = parsing.date(d, "delivered_on", errors, required=False, label="delivery date") or periods.today()
+                if s.delivered_on > periods.today():
+                    errors["delivered_on"] = ["The delivery date can't be in the future."]
+                elif s.delivered_on < s.dispatched_on:
+                    errors["delivered_on"] = ["The delivery date can't be before the dispatch date."]
+                passed = d.get("quality_passed")
+                s.quality_passed = None if passed in (None, "") else str(passed).lower() in ("true", "1", "yes")
+            if errors:
+                raise ValidationError(errors)
+            s.status = new
+            s.save()
+        audit.record(request, f"Marked shipment {s.get_status_display().lower()}", s.shipment_number)
+        if new == Sh.DELAYED:
+            notifications.notify("shipment_delays", f"Shipment {s.shipment_number} delayed",
+                                 f"{s.supplier.name}, was expected {s.eta:%d %b %Y}", type="error", link="/supply-chain")
+        return Response(shipment_row(Shipment.objects.select_related("supplier", "purchase", "material", "product").get(pk=pk)))

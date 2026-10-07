@@ -237,6 +237,41 @@ class WorkflowTests(TestCase):
         dash = self.api.get(f"{API}/dashboard/summary/").data
         self.assertEqual(dash["kpis"]["active_suppliers"]["value"], 1)
 
+    def test_create_shipment_and_update_its_status(self):
+        s = self.post("/purchase/suppliers/", {"name": "TEST Farms", "city": "Erode"})
+        m = self.post("/purchase/raw-materials/", {"name": "TEST Raw Chilli", "category": "whole_spice", "unit": "kg"})
+        p = self.post("/purchase/purchases/", {"supplier_id": s["id"], "material_id": m["id"], "quantity": 80, "unit_price": 90,
+                                               "purchase_date": today().isoformat()})
+        opts = self.api.get(f"{API}/supply-chain/options/").data
+        self.assertEqual(opts["purchases"][0]["purchase_number"], p["purchase_number"])
+        # From a purchase: supplier, item, unit and remaining quantity are copied
+        sh = self.post("/supply-chain/shipments/", {"purchase_id": p["id"], "destination": "Main warehouse",
+                                                    "eta": (today() + timedelta(days=3)).isoformat()})
+        self.assertTrue(sh["shipment_number"].startswith("SH"))
+        self.assertEqual((sh["supplier"], sh["item"], sh["quantity"], sh["unit"], sh["status"], sh["dispatched_on"]),
+                         ("TEST Farms", "TEST Raw Chilli", 80, "kg", "In Transit", today()))
+        # Without a purchase: supplier and material are required; dates are checked
+        err = self.post("/supply-chain/shipments/", {"destination": "X", "eta": (today() - timedelta(days=1)).isoformat(),
+                                                     "quantity": 5}, expected=400)
+        self.assertEqual(set(err), {"supplier_id", "material_id", "eta"})
+        manual = self.post("/supply-chain/shipments/", {"supplier_id": s["id"], "material_id": m["id"], "quantity": 5, "unit": "kg",
+                                                        "destination": "Godown 2", "eta": today().isoformat()})
+        self.assertIsNone(manual["purchase_number"])
+
+        path = f"/supply-chain/shipments/{sh['id']}/status/"
+        self.assertEqual(self.post(path, {"status": "delayed"}, expected=200)["status"], "Delayed")
+        self.assertTrue(Notification.objects.filter(key="shipment_delays").exists())
+        self.assertIn("delivered_on", self.post(path, {"status": "delivered",
+                                                       "delivered_on": (today() + timedelta(days=1)).isoformat()}, expected=400))
+        done = self.post(path, {"status": "delivered", "quality_passed": True}, expected=200)
+        self.assertEqual((done["status"], done["delivered_on"], done["quality_passed"], done["can_update"]),
+                         ("Delivered", today(), True, False))
+        self.assertIn("status", self.post(path, {"status": "in_transit"}, expected=400))  # delivered is final
+        self.assertEqual(self.api.get(f"{API}/supply-chain/supplier-performance/").data[0]["quality_pct"], 100.0)
+        # Read-only roles can't create shipments
+        res = client_for(make_user("quality")).post(f"{API}/supply-chain/shipments/", {}, format="json")
+        self.assertEqual(res.status_code, 403)
+
     @override_settings(MEDIA_ROOT=tempfile.mkdtemp(prefix="hipa-test-media-"))
     def test_purchase_report(self):
         self.purchase_received()
