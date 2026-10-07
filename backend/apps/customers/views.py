@@ -1,5 +1,6 @@
 import csv
 import io
+import logging
 from datetime import datetime, time
 
 from django.conf import settings
@@ -22,6 +23,8 @@ from services import audit
 
 from .models import Customer, CustomerOffer
 from .serializers import CustomerWriteSerializer, customer_row
+
+log = logging.getLogger(__name__)
 
 NOT_CANCELLED = ~Q(orders__status="cancelled")
 TEMPLATE_HEADER = ["name", "type", "contact_person", "phone", "email", "city", "address"]
@@ -257,11 +260,19 @@ class OfferView(CustomersModuleView):
         if not recipients:
             raise ValidationError({"segment": ["No active customers in this segment have an e-mail address."]})
 
-        with get_connection() as conn:
-            conn.send_messages([
-                EmailMessage("An offer from HIPA MASALA", message, settings.DEFAULT_FROM_EMAIL, [to], connection=conn)
-                for to in recipients
-            ])
-        CustomerOffer.objects.create(segment=segment, channel=channel, message=message, recipients=len(recipients), sent_by=request.user)
-        audit.record(request, "Sent customer offer", f"{segment} via {channel} to {len(recipients)}")
-        return Response({"queued": len(recipients)})
+        sent = 0
+        try:
+            with get_connection() as conn:
+                for to in recipients:
+                    EmailMessage("An offer from HIPA MASALA", message, settings.DEFAULT_FROM_EMAIL, [to], connection=conn).send()
+                    sent += 1
+        except Exception as exc:
+            log.exception("Could not send customer offer e-mail")
+            if sent:  # some customers did get it: keep an accurate record
+                CustomerOffer.objects.create(segment=segment, channel=channel, message=message, recipients=sent, sent_by=request.user)
+                audit.record(request, "Sent customer offer", f"{segment} via {channel} to {sent} of {len(recipients)} (e-mail failed)")
+            partly = f" to {len(recipients) - sent} of {len(recipients)} customers" if sent else ""
+            raise NotConfigured(f"The offer e-mail could not be sent{partly}. Check the e-mail settings in .env.") from exc
+        CustomerOffer.objects.create(segment=segment, channel=channel, message=message, recipients=sent, sent_by=request.user)
+        audit.record(request, "Sent customer offer", f"{segment} via {channel} to {sent}")
+        return Response({"queued": sent})

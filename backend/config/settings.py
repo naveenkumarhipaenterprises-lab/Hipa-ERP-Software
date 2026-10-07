@@ -200,6 +200,8 @@ EMAIL_PORT = int(env("EMAIL_PORT", "587"))
 EMAIL_HOST_USER = env("EMAIL_HOST_USER", "")
 EMAIL_HOST_PASSWORD = env("EMAIL_HOST_PASSWORD", "")
 EMAIL_USE_TLS = env_bool("EMAIL_USE_TLS", True)
+# Seconds to wait for the mail server, so a stuck server can't hang a request
+EMAIL_TIMEOUT = int(env("EMAIL_TIMEOUT", "20"))
 DEFAULT_FROM_EMAIL = env("DEFAULT_FROM_EMAIL", "HIPA MASALA <no-reply@localhost>")
 
 # --- AI engine: Google Gemini (optional; the AI Assistant reports "not connected" until set) ---
