@@ -60,3 +60,20 @@ test('cancelling an order asks first and keeps the dialog open if the server ref
   await dialog.getByRole('button', { name: 'Cancel Order' }).click()
   await expect(dialog.getByText('TEST: already dispatched')).toBeVisible()
 })
+
+test('an order moves to its next status after confirming', async ({ page }) => {
+  await signIn(page, 'sales')
+  const calls = await mockApi(page, {
+    ...SHELL,
+    'GET /api/sales/options/': TEST_OPTIONS,
+    'GET /api/sales/orders/': { count: 1, results: [{ id: 1, order_number: 'TEST-1', customer: 'TEST Buyer', status: 'Processing',
+      next_status: { value: 'in_transit', label: 'In Transit' } }] },
+    'POST /api/sales/orders/1/status/': { id: 1, order_number: 'TEST-1', status: 'In Transit' },
+  })
+  await page.goto('/sales?tab=orders')
+  await page.getByRole('button', { name: 'Mark TEST-1 In Transit' }).click()
+  const dialog = page.getByRole('dialog', { name: 'Mark as In Transit?' })
+  await dialog.getByRole('button', { name: 'Mark In Transit' }).click()
+  await expect(page.getByText('Order TEST-1 marked In Transit')).toBeVisible()
+  expect(calls.find((c) => c.key === 'POST /api/sales/orders/1/status/').body).toEqual({ status: 'in_transit' })
+})

@@ -120,6 +120,29 @@ class WorkflowTests(TestCase):
         self.assertEqual(self.api.get(f"{API}/sales/overview/").data["kpis"]["total_sales"]["value"], 0)
         self.assertTrue(AuditLog.objects.filter(action="Cancelled sales order").exists())
 
+    def test_sales_order_status_moves_forward_one_step_at_a_time(self):
+        p, c = self.product(), self.customer()
+        order = self.post("/sales/orders/", {"customer_id": c["id"], "product_id": p["id"], "quantity_kg": 5,
+                                             "order_date": today().isoformat()})
+        self.assertEqual(order["next_status"], {"value": "processing", "label": "Processing"})
+        path = f"/sales/orders/{order['id']}/status/"
+        self.assertIn("status", self.post(path, {"status": "delivered"}, expected=400))  # can't skip a step
+        for step, label in (("processing", "Processing"), ("in_transit", "In Transit"), ("delivered", "Delivered")):
+            order = self.post(path, {"status": step}, expected=200)
+            self.assertEqual(order["status"], label)
+        self.assertIsNone(order["next_status"])
+        self.assertFalse(order["can_cancel"])
+        self.assertIn("status", self.post(path, {"status": "processing"}, expected=400))  # delivered is final
+        self.assertEqual(Product.objects.get(pk=p["id"]).stock_kg, 95)  # stock went out with the order only
+        self.assertTrue(AuditLog.objects.filter(action="Marked sales order delivered").exists())
+        # Cancelled orders don't move; read-only roles can't move orders
+        other = self.post("/sales/orders/", {"customer_id": c["id"], "product_id": p["id"], "quantity_kg": 1,
+                                             "order_date": today().isoformat()})
+        self.post(f"/sales/orders/{other['id']}/cancel/", {}, expected=200)
+        self.post(f"/sales/orders/{other['id']}/status/", {"status": "processing"}, expected=400)
+        res = client_for(make_user("finance")).post(f"{API}/sales/orders/{order['id']}/status/", {"status": "x"}, format="json")
+        self.assertEqual(res.status_code, 403)
+
     def test_sales_order_validation(self):
         p, c = self.product(stock=5), self.customer()
         err = self.post("/sales/orders/", {"customer_id": c["id"], "product_id": p["id"], "quantity_kg": 6,

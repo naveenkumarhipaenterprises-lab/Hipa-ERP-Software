@@ -19,6 +19,7 @@ import { api, cleanParams as clean } from './client'
  *               invoice_due_days, invoice_payment_terms, invoice_terms } }   // from Settings → Tax & Billing; empty until set
  *
  * Orders     GET /sales/orders/ · GET /sales/orders/<id>/ · POST /sales/orders/ { customer_id, order_date, notes?, items[] }
+ *            POST /sales/orders/<id>/status/ { status }   (only row.next_status: orders move forward one step)
  *            POST /sales/orders/<id>/cancel/ · POST /sales/orders/<id>/convert-to-invoice/ { invoice_date?, due_date? }
  * Quotations GET/POST /sales/quotations/ ?search=&status=&customer=&range=&date_from=&date_to=
  *            GET/PATCH/DELETE /sales/quotations/<id>/ · POST /sales/quotations/<id>/status/ { status, note? }
@@ -42,6 +43,8 @@ export const salesApi = {
   listOrders: (params) => api.get('/sales/orders/', clean(params)),
   getOrder: (id) => api.get(`/sales/orders/${id}/`),
   createOrder: (order) => api.post('/sales/orders/', order),
+  // Moves the order one step forward: Pending -> Processing -> In Transit -> Delivered (row.next_status)
+  setOrderStatus: (id, status) => api.post(`/sales/orders/${id}/status/`, { status }),
   cancelOrder: (id) => api.post(`/sales/orders/${id}/cancel/`),
   orderToInvoice: (id, body = {}) => api.post(`/sales/orders/${id}/convert-to-invoice/`, body),
 

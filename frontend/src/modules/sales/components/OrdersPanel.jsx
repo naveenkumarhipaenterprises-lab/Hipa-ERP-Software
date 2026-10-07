@@ -1,4 +1,4 @@
-﻿import { Eye, ReceiptText, Search, ShoppingCart, XCircle } from 'lucide-react'
+﻿import { ArrowRightCircle, Eye, ReceiptText, Search, ShoppingCart, XCircle } from 'lucide-react'
 import { useState } from 'react'
 import { salesApi } from '../../../api/salesApi'
 import Badge from '../../../components/common/Badge'
@@ -23,7 +23,8 @@ const has = (v) => v !== null && v !== undefined && v !== ''
 
 /**
  * Orders list: server-side search, status filter and pagination (DRF { count, results }).
- * Cancelling is offered only where the backend marks the order `can_cancel`.
+ * Cancelling is offered only where the backend marks the order `can_cancel`; the status moves forward
+ * one step at a time to the backend's `next_status`.
  */
 export default function OrdersPanel({ range, product, rangeLabel, refreshKey, statuses, canManage, onChanged }) {
   const toast = useToast()
@@ -32,6 +33,7 @@ export default function OrdersPanel({ range, product, rangeLabel, refreshKey, st
   const [cancelling, setCancelling] = useState(null)
   const [invoicing, setInvoicing] = useState(null)
   const [viewing, setViewing] = useState(null)
+  const [advancing, setAdvancing] = useState(null)
   const query = useDebouncedValue(search.trim())
 
   // Any filter change sends the list back to page 1
@@ -49,6 +51,14 @@ export default function OrdersPanel({ range, product, rangeLabel, refreshKey, st
     await salesApi.cancelOrder(cancelling.id)
     toast.success(`Order ${cancelling.order_number ?? cancelling.id} cancelled`)
     // Refreshes this list and the overview figures
+    if (onChanged) onChanged()
+    else orders.reload()
+  }
+
+  const advance = async () => {
+    const next = advancing.next_status
+    await salesApi.setOrderStatus(advancing.id, next.value)
+    toast.success(`Order ${advancing.order_number ?? advancing.id} marked ${next.label}`)
     if (onChanged) onChanged()
     else orders.reload()
   }
@@ -71,6 +81,9 @@ export default function OrdersPanel({ range, product, rangeLabel, refreshKey, st
     render: (r) => (
       <span className="row-actions">
         <Button variant="ghost" size="sm" icon={Eye} onClick={() => setViewing(r)} aria-label={`View order ${r.order_number ?? r.id}`} />
+        {canManage && r.next_status && (
+          <Button variant="ghost" size="sm" icon={ArrowRightCircle} onClick={() => setAdvancing(r)} aria-label={`Mark ${r.order_number ?? r.id} ${r.next_status.label}`} />
+        )}
         {canManage && r.can_invoice === true && (
           <Button variant="ghost" size="sm" icon={ReceiptText} onClick={() => setInvoicing(r)} aria-label={`Convert ${r.order_number ?? r.id} to a sales invoice`} />
         )}
@@ -153,6 +166,15 @@ export default function OrdersPanel({ range, product, rangeLabel, refreshKey, st
         title="Convert to sales invoice?"
         message={invoicing && `A new invoice is created for ${invoicing.order_number} with the same products, prices, discounts and GST. Stock already went out with the order, so it does not change.`}
         confirmLabel="Create Invoice"
+        cancelLabel="Back"
+      />
+      <ConfirmDialog
+        open={Boolean(advancing)}
+        onClose={() => setAdvancing(null)}
+        onConfirm={advance}
+        title={advancing ? `Mark as ${advancing.next_status?.label}?` : ''}
+        message={advancing && `Order ${advancing.order_number ?? advancing.id} moves from ${advancing.status} to ${advancing.next_status?.label}. Orders only move forward${advancing.next_status?.value === 'delivered' ? '; Delivered is final' : ''}.`}
+        confirmLabel={advancing ? `Mark ${advancing.next_status?.label}` : 'Confirm'}
         cancelLabel="Back"
       />
       <OrderDetail order={viewing} onClose={() => setViewing(null)} />

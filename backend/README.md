@@ -111,7 +111,7 @@ The exact request and response shapes are documented in the frontend's `src/api/
 |---|---|
 | Auth | `POST auth/login/` (username **or** e-mail) · `POST auth/refresh/` · `GET auth/me/` · `POST auth/logout/` · `POST auth/password/forgot/` · `POST auth/password/reset/` · `POST auth/password/change/` |
 | Dashboard | `GET dashboard/summary/?range=` · `GET dashboard/sales-trend/?period=` |
-| Sales | `overview/` · `trend/` · `options/` · `orders/` (GET, POST with `items[]` or single product) · `orders/<id>/` · `orders/<id>/cancel/` · `orders/<id>/convert-to-invoice/` |
+| Sales | `overview/` · `trend/` · `options/` · `orders/` (GET, POST with `items[]` or single product) · `orders/<id>/` · `orders/<id>/status/` (POST, next step only) · `orders/<id>/cancel/` · `orders/<id>/convert-to-invoice/` |
 | Sales quotations | `sales/quotations/` (GET, POST) · `quotations/<id>/` (GET, PATCH, DELETE draft) · `quotations/<id>/status/` (POST) · `quotations/<id>/pdf/` (`?download=1` to download) · `quotations/<id>/convert-to-order/` · `quotations/<id>/convert-to-invoice/` |
 | Sales invoices | `sales/invoices/` (GET, POST direct or `sales_order_id`) · `invoices/<id>/` (GET, PATCH) · `invoices/<id>/cancel/` · `invoices/<id>/pdf/` |
 | Sales payments / returns | `sales/payments/` (GET, POST) · `payments/<id>/cancel/` · `sales/returns/` (GET, POST) · `returns/<id>/` (PATCH status) |
@@ -159,11 +159,12 @@ Most records are entered in the portal. A few kinds are entered in the **Django 
 | Data | Admin section | Used by |
 |---|---|---|
 | Shipments (and marking them delivered / delayed) | Supply chain → Shipments | Shipment tracking, on-time delivery. Stock is added by the goods receipt in Purchase, not by the shipment |
-| Sales order delivery status | Sales → Sales orders | Order status (cancelling is done in the portal so stock is returned) |
 | Daily marketing numbers, top content, audience split | Marketing | Marketing overview, performance and audience charts |
 | Quality standards, certifications | Quality | Standards list, certification status |
 
 Stock always changes through movements, so product and material stock can't be edited directly: sales orders take stock out and cancellations put it back; goods receipts (GRN) add the accepted quantity of a purchase; purchase returns take stock out (and put it back if cancelled); raw-material usage is recorded under Purchase → material movements.
+
+**Sales orders** move forward one step at a time in the portal: Pending → Processing → In Transit → Delivered (final). Pending and Processing orders can be cancelled, which puts the stock back.
 
 **Sales documents:** Customer → Quotation (Draft → Sent → Accepted / Rejected; Expired automatically after its valid-until date, daily and whenever quotations are listed) → Sales Order → Sales Invoice → Payment. Converting a quotation creates a new order or invoice with its own number and copies the customer and lines (price, discount, GST); a quotation converts once. Stock: an order takes stock out; an invoice made from an order does not move stock again; an invoice made without an order takes stock out (and puts it back if cancelled); a sales return marked "restock" puts goods back. Line totals: subtotal − discount + GST; sales figures in reports and analytics are net of GST. Quotation and invoice PDFs use company details from Settings → Company Profile and Tax & Billing, the original logo (`assets/hipa-logo.png`) and Noto Sans (`assets/fonts`, SIL Open Font License) so ₹ prints.
 

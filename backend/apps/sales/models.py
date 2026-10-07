@@ -177,6 +177,8 @@ class SalesOrder(DocumentTotals):
         CANCELLED = "cancelled", "Cancelled"
 
     CANCELLABLE = (Status.PENDING, Status.PROCESSING)
+    # Orders only move forward, one step at a time; Delivered is final (cancelling is separate)
+    NEXT_STATUS = {Status.PENDING: Status.PROCESSING, Status.PROCESSING: Status.IN_TRANSIT, Status.IN_TRANSIT: Status.DELIVERED}
     TOTAL_FIELD = "total_amount"
 
     order_number = models.CharField(max_length=20, unique=True, editable=False)

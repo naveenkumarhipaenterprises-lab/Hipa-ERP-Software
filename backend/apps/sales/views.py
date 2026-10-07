@@ -46,6 +46,7 @@ def order_row(o):
         "invoice_number": invoice.invoice_number if invoice else None,
         "can_cancel": o.status in SalesOrder.CANCELLABLE and invoice is None,
         "can_invoice": o.status != St.CANCELLED and invoice is None,
+        "next_status": ({"value": nxt, "label": St(nxt).label} if (nxt := SalesOrder.NEXT_STATUS.get(o.status)) else None),
     }
 
 
@@ -255,6 +256,23 @@ class OrderToInvoiceView(SalesView):
         invoice = services.order_to_invoice(order, request.user, invoice_date=invoice_date, due_date=due_date)
         audit.record(request, "Created sales invoice", f"{invoice.invoice_number} from {order.order_number}")
         return Response(invoice_detail(invoice.pk, True), status=status.HTTP_201_CREATED)
+
+
+class OrderStatusView(SalesView):
+    """POST {status}: moves the order one step forward (Pending → Processing → In Transit → Delivered)."""
+
+    def post(self, request, pk):
+        with transaction.atomic():
+            order = get_object_or_404(SalesOrder.objects.select_for_update(of=("self",)), pk=pk)
+            nxt = SalesOrder.NEXT_STATUS.get(order.status)
+            if not nxt:
+                raise ValidationError({"status": [f"A {order.get_status_display().lower()} order can't change status."]})
+            if request.data.get("status") != nxt:
+                raise ValidationError({"status": [f"This order can only move on to {St(nxt).label}."]})
+            order.status = nxt
+            order.save(update_fields=["status", "updated_at"])
+        audit.record(request, f"Marked sales order {St(nxt).label.lower()}", order.order_number)
+        return Response(order_row(orders_qs().get(pk=pk)))
 
 
 class CancelOrderView(SalesView):
