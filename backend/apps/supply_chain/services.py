@@ -1,5 +1,4 @@
 from datetime import timedelta
-from decimal import Decimal
 
 from django.db.models import Sum
 
@@ -16,7 +15,8 @@ def record_delivery(shipment):
         shipment.save(update_fields=["delivered_on"])
 
 
-def monthly_usage(material, days=30):
+def monthly_usage_by_material(days=30):
+    """{material_id: quantity used in the last `days`} for every material, in one query."""
     since = today() - timedelta(days=days)
-    return (material.movements.filter(type=MaterialMovement.Type.OUT, source=MaterialMovement.Source.USAGE, date__gt=since)
-            .aggregate(q=Sum("quantity"))["q"] or Decimal("0"))
+    return dict(MaterialMovement.objects.filter(type=MaterialMovement.Type.OUT, source=MaterialMovement.Source.USAGE, date__gt=since)
+                .values("material_id").annotate(q=Sum("quantity")).order_by().values_list("material_id", "q"))

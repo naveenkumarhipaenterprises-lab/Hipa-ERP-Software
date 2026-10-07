@@ -1,6 +1,8 @@
+import hashlib
 from datetime import timedelta
 from decimal import Decimal
 
+from django.core.cache import cache
 from django.db import transaction
 from django.db.models import Count, DecimalField, ExpressionWrapper, F, Min, Q, Sum
 from django.shortcuts import get_object_or_404
@@ -304,8 +306,43 @@ class OptionsView(PurchaseView):
 HORIZONS = ["30", "15", "7"]
 
 
+RECOMMENDATION_CACHE_SECONDS = 6 * 3600
+
+
+def recommendation_inputs_fingerprint():
+    """
+    One cheap query summing up everything the recommendations are computed from (row counts and the latest
+    change in each source table). Any new or edited purchase, receipt, usage, product or sale changes it.
+    """
+    from django.db import connection
+
+    from apps.inventory.models import Product
+    from apps.sales.models import SalesOrder, SalesOrderItem
+
+    q = connection.ops.quote_name
+    sources = [(Purchase, "updated_at"), (GoodsReceipt, "id"), (MaterialMovement, "id"), (RawMaterial, "updated_at"),
+               (Supplier, "updated_at"), (Product, "updated_at"), (SalesOrder, "updated_at"), (SalesOrderItem, "id")]
+    parts = []
+    for model, column in sources:
+        table = q(model._meta.db_table)
+        parts += [f"(SELECT COUNT(*) FROM {table})", f"(SELECT MAX({q(column)}) FROM {table})"]
+    with connection.cursor() as cursor:
+        cursor.execute("SELECT " + ", ".join(parts))
+        row = cursor.fetchone()
+    return hashlib.sha1(repr((periods.today(), row)).encode()).hexdigest()
+
+
 def recommendations(horizon):
-    return load_analytics("ml.purchasing", "recommend")(horizon)
+    """
+    The analysis takes many queries per item, so results are cached and reused until the underlying data
+    changes (see recommendation_inputs_fingerprint) or the day changes.
+    """
+    key = f"purchase-recommendations:{horizon}:{recommendation_inputs_fingerprint()}"
+    data = cache.get(key)
+    if data is None:
+        data = load_analytics("ml.purchasing", "recommend")(horizon)
+        cache.set(key, data, RECOMMENDATION_CACHE_SECONDS)
+    return data
 
 
 class RecommendationsView(PurchaseView):

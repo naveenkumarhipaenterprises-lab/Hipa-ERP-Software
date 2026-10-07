@@ -61,15 +61,16 @@ class OverviewView(SalesView):
     def get(self, request):
         cur, prev = periods.resolve(self.param("range"))
         product = self.int_param("product")
-        now, before = selectors.totals(cur.start, cur.end, product), selectors.totals(prev.start, prev.end, product)
-        new_now = Customer.objects.filter(created_at__range=periods.moments(cur.start, cur.end)).count()
-        new_before = Customer.objects.filter(created_at__range=periods.moments(prev.start, prev.end)).count()
+        now, before = selectors.totals_pair(cur, prev, product)
+        new = Customer.objects.aggregate(now=Count("id", filter=Q(created_at__range=periods.moments(cur.start, cur.end))),
+                                         before=Count("id", filter=Q(created_at__range=periods.moments(prev.start, prev.end))))
+        new_now, new_before = new["now"], new["before"]
 
         rows = list(selectors.by_product(cur.start, cur.end))
         if product:
             rows = [r for r in rows if r["product_id"] == product]
         prev_sales = {r["product_id"]: r["sales"] for r in selectors.by_product(prev.start, prev.end)}
-        months = periods.last_n_months(6)
+        trends = selectors.monthly_sales_by_product(periods.last_n_months(6), [r["product_id"] for r in rows])
         products = [{
             "id": r["product_id"],
             "product": r["product__name"],
@@ -78,7 +79,7 @@ class OverviewView(SalesView):
             "orders": r["orders"],
             "avg_price": num((r["sales"] / r["kg"]).quantize(Decimal("0.01"))) if r["kg"] else None,
             "growth": pct_change(r["sales"], prev_sales.get(r["product_id"])),
-            "trend": [num(v) for _l, v in selectors.monthly_sales(months, r["product_id"])],
+            "trend": [num(v) for v in trends[r["product_id"]]],
         } for r in rows]
 
         order_qs = selectors.orders(cur.start, cur.end, product)
@@ -110,13 +111,15 @@ def quotation_summary(period):
     """Quotations dated in the period: count, value and how many sit in each status now."""
     services.expire_quotations()
     qs = SalesQuotation.objects.filter(quotation_date__range=(period.start, period.end))
-    counts = dict(qs.values_list("status").annotate(n=Count("id")))
+    # One query: count and value per status
+    by_status = {r["status"]: r for r in qs.values("status").annotate(n=Count("id"), v=Sum("grand_total")).order_by()}
+    counts = {s: r["n"] for s, r in by_status.items()}
     total = sum(counts.values())
     decided = sum(counts.get(s, 0) for s in ("accepted", "rejected", "converted"))
     return {
-        "count": total, "value": num(qs.aggregate(v=Sum("grand_total"))["v"] or 0),
+        "count": total, "value": num(sum((r["v"] or 0 for r in by_status.values()), Decimal("0"))),
         **{s: counts.get(s, 0) for s in ("draft", "sent", "accepted", "rejected", "expired", "converted")},
-        "converted_value": num(qs.filter(status="converted").aggregate(v=Sum("grand_total"))["v"] or 0),
+        "converted_value": num((by_status.get("converted") or {}).get("v") or 0),
         "conversion_rate_pct": round(counts.get("converted", 0) / decided * 100, 1) if decided else None,
     }
 

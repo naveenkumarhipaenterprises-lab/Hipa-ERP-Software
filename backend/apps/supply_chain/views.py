@@ -1,4 +1,5 @@
 from datetime import timedelta
+from decimal import Decimal
 
 from django.db.models import Avg, Count, F, Q, Sum
 from rest_framework.response import Response
@@ -12,7 +13,7 @@ from apps.purchase.models import Purchase, RawMaterial, Supplier
 from apps.sales.models import SalesOrder
 
 from .models import Shipment
-from .services import monthly_usage
+from .services import monthly_usage_by_material
 
 Sh = Shipment.Status
 
@@ -79,17 +80,24 @@ class OverviewView(SupplyView):
         cur, prev = periods.resolve(self.param("range"))
         t = periods.today()
         live = Purchase.objects.exclude(status=Purchase.Status.CANCELLED)
+        # The database is remote: each figure group below is one query instead of one per period / material
+        cost = live.aggregate(now=Sum("total_amount", filter=Q(purchase_date__range=(cur.start, cur.end))),
+                              before=Sum("total_amount", filter=Q(purchase_date__range=(prev.start, prev.end))),
+                              pending=Count("id", filter=Q(status__in=Purchase.OPEN)))
 
-        def procurement(p):
-            return live.filter(purchase_date__range=(p.start, p.end)).aggregate(v=Sum("total_amount"))["v"] or 0
+        def delivered(p, *extra):
+            return Count("id", filter=Q(status=Sh.DELIVERED, delivered_on__range=(p.start, p.end), *extra))
 
-        def on_time(p):
-            d = Shipment.objects.filter(status=Sh.DELIVERED, delivered_on__range=(p.start, p.end))
-            return ratio_pct(d.filter(delivered_on__lte=F("eta")).count(), d.count())
+        ships = Shipment.objects.aggregate(
+            d1=delivered(cur), ok1=delivered(cur, Q(delivered_on__lte=F("eta"))),
+            d2=delivered(prev), ok2=delivered(prev, Q(delivered_on__lte=F("eta"))),
+            in_transit=Count("id", filter=Q(status=Sh.IN_TRANSIT)), delayed=Count("id", filter=Q(status=Sh.DELAYED)),
+            active=Count("id", filter=~Q(status=Sh.DELIVERED)))
+        usage_by_material = monthly_usage_by_material()
 
         raw = []
         for m in RawMaterial.objects.filter(status=RawMaterial.Status.ACTIVE):
-            usage = monthly_usage(m)
+            usage = usage_by_material.get(m.id, Decimal("0"))
             days_left = round(float(m.current_stock) / (float(usage) / 30), 1) if usage > 0 else None
             raw.append({"id": m.id, "material": m.name, "current_stock": num(m.current_stock), "unit": m.unit,
                         "monthly_usage": num(usage), "days_left": days_left,
@@ -110,35 +118,29 @@ class OverviewView(SupplyView):
             alerts.append({"id": f"purchase-{p.id}", "type": "warning", "title": f"{p.purchase_number} is overdue",
                            "detail": f"{p.item_name} from {p.supplier.name}, expected {p.expected_receipt_date:%d %b %Y}"})
 
-        pending = live.filter(status__in=Purchase.OPEN)
         suppliers = Supplier.objects.filter(status=Supplier.Status.ACTIVE).count()
-        has_flow = any([suppliers, pending.exists(), RawMaterial.objects.exists(), Customer.objects.exists()])
+        customers = Customer.objects.aggregate(any=Count("id"), active=Count("id", filter=Q(status=Customer.Status.ACTIVE)))
+        has_flow = any([suppliers, cost["pending"], RawMaterial.objects.exists(), customers["any"]])
         flow = [
             {"stage": "farmers", "label": "Suppliers", "count": suppliers, "detail": "Active suppliers"},
-            {"stage": "procurement", "label": "Procurement", "count": pending.count(), "detail": "Purchases awaiting receipt"},
-            {"stage": "warehouse", "label": "Warehouse", "count": RawMaterial.objects.filter(status=RawMaterial.Status.ACTIVE,
-                                                                                               current_stock__gt=0).count(),
+            {"stage": "procurement", "label": "Procurement", "count": cost["pending"], "detail": "Purchases awaiting receipt"},
+            {"stage": "warehouse", "label": "Warehouse", "count": sum(1 for r in raw if (r["current_stock"] or 0) > 0),
              "detail": "Materials in stock"},
             {"stage": "distribution", "label": "Distribution", "count": SalesOrder.objects.filter(status=SalesOrder.Status.IN_TRANSIT).count(),
              "detail": "Orders in transit"},
-            {"stage": "customers", "label": "Customers", "count": Customer.objects.filter(status=Customer.Status.ACTIVE).count(),
-             "detail": "Active customers"},
+            {"stage": "customers", "label": "Customers", "count": customers["active"], "detail": "Active customers"},
         ] if has_flow else []
 
         return Response({
             "kpis": {
                 "total_suppliers": kpi(suppliers, compare=False),
-                "active_shipments": kpi(Shipment.objects.exclude(status=Sh.DELIVERED).count(), compare=False),
-                "on_time_delivery_pct": kpi(on_time(cur), on_time(prev)),
-                "procurement_cost": kpi(procurement(cur), procurement(prev)),
-                "pending_purchases": kpi(pending.count(), compare=False),
+                "active_shipments": kpi(ships["active"], compare=False),
+                "on_time_delivery_pct": kpi(ratio_pct(ships["ok1"], ships["d1"]), ratio_pct(ships["ok2"], ships["d2"])),
+                "procurement_cost": kpi(cost["now"] or 0, cost["before"] or 0),
+                "pending_purchases": kpi(cost["pending"], compare=False),
             },
             "flow": flow,
-            "shipment_summary": {
-                "in_transit": Shipment.objects.filter(status=Sh.IN_TRANSIT).count(),
-                "delivered": Shipment.objects.filter(status=Sh.DELIVERED, delivered_on__range=(cur.start, cur.end)).count(),
-                "delayed": Shipment.objects.filter(status=Sh.DELAYED).count(),
-            },
+            "shipment_summary": {"in_transit": ships["in_transit"], "delivered": ships["d1"], "delayed": ships["delayed"]},
             "raw_materials": raw,
             "recent_shipments": [shipment_row(s) for s in Shipment.objects.select_related(
                 "supplier", "purchase", "material", "product")[:6]],
