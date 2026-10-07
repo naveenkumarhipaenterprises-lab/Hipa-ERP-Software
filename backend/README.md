@@ -120,7 +120,7 @@ The exact request and response shapes are documented in the frontend's `src/api/
 | Marketing | `overview/` · `performance/` · `audience/` · `options/` · `campaigns/` (GET, POST) · `campaigns/<id>/end/` · `posts/` (GET, POST) |
 | Customers | `customers/` (GET, POST) · `customers/<id>/` (GET, PATCH) · `overview/` · `growth/` · `options/` · `export/` · `import/template/` · `import/` · `offers/` |
 | Supply chain | `supply-chain/overview/` · `supplier-performance/` · `options/` · `shipments/` (GET, POST from an open purchase or supplier + material) · `shipments/<id>/status/` (POST: In Transit ↔ Delayed, Delivered with date and inward quality result; final) (suppliers and purchases are in Purchase) |
-| Quality | `overview/` · `trend/` · `options/` · `tests/` (GET, POST) · `standards/` · `audits/` (POST) · `report/` |
+| Quality | `overview/` · `trend/` · `options/` · `tests/` (GET, POST) · `standards/` · `audits/` (GET `?status=`, POST) · `audits/<id>/status/` (POST: completed with findings, from the audit date; or cancelled) · `report/` |
 | Finance | `overview/` · `revenue-expenses/` · `cash-flow/` · `options/` · `transactions/` (GET, POST) · `budget/` (GET, PUT) |
 | Reports | types: sales, quotations, inventory, purchase, marketing, customers, supply_chain, quality, finance, ai_business · `reports/` (GET, POST) · `overview/` · `preview/?type=&range=` · `export/?type=&range=&format=pdf|xlsx|csv` · `<id>/download/` |
 | AI assistant | `ai/status/` · `ai/home/` · `ai/chat/` · `ai/conversations/<id>/` |

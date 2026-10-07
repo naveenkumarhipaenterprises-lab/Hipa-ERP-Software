@@ -70,3 +70,26 @@ test('a shipment is marked delivered with its quality result', async ({ page }) 
   await expect(page.getByText('TEST-SH-1 marked Delivered')).toBeVisible()
   expect(sent(calls, 'POST /api/supply-chain/shipments/1/status/')).toMatchObject({ status: 'delivered', quality_passed: 'true' })
 })
+
+test('a scheduled audit is completed with its findings', async ({ page }) => {
+  await signIn(page, 'quality')
+  const calls = await mockApi(page, {
+    ...SHELL,
+    'GET /api/quality/overview/': {},
+    'GET /api/quality/trend/': [],
+    'GET /api/quality/options/': { audit_statuses: [{ value: 'scheduled', label: 'Scheduled' }], results: [], audit_types: [] },
+    'GET /api/quality/tests/': { count: 0, results: [] },
+    'GET /api/quality/audits/': { count: 1, results: [{ id: 2, audit_type: 'TEST FSSAI Inspection', date: '2026-10-07', auditor: 'TEST Inspector',
+      status: 'Scheduled', findings: null, can_update: true }] },
+    'POST /api/quality/audits/2/status/': { id: 2, status: 'Completed' },
+  })
+  await page.goto('/quality')
+  await page.getByRole('button', { name: /^Complete TEST FSSAI Inspection/ }).click()
+  const form = page.getByRole('dialog', { name: 'Complete TEST FSSAI Inspection' })
+  await form.getByRole('button', { name: 'Mark Completed' }).click()
+  await expect(form.getByText(/required/i)).toBeVisible() // findings are required
+  await form.getByLabel(/Findings/).fill('TEST: all labels compliant')
+  await form.getByRole('button', { name: 'Mark Completed' }).click()
+  await expect(page.getByText(/TEST FSSAI Inspection on .* completed/)).toBeVisible()
+  expect(sent(calls, 'POST /api/quality/audits/2/status/')).toEqual({ status: 'completed', findings: 'TEST: all labels compliant' })
+})

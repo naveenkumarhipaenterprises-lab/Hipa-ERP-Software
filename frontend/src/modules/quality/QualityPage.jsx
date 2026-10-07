@@ -17,6 +17,7 @@ import { useToast } from '../../hooks/useToast'
 import { CHART_COLORS, DATE_RANGES } from '../../utils/constants'
 import { formatDate, formatNumber, formatPercent } from '../../utils/formatters'
 import AuditModal from './components/AuditModal'
+import AuditsTable from './components/AuditsTable'
 import Certifications from './components/Certifications'
 import LabProcess from './components/LabProcess'
 import QualityTestsTable from './components/QualityTestsTable'
@@ -87,6 +88,7 @@ export default function QualityPage() {
   const scheduleAudit = async (values) => {
     await qualityApi.scheduleAudit(values)
     toast.success(`Audit scheduled for ${formatDate(values.date)}`)
+    refresh()
   }
 
   const actions = [
@@ -194,6 +196,8 @@ export default function QualityPage() {
           </Card>
         </div>
       )}
+
+      {!failed && <AuditsTable refreshKey={refreshKey} statuses={options.data?.audit_statuses} canManage={canManage} />}
 
       {!failed && (
         <div className="dash-row">

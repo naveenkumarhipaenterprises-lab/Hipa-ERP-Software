@@ -213,6 +213,30 @@ class WorkflowTests(TestCase):
         err = self.post("/quality/tests/", {"test_date": today().isoformat(), "result": "pass", "parameters": "TEST"}, expected=400)
         self.assertIn("material_id", err)
 
+    def test_quality_audits_are_listed_completed_and_cancelled(self):
+        from apps.quality.models import QualityAudit
+
+        today_audit = self.post("/quality/audits/", {"audit_type": "fssai", "date": today().isoformat(), "auditor": "TEST Inspector"})
+        later = self.post("/quality/audits/", {"audit_type": "internal", "date": (today() + timedelta(days=10)).isoformat()})
+        self.assertEqual((today_audit["audit_type"], today_audit["status"], today_audit["can_update"]), ("FSSAI Inspection", "Scheduled", True))
+        self.assertEqual(self.api.get(f"{API}/quality/audits/?status=scheduled").data["count"], 2)
+
+        done = f"/quality/audits/{today_audit['id']}/status/"
+        self.assertIn("findings", self.post(done, {"status": "completed"}, expected=400))
+        res = self.post(done, {"status": "completed", "findings": "TEST: storage area clean, labels compliant"}, expected=200)
+        self.assertEqual((res["status"], res["findings"], res["can_update"]), ("Completed", "TEST: storage area clean, labels compliant", False))
+        self.assertIn("status", self.post(done, {"status": "cancelled"}, expected=400))  # completed is final
+        self.assertTrue(AuditLog.objects.filter(action="Completed quality audit").exists())
+
+        # A future audit can't be completed yet, but can be cancelled
+        self.assertIn("status", self.post(f"/quality/audits/{later['id']}/status/", {"status": "completed", "findings": "x"}, expected=400))
+        self.assertEqual(self.post(f"/quality/audits/{later['id']}/status/", {"status": "cancelled"}, expected=200)["status"], "Cancelled")
+        self.assertEqual(QualityAudit.objects.get(pk=later["id"]).status, "cancelled")
+        self.assertEqual(self.api.get(f"{API}/quality/audits/?status=completed").data["results"][0]["id"], today_audit["id"])
+        self.assertEqual(self.api.get(f"{API}/dashboard/summary/").data["upcoming"], [])  # neither is scheduled any more
+        res = client_for(make_user("purchase")).post(f"{API}{done}", {"status": "cancelled"}, format="json")
+        self.assertEqual(res.status_code, 403)
+
     # --- Supply chain ------------------------------------------------------------------
     def test_supply_chain_uses_purchases_and_shipments(self):
         s, m, p, _grn = self.purchase_received()

@@ -21,7 +21,9 @@ import { api, cleanParams as clean } from './client'
  *      { count, results: [{ id, batch_number, product, item_type, goods_receipt_id, grn_number, test_date, parameters, result, status, notes? }] }
  * POST /quality/tests/      { goods_receipt_id | product_id | material_id, batch_number?, test_date, result, parameters, notes? }
  * GET  /quality/standards/  ->  [{ id, parameter, limit, applies_to? }]
+ * GET  /quality/audits/?page=&page_size=&status=   ->  { count, results: [{ id, audit_type, date, auditor, status, findings, can_update }] }
  * POST /quality/audits/     { audit_type, date, auditor? }
+ * POST /quality/audits/<id>/status/   { status: 'completed', findings } | { status: 'cancelled' }   (scheduled audits only)
  * GET  /quality/report/?range=   ->  CSV file
  */
 export const qualityApi = {
@@ -32,5 +34,7 @@ export const qualityApi = {
   createTest: (test) => api.post('/quality/tests/', test),
   getStandards: () => api.get('/quality/standards/'),
   scheduleAudit: (audit) => api.post('/quality/audits/', audit),
+  listAudits: (params) => api.get('/quality/audits/', clean(params)),
+  setAuditStatus: (id, body) => api.post(`/quality/audits/${id}/status/`, body),
   downloadReport: ({ range }) => api.download('/quality/report/', clean({ range }), 'hipa-quality-report.csv'),
 }

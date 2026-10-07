@@ -3,6 +3,7 @@ from datetime import timedelta
 from django.db import transaction
 from django.db.models import Count, Q
 from django.db.models.functions import Coalesce
+from django.shortcuts import get_object_or_404
 from django.utils.dateparse import parse_date
 from rest_framework import status
 from rest_framework.exceptions import ValidationError
@@ -11,7 +12,7 @@ from rest_framework.response import Response
 from apps.ai_assistant import insights
 from apps.core import parsing, periods
 from apps.core.files import csv_response
-from apps.core.metrics import choices, kpi, ratio_pct, resolve_choice
+from apps.core.metrics import choices, kpi, label_choices, ratio_pct, resolve_choice
 from apps.core.views import ModuleAPIView
 from apps.inventory.models import Product
 from apps.purchase.models import GoodsReceipt, RawMaterial
@@ -117,6 +118,7 @@ class OptionsView(QualityView):
             "materials": list(RawMaterial.objects.filter(status=RawMaterial.Status.ACTIVE).values("id", "name")),
             "results": choices(R),
             "audit_types": choices(QualityAudit.AuditType),
+            "audit_statuses": label_choices(QualityAudit.Status),
         })
 
 
@@ -196,7 +198,20 @@ class StandardsView(QualityView):
         ])
 
 
+def audit_row(a):
+    return {"id": a.id, "audit_type": a.get_audit_type_display(), "date": a.date, "auditor": a.auditor or None,
+            "status": a.get_status_display(), "findings": a.findings or None,
+            "can_update": a.status == QualityAudit.Status.SCHEDULED}
+
+
 class AuditsView(QualityView):
+    def get(self, request):
+        qs = QualityAudit.objects.order_by("-date", "-id")
+        st = resolve_choice(QualityAudit.Status, self.param("status"), "status")
+        if st:
+            qs = qs.filter(status=st)
+        return self.paginated(qs, audit_row)
+
     def post(self, request):
         d = request.data
         errors = {}
@@ -216,8 +231,36 @@ class AuditsView(QualityView):
         a = QualityAudit.objects.create(audit_type=audit_type, date=day, auditor=str(d.get("auditor") or "").strip()[:120],
                                         created_by=request.user)
         audit.record(request, "Scheduled quality audit", f"{a.get_audit_type_display()} on {day:%d %b %Y}")
-        return Response({"id": a.id, "audit_type": a.audit_type, "date": a.date, "auditor": a.auditor or None,
-                         "status": a.get_status_display()}, status=status.HTTP_201_CREATED)
+        return Response(audit_row(a), status=status.HTTP_201_CREATED)
+
+
+class AuditStatusView(QualityView):
+    """POST {status: completed, findings} or {status: cancelled}. Only scheduled audits change."""
+
+    def post(self, request, pk):
+        AS = QualityAudit.Status
+        d, errors = request.data, {}
+        with transaction.atomic():
+            a = get_object_or_404(QualityAudit.objects.select_for_update(), pk=pk)
+            if a.status != AS.SCHEDULED:
+                raise ValidationError({"status": [f"A {a.get_status_display().lower()} audit can't be changed."]})
+            new = parsing.choice(d, "status", AS, errors, message="Choose Completed or Cancelled.")
+            if new == AS.SCHEDULED:
+                errors["status"] = ["Choose Completed or Cancelled."]
+            findings = parsing.text(d, "findings", 5000)
+            if new == AS.COMPLETED:
+                if not findings:
+                    errors["findings"] = ["Write the audit findings."]
+                if a.date > periods.today():
+                    errors["status"] = [f"This audit is on {a.date:%d %b %Y}; it can be completed from that day."]
+            if errors:
+                raise ValidationError(errors)
+            a.status = new
+            if findings:
+                a.findings = findings
+            a.save(update_fields=["status", "findings"])
+        audit.record(request, f"{a.get_status_display()} quality audit", f"{a.get_audit_type_display()} on {a.date:%d %b %Y}")
+        return Response(audit_row(a))
 
 
 class ReportView(QualityView):
