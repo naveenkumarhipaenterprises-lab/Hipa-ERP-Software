@@ -168,7 +168,7 @@ def marketing(p):
 
 def customers(p):
     in_range = Q(orders__order_date__range=(p.start, p.end)) & ~Q(orders__status=SalesOrder.Status.CANCELLED)
-    buyers = (Customer.objects.annotate(amount=Sum("orders__total_amount", filter=in_range), n=Count("orders", filter=in_range, distinct=True))
+    buyers = (Customer.objects.annotate(amount=selectors.customer_sales(in_range), n=Count("orders", filter=in_range, distinct=True))
               .filter(amount__gt=0).order_by("-amount"))
     return {
         "title": f"Customer Report — {p.label}",

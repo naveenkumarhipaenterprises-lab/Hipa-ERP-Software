@@ -364,12 +364,17 @@ def create_return(invoice, *, product, quantity_kg, return_date, reason, amount,
         raise ValidationError({"product_id": [f"{product.name} is not on {inv.invoice_number}."]})
     if return_date < inv.invoice_date:
         raise ValidationError({"return_date": ["The return date can't be before the invoice date."]})
-    returned = (inv.returns.filter(product=product).exclude(status=SalesReturn.Status.CANCELLED)
-                .aggregate(q=Sum("quantity_kg"))["q"] or ZERO)
+    earlier = (inv.returns.filter(product=product).exclude(status=SalesReturn.Status.CANCELLED)
+               .aggregate(q=Sum("quantity_kg"), a=Sum("amount")))
+    returned = earlier["q"] or ZERO
     if quantity_kg > line.quantity_kg - returned:
         raise ValidationError({"quantity_kg": [f"Only {kg(line.quantity_kg - returned)} of {product.name} can still be returned."]})
-    if amount is None:  # credit at the invoiced price, after discount, with GST
-        amount = (line.total / line.quantity_kg * quantity_kg).quantize(Decimal("0.01"))
+    creditable = max(line.total - (earlier["a"] or ZERO), ZERO)
+    if amount is None:  # credit at the invoiced price, after discount, with GST (rounding never goes past the line)
+        amount = min((line.total / line.quantity_kg * quantity_kg).quantize(Decimal("0.01")), creditable)
+    elif amount > creditable:
+        raise ValidationError({"amount": [f"The credit can't be more than ₹{creditable:,.2f}, what is left of {product.name} "
+                                          f"on {inv.invoice_number}."]})
     ret = SalesReturn.objects.create(invoice=inv, customer=inv.customer, product=product, quantity_kg=quantity_kg, return_date=return_date,
                                      reason=reason, amount=amount, restock=restock, remarks=remarks, created_by=user)
     if restock:

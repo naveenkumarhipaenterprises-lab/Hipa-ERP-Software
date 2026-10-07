@@ -97,7 +97,10 @@ class AudienceView(MarketingView):
         for seg in qs:
             if seg.as_of == latest.get(seg.platform):
                 totals[seg.name] = totals.get(seg.name, Decimal("0")) + seg.value
-        return Response([{"name": name, "value": num(value)} for name, value in sorted(totals.items())])
+        # Each platform reports percentages of its own audience: with several platforms, average them
+        # (adding them up would go past 100%)
+        n = len(latest) or 1
+        return Response([{"name": name, "value": num((value / n).quantize(Decimal("0.01")))} for name, value in sorted(totals.items())])
 
 
 class OptionsView(MarketingView):

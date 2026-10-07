@@ -228,6 +228,40 @@ class SalesDocumentTests(TestCase):
         self.sales("patch", f"/returns/{ret['id']}/", {"status": "cancelled"})
         self.sales("patch", f"/returns/{ret['id']}/", {"status": "completed"}, 400)
 
+    def test_return_credit_cannot_exceed_the_invoice_line(self):
+        inv = self.sales("post", "/invoices/", {"customer_id": self.customer["id"],
+                                                "items": [{"product_id": self.chilli.id, "quantity_kg": 3}]}, 201)  # 3 x 300 = 900
+        err = self.sales("post", "/returns/", {"invoice_id": inv["id"], "product_id": self.chilli.id, "quantity_kg": 1,
+                                               "reason": "quality", "amount": 1000}, 400)
+        self.assertIn("₹900.00", err["amount"][0])
+        self.sales("post", "/returns/", {"invoice_id": inv["id"], "product_id": self.chilli.id, "quantity_kg": 1,
+                                         "reason": "quality", "amount": 800}, 201)
+        err = self.sales("post", "/returns/", {"invoice_id": inv["id"], "product_id": self.chilli.id, "quantity_kg": 1,
+                                               "reason": "quality", "amount": 101}, 400)
+        self.assertIn("₹100.00", err["amount"][0])
+        auto = self.sales("post", "/returns/", {"invoice_id": inv["id"], "product_id": self.chilli.id, "quantity_kg": 1,
+                                                "reason": "quality"}, 201)
+        self.assertEqual(auto["amount"], 100)  # 300 at the invoiced price, but only 100 is left to credit
+
+    def test_customer_totals_exclude_gst_like_the_sales_figures(self):
+        self.sales("post", "/orders/", {"customer_id": self.customer["id"], "order_date": today().isoformat(),
+                                        "items": [{"product_id": self.turmeric.id, "quantity_kg": 4, "discount_pct": 5, "gst_pct": 5},
+                                                  {"product_id": self.chilli.id, "quantity_kg": 1}]}, 201)
+        net = 1250  # 1000 - 5% + 300; with GST it would be 1297.50
+        self.assertEqual(self.sales("get", "/overview/")["kpis"]["total_sales"]["value"], net)
+        self.assertEqual(self.call("get", "/customers/")["results"][0]["total_purchase"], net)
+        self.assertEqual(self.call("get", "/customers/overview/")["top_customers"][0]["amount"], net)
+        self.assertEqual(self.call("get", "/dashboard/summary/")["top_customers"][0]["amount"], net)
+        self.assertEqual(self.sales("get", "/overview/")["top_customers"][0]["amount"], net)
+        # Filtered to one product, a customer's amount is that product's sales only
+        self.assertEqual(self.sales("get", f"/overview/?product={self.chilli.id}")["top_customers"][0]["amount"], 300)
+
+    def test_dashboard_recent_orders_show_the_order_number(self):
+        order = self.sales("post", "/orders/", {"customer_id": self.customer["id"], "order_date": today().isoformat(),
+                                                "items": [{"product_id": self.chilli.id, "quantity_kg": 1}]}, 201)
+        row = self.call("get", "/dashboard/summary/")["recent_orders"][0]
+        self.assertEqual(row["order_number"], order["order_number"])
+
     def test_multi_product_order_with_discount_and_gst(self):
         order = self.sales("post", "/orders/", {"customer_id": self.customer["id"], "order_date": today().isoformat(),
                                                 "items": [{"product_id": self.turmeric.id, "quantity_kg": 4, "discount_pct": 5, "gst_pct": 5},

@@ -57,13 +57,15 @@ const KPIS = [
   { key: 'net_profit', label: 'Net Profit', icon: IndianRupee, tone: 'purple', module: 'finance', format: formatINR },
 ]
 
+// `roles`: who may create that record (the backend refuses everyone else), so others don't get a dead button
+const SALES_MANAGERS = ['admin', 'management', 'sales']
 const QUICK_ACTIONS = [
-  { label: 'New Order', icon: ShoppingCart, tone: 'green', to: '/sales?new=order', module: 'sales' },
-  { label: 'New Quotation', icon: FileText, tone: 'teal', to: '/sales?tab=quotations', module: 'sales' },
-  { label: 'Record Purchase', icon: ShoppingBag, tone: 'orange', to: '/purchase?tab=purchases', module: 'purchase' },
-  { label: 'Add Customer', icon: UserPlus, tone: 'blue', to: '/customers?new=customer', module: 'customers' },
-  { label: 'Update Inventory', icon: Package, tone: 'orange', to: '/inventory', module: 'inventory' },
-  { label: 'Create Campaign', icon: Megaphone, tone: 'red', to: '/marketing?new=campaign', module: 'marketing' },
+  { label: 'New Order', icon: ShoppingCart, tone: 'green', to: '/sales?new=order', module: 'sales', roles: SALES_MANAGERS },
+  { label: 'New Quotation', icon: FileText, tone: 'teal', to: '/sales?tab=quotations', module: 'sales', roles: SALES_MANAGERS },
+  { label: 'Record Purchase', icon: ShoppingBag, tone: 'orange', to: '/purchase?tab=purchases', module: 'purchase', roles: ['admin', 'management', 'purchase'] },
+  { label: 'Add Customer', icon: UserPlus, tone: 'blue', to: '/customers?new=customer', module: 'customers', roles: SALES_MANAGERS },
+  { label: 'Update Inventory', icon: Package, tone: 'orange', to: '/inventory', module: 'inventory', roles: ['admin', 'management', 'inventory'] },
+  { label: 'Create Campaign', icon: Megaphone, tone: 'red', to: '/marketing?new=campaign', module: 'marketing', roles: ['admin', 'management', 'marketing'] },
   { label: 'Generate Report', icon: BarChart3, tone: 'blue', to: '/reports', module: 'reports' },
   { label: 'AI Assistant', icon: Bot, tone: 'purple', to: '/ai-assistant', module: 'aiAssistant' },
 ]
@@ -86,7 +88,7 @@ export default function Dashboard() {
   const rangeLabel = DATE_RANGES.find((r) => r.value === range)?.label ?? ''
   const kpis = KPIS.filter((k) => can(k.module))
   const firstName = (user?.name || user?.username || '').split(' ')[0]
-  const actions = QUICK_ACTIONS.filter((a) => can(a.module)).map((a) => ({ ...a, onClick: () => navigate(a.to) }))
+  const actions = QUICK_ACTIONS.filter((a) => can(a.module) && (!a.roles || a.roles.includes(user?.role))).map((a) => ({ ...a, onClick: () => navigate(a.to) }))
 
   const contribution = list(data?.product_contribution).map((p) => ({ name: p.name, value: Number(p.value) || 0 }))
   const contributionTotal = contribution.reduce((s, p) => s + p.value, 0)
@@ -196,7 +198,7 @@ export default function Dashboard() {
                 emptyTitle="No recent orders"
                 emptyMessage="New orders will appear here."
                 columns={[
-                  { key: 'id', header: 'Order ID' },
+                  { key: 'order_number', header: 'Order ID', render: (r) => r.order_number || '—' },
                   { key: 'customer', header: 'Customer' },
                   { key: 'product', header: 'Product' },
                   { key: 'amount', header: 'Amount', align: 'right', render: (r) => (has(r.amount) ? formatINR(r.amount) : '—') },

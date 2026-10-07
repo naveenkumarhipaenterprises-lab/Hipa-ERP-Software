@@ -6,7 +6,7 @@ from datetime import datetime, time
 from django.conf import settings
 from django.core.mail import get_connection, EmailMessage
 from django.db import transaction
-from django.db.models import Count, Max, Q, Sum
+from django.db.models import Count, Max, Q
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
 from rest_framework import status
@@ -19,6 +19,7 @@ from apps.core.files import csv_response
 from apps.core.metrics import choices, kpi, label_choices, num, resolve_choice
 from apps.core.views import ModuleAPIView
 from apps.ai_assistant import insights
+from apps.sales import selectors
 from services import audit
 
 from .models import Customer, CustomerOffer
@@ -37,7 +38,7 @@ def end_of(day):
 def with_totals(qs):
     return qs.annotate(
         total_orders=Count("orders", filter=NOT_CANCELLED, distinct=True),
-        total_purchase=Sum("orders__total_amount", filter=NOT_CANCELLED),
+        total_purchase=selectors.customer_sales(NOT_CANCELLED),  # before GST, like the Sales figures
         last_order_date=Max("orders__order_date", filter=NOT_CANCELLED),
     )
 
@@ -91,7 +92,7 @@ class OverviewView(CustomersModuleView):
             by_type.append({"type": value, "label": label, **kpi(count_at(cur.end, {"type": value}), count_at(prev.end, {"type": value}))})
 
         in_range = Q(orders__order_date__range=(cur.start, cur.end)) & NOT_CANCELLED
-        top = (base.annotate(amount=Sum("orders__total_amount", filter=in_range))
+        top = (base.annotate(amount=selectors.customer_sales(in_range))
                .filter(amount__gt=0).order_by("-amount")[:5])
         return Response({
             "kpis": {"total": kpi(count_at(cur.end), count_at(prev.end)), "by_type": by_type},

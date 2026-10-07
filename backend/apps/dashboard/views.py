@@ -79,7 +79,7 @@ class SummaryView(ModuleAPIView):
             recent = SalesOrder.objects.select_related("customer").prefetch_related(
                 Prefetch("items", queryset=SalesOrderItem.objects.select_related("product")))[:5]
             data["recent_orders"] = [
-                {"id": o.id, "customer": o.customer.name, "product": ", ".join(i.product.name for i in o.items.all()) or None,
+                {"id": o.id, "order_number": o.order_number, "customer": o.customer.name, "product": ", ".join(i.product.name for i in o.items.all()) or None,
                  "amount": num(o.total_amount), "status": o.get_status_display()}
                 for o in recent
             ]
@@ -88,7 +88,7 @@ class SummaryView(ModuleAPIView):
                                                 before=Count("id", filter=Q(created_at__lte=end_of(prev.end))))
             k["total_customers"] = kpi(counts["now"], counts["before"])
             in_range = Q(orders__order_date__range=(cur.start, cur.end)) & ~Q(orders__status=SalesOrder.Status.CANCELLED)
-            top = Customer.objects.annotate(amount=Sum("orders__total_amount", filter=in_range)).filter(amount__gt=0).order_by("-amount")[:5]
+            top = Customer.objects.annotate(amount=selectors.customer_sales(in_range)).filter(amount__gt=0).order_by("-amount")[:5]
             data["top_customers"] = [{"id": c.id, "name": c.name, "amount": num(c.amount)} for c in top]
         if can_read(user, "purchase"):
             from apps.ai_assistant.insights import latest

@@ -73,7 +73,9 @@ class MarketingMetric(models.Model):
 
     class Meta:
         ordering = ["-date"]
-        constraints = [models.UniqueConstraint(fields=["date", "platform", "campaign"], name="unique_metric_per_day")]
+        # nulls_distinct=False: also one row per day and platform when no campaign is set
+        constraints = [models.UniqueConstraint(fields=["date", "platform", "campaign"], name="unique_metric_per_day",
+                                               nulls_distinct=False)]
 
     def __str__(self):
         return f"{self.date} {self.get_platform_display()}"

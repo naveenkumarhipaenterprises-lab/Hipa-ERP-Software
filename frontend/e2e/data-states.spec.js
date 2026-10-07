@@ -26,7 +26,7 @@ test.describe('no invented data', () => {
     await signIn(page, 'admin')
     await mockApi(page, {
       ...SHELL,
-      'GET /api/dashboard/summary/': { kpis: { total_sales: { value: 1234567, change: 4.2 } }, recent_orders: [{ id: 'TEST-1', customer: 'TEST Buyer', product: 'TEST Chilli', amount: 1500, status: 'Delivered' }] },
+      'GET /api/dashboard/summary/': { kpis: { total_sales: { value: 1234567, change: 4.2 } }, recent_orders: [{ id: 1, order_number: 'TEST-1', customer: 'TEST Buyer', product: 'TEST Chilli', amount: 1500, status: 'Delivered' }] },
       'GET /api/dashboard/sales-trend/': [],
     })
     await page.goto('/dashboard')

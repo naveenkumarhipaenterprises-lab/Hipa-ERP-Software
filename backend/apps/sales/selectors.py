@@ -6,11 +6,16 @@ periods or months are fetched in one query and split in Python instead of one qu
 """
 from decimal import Decimal
 
-from django.db.models import Count, Q, Sum
+from django.db.models import Count, F, Q, Sum
 
 from .models import SalesOrder, SalesOrderItem
 
 ZERO = Decimal("0")
+
+
+def customer_sales(in_range):
+    """Annotation for Customer querysets: their sales before GST (subtotal − discount), like every other Sales figure."""
+    return Sum(F("orders__subtotal") - F("orders__discount_amount"), filter=in_range)
 
 
 def items(start, end, product=None):

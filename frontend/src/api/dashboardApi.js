@@ -22,7 +22,7 @@ import { api } from './client'
  *   low_stock_materials:      [{ id, material, current_stock, reorder_level, unit, status }],
  *   product_contribution: [{ name, value }],                       // ₹ sales per product
  *   order_status:         [{ status, count }],
- *   recent_orders:        [{ id, customer, product, amount, status }],
+ *   recent_orders:        [{ id, order_number, customer, product, amount, status }],
  *   low_stock:            [{ id, product, stock_kg, reorder_level_kg, status? }],
  *   top_customers:        [{ id, name, amount }],
  *   upcoming:             [{ id, title, date, category? }],

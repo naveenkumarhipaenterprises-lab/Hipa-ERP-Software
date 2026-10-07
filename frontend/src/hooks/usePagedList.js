@@ -22,7 +22,8 @@ export function usePagedList(fetcher, initialFilters = {}, refreshKey = 0, pageS
     setSearch,
     filters,
     setFilter: (name, value) => setFilters((f) => ({ ...f, [name]: value })),
-    filtered: Boolean(query) || Object.values(filters).some(Boolean),
+    // A sort order isn't a filter: an empty list sorted by name still means there are no records yet
+    filtered: Boolean(query) || Object.entries(filters).some(([name, value]) => name !== 'ordering' && Boolean(value)),
     page,
     setPage,
     pageSize,

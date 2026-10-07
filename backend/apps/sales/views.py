@@ -84,10 +84,11 @@ class OverviewView(SalesView):
 
         order_qs = selectors.orders(cur.start, cur.end, product)
         in_range = Q(orders__order_date__range=(cur.start, cur.end)) & ~Q(orders__status=St.CANCELLED)
-        if product:
-            in_range &= Q(orders__items__product_id=product)
-        top = (Customer.objects.annotate(amount=Sum("orders__total_amount", filter=in_range))
-               .filter(amount__gt=0).order_by("-amount")[:5])
+        if product:  # only that product's lines, so the amounts match the product's sales figures
+            amount = Sum("orders__items__amount", filter=in_range & Q(orders__items__product_id=product))
+        else:
+            amount = selectors.customer_sales(in_range)
+        top = Customer.objects.annotate(amount=amount).filter(amount__gt=0).order_by("-amount")[:5]
         return Response({
             "kpis": {
                 "total_sales": kpi(now["sales"], before["sales"]),

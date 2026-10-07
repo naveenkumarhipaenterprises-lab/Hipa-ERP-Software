@@ -26,6 +26,11 @@ class User(AbstractUser):
     def effective_role(self):
         return Role.ADMIN if self.is_superuser else self.role
 
+    def save(self, *args, **kwargs):
+        if self.is_superuser:  # superusers act as admins; store that too, so the database doesn't say otherwise
+            self.role = Role.ADMIN
+        super().save(*args, **kwargs)
+
     def revoke_tokens(self):
         """Signs the user out on every device: tokens issued before this call stop working."""
         User.objects.filter(pk=self.pk).update(token_version=models.F("token_version") + 1)
