@@ -1,3 +1,4 @@
+import ipaddress
 import logging
 
 from django.conf import settings
@@ -11,11 +12,13 @@ from django.utils.http import urlsafe_base64_decode, urlsafe_base64_encode
 from rest_framework import status
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
+from rest_framework.settings import api_settings
 from rest_framework.throttling import ScopedRateThrottle
 from rest_framework.views import APIView
 from rest_framework_simplejwt.exceptions import TokenError
 from rest_framework_simplejwt.tokens import RefreshToken
 
+from .authentication import TOKEN_VERSION_CLAIM
 from .models import LoginActivity, User
 from .serializers import (
     ChangePasswordSerializer,
@@ -29,12 +32,25 @@ log = logging.getLogger(__name__)
 
 
 def client_ip(request):
+    """
+    The caller's IP address. X-Forwarded-For can be faked by anyone, so it is only read behind NUM_PROXIES
+    trusted proxies, the same way the API throttles identify clients. None if it isn't a valid IP address.
+    """
+    ip = request.META.get("REMOTE_ADDR")
     forwarded = request.META.get("HTTP_X_FORWARDED_FOR")
-    return (forwarded.split(",")[0].strip() if forwarded else request.META.get("REMOTE_ADDR")) or None
+    proxies = api_settings.NUM_PROXIES
+    if proxies and forwarded:
+        addrs = [a.strip() for a in forwarded.split(",")]
+        ip = addrs[-min(proxies, len(addrs))]
+    try:
+        return str(ipaddress.ip_address(ip))
+    except ValueError:
+        return None
 
 
 def tokens_for(user):
     refresh = RefreshToken.for_user(user)
+    refresh[TOKEN_VERSION_CLAIM] = user.token_version  # copied into the access token
     return {"access": str(refresh.access_token), "refresh": str(refresh)}
 
 
@@ -53,7 +69,11 @@ class LoginView(APIView):
         password = data.validated_data["password"]
 
         match = User.objects.filter(Q(username__iexact=login) | Q(email__iexact=login)).first()
-        user = authenticate(request, username=match.username, password=password) if match else None
+        if match:
+            user = authenticate(request, username=match.username, password=password)
+        else:
+            User().set_password(password)  # same hashing work, so response time doesn't reveal which usernames exist
+            user = None
 
         LoginActivity.objects.create(
             user=match,
@@ -81,11 +101,12 @@ class MeView(APIView):
 
 
 class LogoutView(APIView):
-    """Blacklists the refresh token when the client sends one; the access token simply expires."""
+    """Signs the user out on every device: all their tokens stop working. A refresh token sent along is also blacklisted."""
 
     permission_classes = [IsAuthenticated]
 
     def post(self, request):
+        request.user.revoke_tokens()
         refresh = request.data.get("refresh") if hasattr(request.data, "get") else None
         if refresh:
             try:
@@ -152,6 +173,7 @@ class ResetPasswordView(APIView):
             return Response({"password": exc.messages}, status=status.HTTP_400_BAD_REQUEST)
         user.set_password(data.validated_data["password"])
         user.save(update_fields=["password", "updated_at"])
+        user.revoke_tokens()  # whoever was using the old password is signed out
         return Response({"detail": "Your password has been reset. You can now sign in."})
 
 
@@ -163,4 +185,6 @@ class ChangePasswordView(APIView):
         data.is_valid(raise_exception=True)
         request.user.set_password(data.validated_data["new_password"])
         request.user.save(update_fields=["password", "updated_at"])
-        return Response({"detail": "Password changed."})
+        # Other devices are signed out; this one gets new tokens so it stays signed in
+        request.user.revoke_tokens()
+        return Response({"detail": "Password changed.", **tokens_for(request.user)})

@@ -1,4 +1,4 @@
-import { api, cleanParams as clean } from './client'
+import { api, cleanParams as clean, tokenStorage } from './client'
 
 /**
  * Settings endpoints (Django REST API). Admin / management only; the backend enforces this.
@@ -31,7 +31,7 @@ import { api, cleanParams as clean } from './client'
  * GET   /settings/security/                       ->  { two_factor_enabled }
  * PATCH /settings/security/                       { two_factor_enabled }
  * GET   /settings/security/login-activity/?page=  ->  { count, results: [{ id, user, device?, ip?, location?, time, success }] }
- * POST  /auth/password/change/                    { current_password, new_password }
+ * POST  /auth/password/change/                    { current_password, new_password }  ->  { detail, access, refresh }
  *
  * GET /settings/audit-logs/?page=&page_size=&search=   ->  { count, results: [{ id, time, user, action, target? }] }
  */
@@ -62,7 +62,12 @@ export const settingsApi = {
   getSecurity: () => api.get('/settings/security/'),
   updateSecurity: (changes) => api.patch('/settings/security/', changes),
   listLoginActivity: (params) => api.get('/settings/security/login-activity/', clean(params)),
-  changePassword: (body) => api.post('/auth/password/change/', body),
+  // The server signs out every other session and returns new tokens for this one
+  changePassword: async (body) => {
+    const res = await api.post('/auth/password/change/', body)
+    if (res?.access) tokenStorage.replace(res.access)
+    return res
+  },
 
   listAuditLogs: (params) => api.get('/settings/audit-logs/', clean(params)),
 }

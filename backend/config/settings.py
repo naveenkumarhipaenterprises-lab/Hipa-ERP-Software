@@ -157,7 +157,7 @@ FILE_UPLOAD_MAX_MEMORY_SIZE = 10 * 1024 * 1024
 
 # --- REST API ---------------------------------------------------------------
 REST_FRAMEWORK = {
-    "DEFAULT_AUTHENTICATION_CLASSES": ["rest_framework_simplejwt.authentication.JWTAuthentication"],
+    "DEFAULT_AUTHENTICATION_CLASSES": ["apps.accounts.authentication.VersionedJWTAuthentication"],
     "DEFAULT_PERMISSION_CLASSES": ["rest_framework.permissions.IsAuthenticated"],
     "DEFAULT_PAGINATION_CLASS": "apps.core.pagination.StandardPagination",
     "PAGE_SIZE": 10,
@@ -169,7 +169,11 @@ REST_FRAMEWORK = {
         "rest_framework.parsers.FormParser",
     ],
     "EXCEPTION_HANDLER": "apps.core.exceptions.api_exception_handler",
-    "DEFAULT_THROTTLE_RATES": {"login": env("LOGIN_THROTTLE_RATE", "10/min"), "password_reset": "5/hour"},
+    "DEFAULT_THROTTLE_RATES": {"login": env("LOGIN_THROTTLE_RATE", "10/min"), "password_reset": "5/hour",
+                               "ai_chat": env("AI_CHAT_THROTTLE_RATE", "20/min")},
+    # How many proxies (e.g. nginx) sit in front of Django. 0 = none: the X-Forwarded-For header is ignored,
+    # because anyone can fake it to dodge the rate limits. Set it only when the server is behind a proxy.
+    "NUM_PROXIES": int(env("NUM_PROXIES", "0")),
     "TEST_REQUEST_DEFAULT_FORMAT": "json",
     # The frontend uses ?format=pdf|xlsx|csv for report files, so DRF must not treat it as a renderer switch
     "URL_FORMAT_OVERRIDE": None,

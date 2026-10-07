@@ -80,6 +80,17 @@ describe('tokenStorage', () => {
     expect(localStorage.getItem('hipa_token')).toBe('t2')
     expect(sessionStorage.getItem('hipa_token')).toBeNull()
   })
+  it('replaces the token in the same storage and keeps the user', () => {
+    tokenStorage.set('old', { id: 1 }, true)
+    tokenStorage.replace('new')
+    expect(localStorage.getItem('hipa_token')).toBe('new')
+    expect(sessionStorage.getItem('hipa_token')).toBeNull()
+    expect(tokenStorage.getUser()).toEqual({ id: 1 })
+    tokenStorage.set('old', { id: 1 }, false)
+    tokenStorage.replace('new')
+    expect(sessionStorage.getItem('hipa_token')).toBe('new')
+    expect(localStorage.getItem('hipa_token')).toBeNull()
+  })
   it('survives a corrupted stored user', () => {
     sessionStorage.setItem('hipa_user', '{not json')
     expect(tokenStorage.getUser()).toBeNull()

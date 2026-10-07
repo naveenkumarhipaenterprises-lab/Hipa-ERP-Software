@@ -5,6 +5,7 @@ from django.db import transaction
 from django.shortcuts import get_object_or_404
 from rest_framework.exceptions import ValidationError
 from rest_framework.response import Response
+from rest_framework.throttling import ScopedRateThrottle
 
 from apps.core.exceptions import NotConfigured
 from apps.core.roles import MODULE_READ, can_read, role_of
@@ -98,6 +99,10 @@ def as_bool(value):
 
 
 class ChatView(AIView):
+    # Each message is a paid / quota-limited Gemini call: AI_CHAT_THROTTLE_RATE per user
+    throttle_classes = [ScopedRateThrottle]
+    throttle_scope = "ai_chat"
+
     def post(self, request):
         if not ai_client.is_configured():
             raise NotConfigured("The AI assistant is not connected yet.")

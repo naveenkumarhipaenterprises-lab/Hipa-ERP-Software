@@ -51,7 +51,9 @@ To regenerate `supabase/schema.sql` after adding migrations: `python scripts/exp
 | `EMAIL_*`, `DEFAULT_FROM_EMAIL` | | SMTP for resets, invitations and customer offers. Without it, e-mails are printed to the server console |
 | `GEMINI_API_KEY`, `GEMINI_MODEL` | | AI Assistant chat with Google Gemini (default model `gemini-3.8-flash`). Empty key = assistant shows "not connected" |
 | `PG_DUMP_PATH`, `BACKUP_DIR` | | Database backups (`pg_dump` is found automatically in `C:\Program Files\PostgreSQL\<version>\bin`) |
-| `JWT_ACCESS_MINUTES` | | Access-token lifetime (default 480 = one working day) |
+| `JWT_ACCESS_MINUTES` | | Access-token lifetime (default 480 = one working day). Logout, password change and password reset end the user's sessions on every device straight away |
+| `LOGIN_THROTTLE_RATE`, `AI_CHAT_THROTTLE_RATE` | | Failed sign-ins per IP (default `10/min`, also applied to `/admin/` sign-in) and AI chat messages per user (default `20/min`) |
+| `NUM_PROXIES` | | Only behind a reverse proxy: how many. Unset = `X-Forwarded-For` is ignored, since anyone can fake it |
 
 `.env` holds secrets: never commit or share it. `.gitignore` already excludes it.
 

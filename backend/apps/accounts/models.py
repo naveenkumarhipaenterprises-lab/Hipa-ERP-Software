@@ -11,6 +11,8 @@ class User(AbstractUser):
     name = models.CharField("full name", max_length=150)
     role = models.CharField(max_length=20, choices=Role.choices, default=Role.SALES, db_index=True)
     updated_at = models.DateTimeField(auto_now=True)
+    # Sign-in tokens carry this number; raising it cancels every token issued before (logout, password change/reset)
+    token_version = models.PositiveIntegerField(default=0, editable=False)
 
     REQUIRED_FIELDS = ["email", "name"]
 
@@ -23,6 +25,11 @@ class User(AbstractUser):
     @property
     def effective_role(self):
         return Role.ADMIN if self.is_superuser else self.role
+
+    def revoke_tokens(self):
+        """Signs the user out on every device: tokens issued before this call stop working."""
+        User.objects.filter(pk=self.pk).update(token_version=models.F("token_version") + 1)
+        self.refresh_from_db(fields=["token_version"])
 
     @property
     def status(self):

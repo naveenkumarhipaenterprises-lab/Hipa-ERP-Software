@@ -40,7 +40,7 @@ function ChangePassword() {
     try {
       await settingsApi.changePassword({ current_password: values.current, new_password: values.password })
       setValues(EMPTY)
-      toast.success('Password changed')
+      toast.success('Password changed. Your other devices have been signed out.')
     } catch (err) {
       const f = err.fields
       const next = { current: fieldMessage(f?.current_password), password: fieldMessage(f?.new_password) }
