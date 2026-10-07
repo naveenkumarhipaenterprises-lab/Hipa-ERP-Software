@@ -1,6 +1,7 @@
 from datetime import timedelta
 from decimal import Decimal, InvalidOperation
 
+from django.db import transaction
 from django.db.models import Max, Q, Sum
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
@@ -36,8 +37,11 @@ def campaign_row(c, today, editable):
 
 
 def post_row(p):
+    scheduled = p.status == ScheduledPost.Status.SCHEDULED
     return {"id": p.id, "platform": p.get_platform_display(), "scheduled_for": p.scheduled_for, "caption": p.caption,
-            "campaign": p.campaign.name if p.campaign else None, "status": p.get_status_display()}
+            "campaign": p.campaign.name if p.campaign else None, "status": p.get_status_display(),
+            # Posting is done on the platform by hand, then marked here; "due" = its time has come
+            "is_due": scheduled and p.scheduled_for <= timezone.now(), "can_update": scheduled}
 
 
 class MarketingView(ModuleAPIView):
@@ -178,8 +182,6 @@ class PostsView(MarketingView):
         st = resolve_choice(ScheduledPost.Status, self.param("status"), "status")
         if st:
             qs = qs.filter(status=st)
-        if st == ScheduledPost.Status.SCHEDULED:
-            qs = qs.filter(scheduled_for__gte=timezone.now())
         return self.paginated(qs, post_row)
 
     def post(self, request):
@@ -211,3 +213,21 @@ class PostsView(MarketingView):
         p = ScheduledPost.objects.create(platform=platform, scheduled_for=when, caption=caption, campaign=campaign, created_by=request.user)
         audit.record(request, "Scheduled post", f"{p.get_platform_display()} {when:%d %b %Y %H:%M}")
         return Response(post_row(p), status=status.HTTP_201_CREATED)
+
+
+class PostStatusView(MarketingView):
+    """POST {status: published | cancelled}: a scheduled post was posted on the platform by hand, or isn't needed."""
+
+    def post(self, request, pk):
+        PS = ScheduledPost.Status
+        with transaction.atomic():
+            p = get_object_or_404(ScheduledPost.objects.select_for_update(of=("self",)).select_related("campaign"), pk=pk)
+            if p.status != PS.SCHEDULED:
+                raise ValidationError({"status": [f"A {p.get_status_display().lower()} post can't be changed."]})
+            new = request.data.get("status")
+            if new not in (PS.PUBLISHED, PS.CANCELLED):
+                raise ValidationError({"status": ["Choose published or cancelled."]})
+            p.status = new
+            p.save(update_fields=["status"])
+        audit.record(request, f"Marked post {p.get_status_display().lower()}", f"{p.get_platform_display()} {p.scheduled_for:%d %b %Y %H:%M}")
+        return Response(post_row(p))

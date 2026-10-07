@@ -137,3 +137,26 @@ test('a pending payment is marked paid with its reference', async ({ page }) => 
   await expect(page.getByText('TEST Electricity Board marked paid')).toBeVisible()
   expect(sent(calls, 'POST /api/finance/transactions/7/mark-paid/')).toEqual({ reference: 'TEST-UTR-9' })
 })
+
+test('a due post is marked published after posting it by hand', async ({ page }) => {
+  await signIn(page, 'marketing')
+  const calls = await mockApi(page, {
+    ...SHELL,
+    'GET /api/marketing/overview/': {},
+    'GET /api/marketing/performance/': [],
+    'GET /api/marketing/audience/': [],
+    'GET /api/marketing/options/': { platforms: [], objectives: [], statuses: [] },
+    'GET /api/marketing/campaigns/': { count: 0, results: [] },
+    'GET /api/marketing/posts/': { count: 1, results: [{ id: 4, platform: 'Instagram', scheduled_for: '2026-10-07T10:00:00+05:30',
+      caption: 'TEST Diwali offer', status: 'Scheduled', is_due: true, can_update: true }] },
+    'POST /api/marketing/posts/4/status/': { id: 4, status: 'Published' },
+  })
+  await page.goto('/marketing')
+  await page.getByRole('button', { name: 'Content Calendar' }).first().click()
+  const calendar = page.getByRole('dialog', { name: 'Content Calendar' })
+  await expect(calendar.getByText('Due')).toBeVisible()
+  await calendar.getByRole('button', { name: 'Mark the Instagram post published' }).click()
+  await page.getByRole('dialog', { name: 'Mark this post published?' }).getByRole('button', { name: 'Mark Published' }).click()
+  await expect(page.getByText('Post marked published')).toBeVisible()
+  expect(sent(calls, 'POST /api/marketing/posts/4/status/')).toEqual({ status: 'published' })
+})

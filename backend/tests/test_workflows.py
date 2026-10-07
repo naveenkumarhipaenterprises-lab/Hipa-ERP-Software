@@ -348,6 +348,29 @@ class WorkflowTests(TestCase):
         self.assertEqual(res.status_code, 403)
 
     # --- Marketing ---------------------------------------------------------------------
+    def test_scheduled_posts_are_marked_published_or_cancelled(self):
+        from apps.marketing.models import ScheduledPost
+
+        soon = self.post("/marketing/posts/", {"platform": "instagram", "caption": "TEST Diwali offer",
+                                               "scheduled_for": (timezone.now() + timedelta(days=1)).isoformat()})
+        other = self.post("/marketing/posts/", {"platform": "facebook", "caption": "TEST recipe",
+                                                "scheduled_for": (timezone.now() + timedelta(days=2)).isoformat()})
+        self.assertEqual((soon["is_due"], soon["can_update"]), (False, True))
+        # Its time passes: still listed as scheduled (to be posted by hand), now "due"
+        ScheduledPost.objects.filter(pk=soon["id"]).update(scheduled_for=timezone.now() - timedelta(hours=1))
+        rows = {r["id"]: r for r in self.api.get(f"{API}/marketing/posts/?status=scheduled").data["results"]}
+        self.assertTrue(rows[soon["id"]]["is_due"])
+
+        done = self.post(f"/marketing/posts/{soon['id']}/status/", {"status": "published"}, expected=200)
+        self.assertEqual((done["status"], done["can_update"]), ("Published", False))
+        self.assertIn("status", self.post(f"/marketing/posts/{soon['id']}/status/", {"status": "cancelled"}, expected=400))
+        self.assertIn("status", self.post(f"/marketing/posts/{other['id']}/status/", {"status": "scheduled"}, expected=400))
+        self.assertEqual(self.post(f"/marketing/posts/{other['id']}/status/", {"status": "cancelled"}, expected=200)["status"], "Cancelled")
+        self.assertEqual(self.api.get(f"{API}/marketing/posts/?status=scheduled").data["count"], 0)
+        self.assertTrue(AuditLog.objects.filter(action="Marked post published").exists())
+        res = client_for(make_user("sales")).post(f"{API}/marketing/posts/{other['id']}/status/", {"status": "published"}, format="json")
+        self.assertEqual(res.status_code, 403)
+
     def test_campaigns_and_posts(self):
         c = self.post("/marketing/campaigns/", {"name": "TEST Diwali", "platform": "instagram", "objective": "sales",
                                                 "start_date": today().isoformat(), "end_date": (today() + timedelta(days=5)).isoformat(),

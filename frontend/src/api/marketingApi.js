@@ -22,8 +22,10 @@ import { api, cleanParams as clean } from './client'
  * POST /marketing/campaigns/            { name, platform, objective, start_date, end_date, budget, description? }
  * POST /marketing/campaigns/<id>/end/
  *
- * GET  /marketing/posts/?status=scheduled&page_size=   ->  { count, results: [{ id, platform, scheduled_for, caption, campaign? }] }
+ * GET  /marketing/posts/?status=scheduled&page_size=   ->  { count, results: [{ id, platform, scheduled_for, caption, campaign?, status, is_due, can_update }] }
+ *      (scheduled includes posts whose time has passed: is_due, still to be posted and marked)
  * POST /marketing/posts/                { platform, scheduled_for, caption, campaign_id? }
+ * POST /marketing/posts/<id>/status/    { status: 'published' | 'cancelled' }   (no platform connection: posted by hand, then marked)
  */
 export const marketingApi = {
   getOverview: ({ range }) => api.get('/marketing/overview/', clean({ range })),
@@ -34,5 +36,6 @@ export const marketingApi = {
   createCampaign: (campaign) => api.post('/marketing/campaigns/', campaign),
   endCampaign: (id) => api.post(`/marketing/campaigns/${id}/end/`),
   listPosts: (params) => api.get('/marketing/posts/', clean(params)),
+  setPostStatus: (id, status) => api.post(`/marketing/posts/${id}/status/`, { status }),
   schedulePost: (post) => api.post('/marketing/posts/', post),
 }

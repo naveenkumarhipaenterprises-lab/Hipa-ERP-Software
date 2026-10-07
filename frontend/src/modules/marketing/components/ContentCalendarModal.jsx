@@ -1,29 +1,44 @@
-import { CalendarDays, Plus } from 'lucide-react'
+import { CalendarDays, CircleCheck, Plus, XCircle } from 'lucide-react'
+import { useState } from 'react'
 import { marketingApi } from '../../../api/marketingApi'
+import Badge from '../../../components/common/Badge'
 import Button from '../../../components/common/Button'
+import ConfirmDialog from '../../../components/common/ConfirmDialog'
 import EmptyState from '../../../components/common/EmptyState'
 import ErrorMessage from '../../../components/common/ErrorMessage'
 import Loader from '../../../components/common/Loader'
 import Modal from '../../../components/common/Modal'
 import { useApi } from '../../../hooks/useApi'
+import { useToast } from '../../../hooks/useToast'
 import { formatDate } from '../../../utils/formatters'
 
-/** Upcoming scheduled posts (GET /marketing/posts/?status=scheduled). */
-export default function ContentCalendarModal({ open, onClose, onSchedule, refreshKey }) {
+/**
+ * Scheduled posts (GET /marketing/posts/?status=scheduled), including ones whose time has come ("Due").
+ * There is no Instagram/Facebook connection: staff post by hand, then mark the post published here.
+ */
+export default function ContentCalendarModal({ open, onClose, onSchedule, refreshKey, canManage }) {
   if (!open) return null
-  return <Calendar onClose={onClose} onSchedule={onSchedule} refreshKey={refreshKey} />
+  return <Calendar onClose={onClose} onSchedule={onSchedule} refreshKey={refreshKey} canManage={canManage} />
 }
 
-function Calendar({ onClose, onSchedule, refreshKey }) {
+function Calendar({ onClose, onSchedule, refreshKey, canManage }) {
+  const toast = useToast()
+  const [change, setChange] = useState(null) // { post, status }
   const posts = useApi(() => marketingApi.listPosts({ status: 'scheduled', page_size: 20 }), [refreshKey])
   const rows = Array.isArray(posts.data?.results) ? posts.data.results : []
+
+  const update = async () => {
+    await marketingApi.setPostStatus(change.post.id, change.status)
+    toast.success(change.status === 'published' ? 'Post marked published' : 'Post cancelled')
+    posts.reload()
+  }
 
   return (
     <Modal
       open
       onClose={onClose}
       title="Content Calendar"
-      subtitle="Upcoming scheduled posts"
+      subtitle="Scheduled posts. Post them on the platform, then mark them published."
       footer={
         onSchedule && (
           <Button icon={Plus} onClick={onSchedule}>
@@ -51,12 +66,33 @@ function Calendar({ onClose, onSchedule, refreshKey }) {
                 <div className="activity-list__body">
                   <p>{p.caption}</p>
                   <span>{[p.platform, p.campaign].filter(Boolean).join(' • ')}</span>
+                  {p.is_due && <Badge tone="amber">Due</Badge>}
                 </div>
+                {canManage && p.can_update && (
+                  <span className="row-actions">
+                    <Button size="sm" variant="soft" icon={CircleCheck} onClick={() => setChange({ post: p, status: 'published' })} aria-label={`Mark the ${p.platform} post published`}>
+                      Published
+                    </Button>
+                    <Button size="sm" variant="ghost" icon={XCircle} className="btn--tone-red" onClick={() => setChange({ post: p, status: 'cancelled' })} aria-label={`Cancel the ${p.platform} post`} />
+                  </span>
+                )}
               </li>
             )
           })}
         </ul>
       )}
+      <ConfirmDialog
+        open={Boolean(change)}
+        onClose={() => setChange(null)}
+        onConfirm={update}
+        danger={change?.status === 'cancelled'}
+        title={change?.status === 'published' ? 'Mark this post published?' : 'Cancel this post?'}
+        message={change && (change.status === 'published'
+          ? `Confirm it is posted on ${change.post.platform}. This app doesn't post it for you.`
+          : 'It will be removed from the calendar. This cannot be undone.')}
+        confirmLabel={change?.status === 'published' ? 'Mark Published' : 'Cancel Post'}
+        cancelLabel="Back"
+      />
     </Modal>
   )
 }

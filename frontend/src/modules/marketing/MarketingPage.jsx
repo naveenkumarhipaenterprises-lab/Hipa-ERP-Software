@@ -250,6 +250,7 @@ export default function MarketingPage() {
         refreshKey={refreshKey}
         onClose={() => setModal(null)}
         onSchedule={canManage ? () => setModal('post') : undefined}
+        canManage={canManage}
       />
     </div>
   )
