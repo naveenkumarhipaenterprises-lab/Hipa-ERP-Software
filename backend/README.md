@@ -50,7 +50,7 @@ To regenerate `supabase/schema.sql` after adding migrations: `python scripts/exp
 | `FRONTEND_URL` | | Used in password-reset and invitation links |
 | `EMAIL_*`, `DEFAULT_FROM_EMAIL` | | SMTP for resets, invitations and customer offers. Without it, e-mails are printed to the server console |
 | `GEMINI_API_KEY`, `GEMINI_MODEL` | | AI Assistant chat with Google Gemini (default model `gemini-3.8-flash`). Empty key = assistant shows "not connected" |
-| `PG_DUMP_PATH`, `BACKUP_DIR` | | Database backups |
+| `PG_DUMP_PATH`, `BACKUP_DIR` | | Database backups (`pg_dump` is found automatically in `C:\Program Files\PostgreSQL\<version>\bin`) |
 | `JWT_ACCESS_MINUTES` | | Access-token lifetime (default 480 = one working day) |
 
 `.env` holds secrets: never commit or share it. `.gitignore` already excludes it.
@@ -196,7 +196,17 @@ Stock always changes through movements, so product and material stock can't be e
 
 ## 6. Backups
 
-**Settings → Data & Backup → Back Up Now** runs `pg_dump` on the app's tables (schema `public`) and saves a compressed `.sql.gz` file in `BACKUP_DIR` (default `backend/backups`). Install the PostgreSQL command-line tools with the same major version as your Supabase server (Project Settings → Infrastructure), or newer, and set `PG_DUMP_PATH` if `pg_dump` is not on `PATH`. Supabase also keeps its own daily backups on paid plans.
+**Settings → Data & Backup → Back Up Now** runs `pg_dump` on the app's tables (schema `public`) and saves a compressed `hipa_masala-supabase-<date>-<time>.sql.gz` file in `BACKUP_DIR` (default `backend/backups`). Supabase also keeps its own daily backups on paid plans.
+
+`pg_dump` must be the same major version as the Supabase server (17), or newer. On this PC the PostgreSQL 17 command-line tools (no database server) are installed in `C:\Program Files\PostgreSQL\17\bin`; the backup finds the newest `C:\Program Files\PostgreSQL\<version>\bin\pg_dump.exe` by itself. To install them on another PC:
+
+```powershell
+winget install --id PostgreSQL.PostgreSQL.17 -e --override "--mode unattended --unattendedmodeui minimal --disable-components server,pgAdmin,stackbuilder"
+```
+
+Set `PG_DUMP_PATH` in `.env` only if `pg_dump` lives somewhere else.
+
+Retention (Settings → Data & Backup) deletes only old `hipa_masala-supabase-*.sql.gz` files. Anything else in the folder, such as the earlier MySQL dumps `hipa_masala-<date>.sql.gz`, is never deleted.
 
 ### Daily scheduled task
 
@@ -205,7 +215,7 @@ The Windows Task Scheduler task **"HIPA MASALA daily tasks"** runs `scripts/dail
 1. runs `expire_quotations` (draft / sent quotations past their valid-until date become Expired);
 2. runs `send_due_alerts` (purchases not received on time, supplier payments due within 2 days, overdue invoices — each alert once);
 3. runs `run_analytics` (insights, including HIGH-priority purchase recommendations shown on the Dashboard and in the AI Business Report);
-4. runs `run_backup --scheduled`, which backs up only when **Automatic backup** is on in Settings and deletes backups older than the chosen retention period.
+4. runs `run_backup --scheduled`, which backs up only when **Automatic backup** is on in Settings and deletes this app's backups older than the chosen retention period.
 
 Output is appended to `backend/logs/daily_tasks.log`. To run it now: `Start-ScheduledTask -TaskName "HIPA MASALA daily tasks"`. To recreate it on another PC:
 
@@ -215,6 +225,23 @@ Register-ScheduledTask -TaskName "HIPA MASALA daily tasks" -Action $action -Trig
 ```
 
 Each job can also be run by hand: `manage.py run_analytics`, `manage.py run_backup`.
+
+### Restore a backup
+
+A backup holds every app table with its data, constraints, indexes and row level security. It restores into an **empty** database, so you never overwrite live data by accident:
+
+1. In the Supabase dashboard create a new project (or ask for a fresh database), and note its Session pooler connection details.
+2. Unzip the backup with 7-Zip, or from the backend folder:
+   ```powershell
+   .\.venv\Scripts\python.exe -c "import gzip,shutil,sys; shutil.copyfileobj(gzip.open(sys.argv[1]), open(sys.argv[2],'wb'))" backups\hipa_masala-supabase-<date>-<time>.sql.gz restore.sql
+   ```
+3. Load it (psql asks for the database password; `ON_ERROR_STOP` stops at the first problem):
+   ```powershell
+   & "C:\Program Files\PostgreSQL\17\bin\psql.exe" "host=<pooler-host> port=5432 user=postgres.<project-ref> dbname=postgres sslmode=require" -v ON_ERROR_STOP=1 -f restore.sql
+   ```
+4. Point `SUPABASE_DB_URL` in `.env` at the restored database, restart the backend, and delete `restore.sql` (it contains all your data in plain text).
+
+This procedure was tested on 2026-10-07: a backup restored into a throw-away database had all 57 tables, 80 foreign keys and row level security, and every row matched the live database.
 
 ---
 

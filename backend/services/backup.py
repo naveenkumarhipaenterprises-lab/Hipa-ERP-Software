@@ -5,6 +5,7 @@ import os
 import shutil
 import subprocess
 from datetime import timedelta
+from pathlib import Path
 
 from django.conf import settings
 from django.utils import timezone
@@ -12,11 +13,29 @@ from django.utils import timezone
 log = logging.getLogger(__name__)
 
 
+# Backups this app writes. Only files with this prefix are ever pruned, so other dumps kept in
+# BACKUP_DIR (e.g. the old hipa_masala-<date>.sql.gz MySQL dumps) are never deleted.
+FILE_PREFIX = "hipa_masala-supabase-"
+WINDOWS_PG_BIN = Path(os.environ.get("ProgramFiles", r"C:\Program Files")) / "PostgreSQL"
+
+
+def _version(path):
+    try:
+        return int(path.parent.parent.name)
+    except ValueError:
+        return 0
+
+
 def pg_dump_executable():
+    """PG_DUMP_PATH if it points at a file or a command on PATH, else the newest PostgreSQL install on Windows."""
     configured = settings.PG_DUMP_PATH
     if os.path.isfile(configured):
         return configured
-    return shutil.which(configured)
+    found = shutil.which(configured)
+    if found:
+        return found
+    installed = sorted(WINDOWS_PG_BIN.glob("*/bin/pg_dump.exe"), key=_version, reverse=True)
+    return str(installed[0]) if installed else None
 
 
 def run_backup(user=None):
@@ -34,11 +53,14 @@ def run_backup(user=None):
         return run
 
     settings.BACKUP_DIR.mkdir(parents=True, exist_ok=True)
-    name = f"{db['NAME']}-{timezone.localtime():%Y%m%d-%H%M%S}.sql.gz"
+    name = f"{FILE_PREFIX}{timezone.localtime():%Y%m%d-%H%M%S}.sql.gz"
     path = settings.BACKUP_DIR / name
     # Only the app's own tables (schema "public"); Supabase manages its auth/storage schemas itself.
+    # --table=public.* rather than --schema=public: the latter writes "CREATE SCHEMA public;", which fails on
+    # restore because every Postgres database already has that schema. Tables, sequences, constraints,
+    # indexes, row level security and data are the same either way.
     cmd = [exe, f"--host={db['HOST']}", f"--port={db['PORT']}", f"--username={db['USER']}",
-           "--schema=public", "--no-owner", "--no-privileges", "--encoding=UTF8", db["NAME"]]
+           "--table=public.*", "--no-owner", "--no-privileges", "--encoding=UTF8", db["NAME"]]
     env = {**os.environ, "PGPASSWORD": db["PASSWORD"] or "",  # keeps the password off the command line
            "PGSSLMODE": db["OPTIONS"].get("sslmode", "require")}
     try:
@@ -63,12 +85,15 @@ def run_backup(user=None):
 
 
 def prune(retention_months):
-    """Deletes backup files older than the retention period (nothing is deleted when it isn't set)."""
+    """
+    Deletes this app's backup files older than the retention period (nothing is deleted when it isn't set).
+    Only files named FILE_PREFIX… are considered; anything else in BACKUP_DIR is left alone.
+    """
     if not retention_months or not settings.BACKUP_DIR.exists():
         return 0
     cutoff = timezone.now() - timedelta(days=30 * retention_months)
     removed = 0
-    for file in settings.BACKUP_DIR.glob("*.sql.gz"):
+    for file in settings.BACKUP_DIR.glob(f"{FILE_PREFIX}*.sql.gz"):
         if file.stat().st_mtime < cutoff.timestamp():
             file.unlink()
             removed += 1
