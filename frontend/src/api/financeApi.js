@@ -19,7 +19,10 @@ import { api, cleanParams as clean } from './client'
  * GET /finance/options/  ->  { income_categories: [{ value, label }], expense_categories: [{ value, label }], statuses: [{ value, label }] }
  *
  * GET  /finance/transactions/?page=&page_size=&search=&type=income|expense&status=
- *      { count, results: [{ id, date, description, type, category, category_value, amount, status, reference?, party?, due_date?, can_mark_paid }] }
+ *      { count, results: [{ id, date, description, type, category, category_value, amount, status, reference?, party?, due_date?,
+ *                           source: { kind, label, number, link } | null, can_edit, can_mark_paid }] }
+ *      Rows with a source are posted automatically from a sales or supplier payment and change only through it;
+ *      status Cancelled = its payment was cancelled (shown, but left out of every total).
  * POST  /finance/transactions/   { type, description, category, amount, date, reference?, status?: 'completed' | 'pending', party?, due_date? }
  * PATCH /finance/transactions/<id>/            { description?, category?, amount?, date?, reference?, party?, due_date? }   (type can't change)
  * POST  /finance/transactions/<id>/mark-paid/  { reference? }   (pending only)

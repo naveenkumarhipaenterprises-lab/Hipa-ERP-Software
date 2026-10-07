@@ -205,6 +205,22 @@ def record_payment(*, supplier, purchase, amount, payment_date, method, referenc
 
 
 @transaction.atomic
+def cancel_payment(payment):
+    """Reverses a made payment: the purchase's paid amount drops and Accounts marks the posted expense Cancelled."""
+    payment = SupplierPayment.objects.select_for_update(of=("self",)).get(pk=payment.pk)
+    if payment.status == SupplierPayment.Status.CANCELLED:
+        raise ValidationError({"detail": "This payment is already cancelled."})
+    if payment.status == SupplierPayment.Status.PENDING:
+        raise ValidationError({"detail": "This payment hasn't been made yet: delete the scheduled payment instead."})
+    purchase = Purchase.objects.select_for_update(of=("self",)).get(pk=payment.purchase_id) if payment.purchase_id else None
+    payment.status = SupplierPayment.Status.CANCELLED
+    payment.save(update_fields=["status", "updated_at"])
+    if purchase:
+        refresh_money(purchase)
+    return payment
+
+
+@transaction.atomic
 def mark_payment_made(payment, *, payment_date, reference, user):
     payment = SupplierPayment.objects.select_for_update(of=("self",)).get(pk=payment.pk)
     if payment.status != SupplierPayment.Status.PENDING:

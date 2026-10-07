@@ -3,7 +3,7 @@ import { formatDate, formatINR } from '../../../utils/formatters'
 
 const TYPE_LABEL = { income: 'Income', expense: 'Expense' }
 
-/** Transaction table columns; `onView(row)` makes the description open the details. */
+/** Transaction table columns; `onView(row)` makes the description open the details. Posted rows name their payment. */
 export function transactionColumns(onView) {
   return [
     { key: 'date', header: 'Date', render: (r) => <span className="nowrap">{r.date ? formatDate(r.date) : '—'}</span> },
@@ -11,13 +11,16 @@ export function transactionColumns(onView) {
       key: 'description',
       header: 'Description',
       render: (r) =>
-        onView ? (
-          <button type="button" className="link link--strong table-link cell-clip" onClick={() => onView(r)}>
-            {r.description || '—'}
-          </button>
-        ) : (
-          r.description || '—'
-        ),
+        <>
+          {onView ? (
+            <button type="button" className="link link--strong table-link cell-clip" onClick={() => onView(r)}>
+              {r.description || '—'}
+            </button>
+          ) : (
+            r.description || '—'
+          )}
+          {r.source && <small className="muted cell-sub">From {r.source.label.toLowerCase()} {r.source.number}</small>}
+        </>,
     },
     { key: 'type', header: 'Type', render: (r) => (r.type ? <Badge tone={r.type === 'income' ? 'green' : 'red'}>{TYPE_LABEL[r.type] ?? r.type}</Badge> : '—') },
     {

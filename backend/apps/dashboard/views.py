@@ -27,7 +27,7 @@ def net_profit_pair(cur, prev):
     def period(p, kind):
         return Sum("amount", filter=Q(date__range=(p.start, p.end), type=kind))
 
-    a = Transaction.objects.aggregate(i1=period(cur, Transaction.Type.INCOME), e1=period(cur, Transaction.Type.EXPENSE),
+    a = Transaction.objects.counted().aggregate(i1=period(cur, Transaction.Type.INCOME), e1=period(cur, Transaction.Type.EXPENSE),
                                       i2=period(prev, Transaction.Type.INCOME), e2=period(prev, Transaction.Type.EXPENSE))
     return (a["i1"] or 0) - (a["e1"] or 0), (a["i2"] or 0) - (a["e2"] or 0)
 

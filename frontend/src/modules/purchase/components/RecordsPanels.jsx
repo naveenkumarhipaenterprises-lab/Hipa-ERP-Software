@@ -127,16 +127,29 @@ export function ReturnsPanel({ options, canManage, refreshKey, onNew, onChanged 
   )
 }
 
-/** Supplier payments: Pending (scheduled), Overdue (scheduled and past its date), Partially Paid, Paid. */
+/**
+ * Supplier payments: Pending (scheduled), Overdue (scheduled and past its date), Partially Paid, Paid, Cancelled.
+ * Made payments are posted to Accounts automatically; cancelling one marks its Accounts expense Cancelled.
+ */
+const DONE = { pay: 'recorded as paid', delete: 'deleted', cancel: 'cancelled' }
+const CONFIRM_TITLE = { pay: 'Record as paid today?', delete: 'Delete scheduled payment?', cancel: 'Cancel this payment?' }
+const CONFIRM_LABEL = { pay: 'Mark Paid', delete: 'Delete', cancel: 'Cancel Payment' }
+const confirmMessage = ({ row, kind }) => ({
+  pay: `${money(row.amount)} to ${row.supplier} will be recorded as paid today. It is added to Accounts as an expense.`,
+  delete: 'This scheduled payment will be removed.',
+  cancel: `${row.payment_number} (${money(row.amount)} to ${row.supplier}) no longer counts as paid${row.purchase_number ? ` on ${row.purchase_number}` : ''}, and its Accounts expense is marked Cancelled. This cannot be undone.`,
+})[kind]
+
 export function PaymentsPanel({ options, canPay, refreshKey, onNew, onChanged }) {
   const toast = useToast()
   const o = options.data ?? {}
-  const [confirm, setConfirm] = useState(null) // { row, kind: 'pay' | 'delete' }
+  const [confirm, setConfirm] = useState(null) // { row, kind: 'pay' | 'delete' | 'cancel' }
   const l = usePagedList(purchaseApi.listPayments, { status: '', payment_method: '', supplier: '', date_from: '', date_to: '' }, refreshKey)
   const apply = async () => {
     if (confirm.kind === 'pay') await purchaseApi.markPaymentPaid(confirm.row.id, {})
+    else if (confirm.kind === 'cancel') await purchaseApi.cancelPayment(confirm.row.id)
     else await purchaseApi.deletePayment(confirm.row.id)
-    toast.success(`${confirm.row.payment_number} ${confirm.kind === 'pay' ? 'recorded as paid' : 'deleted'}`)
+    toast.success(`${confirm.row.payment_number} ${DONE[confirm.kind]}`)
     onChanged()
   }
   return (
@@ -163,10 +176,11 @@ export function PaymentsPanel({ options, canPay, refreshKey, onNew, onChanged })
           { key: 'status', header: 'Status', render: (r) => <Badge>{r.status}</Badge> },
           {
             key: 'actions', sticky: true, header: <span className="sr-only">Actions</span>, align: 'right',
-            render: (r) => canPay && r.can_mark_paid && (
+            render: (r) => canPay && (r.can_mark_paid || r.can_cancel) && (
               <span className="row-actions">
-                <Button size="sm" variant="ghost" icon={CircleCheck} onClick={() => setConfirm({ row: r, kind: 'pay' })} aria-label={`Mark ${r.payment_number} paid`} />
-                <Button size="sm" variant="ghost" icon={Trash2} onClick={() => setConfirm({ row: r, kind: 'delete' })} aria-label={`Delete ${r.payment_number}`} />
+                {r.can_mark_paid && <Button size="sm" variant="ghost" icon={CircleCheck} onClick={() => setConfirm({ row: r, kind: 'pay' })} aria-label={`Mark ${r.payment_number} paid`} />}
+                {r.can_mark_paid && <Button size="sm" variant="ghost" icon={Trash2} onClick={() => setConfirm({ row: r, kind: 'delete' })} aria-label={`Delete ${r.payment_number}`} />}
+                {r.can_cancel && <Button size="sm" variant="ghost" icon={XCircle} className="btn--tone-red" onClick={() => setConfirm({ row: r, kind: 'cancel' })} aria-label={`Cancel ${r.payment_number}`} />}
               </span>
             ),
           },
@@ -175,10 +189,10 @@ export function PaymentsPanel({ options, canPay, refreshKey, onNew, onChanged })
         open={Boolean(confirm)}
         onClose={() => setConfirm(null)}
         onConfirm={apply}
-        danger={confirm?.kind === 'delete'}
-        title={confirm?.kind === 'pay' ? 'Record as paid today?' : 'Delete scheduled payment?'}
-        message={confirm?.kind === 'pay' ? `${money(confirm?.row.amount)} to ${confirm?.row.supplier} will be recorded as paid today.` : 'This scheduled payment will be removed.'}
-        confirmLabel={confirm?.kind === 'pay' ? 'Mark Paid' : 'Delete'}
+        danger={confirm?.kind !== 'pay'}
+        title={CONFIRM_TITLE[confirm?.kind] ?? ''}
+        message={confirm && confirmMessage(confirm)}
+        confirmLabel={CONFIRM_LABEL[confirm?.kind] ?? 'Confirm'}
         cancelLabel="Keep"
       />
     </Card>

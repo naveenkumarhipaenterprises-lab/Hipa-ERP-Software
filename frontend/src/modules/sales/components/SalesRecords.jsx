@@ -169,7 +169,7 @@ export function SalesPaymentsPanel({ options, canReceive, refreshKey, onNew, onC
             render: (r) => canReceive && r.can_cancel && <Button size="sm" variant="ghost" icon={XCircle} onClick={() => setCancelling(r)} aria-label={`Cancel ${r.receipt_number}`} /> },
         ]} />
       <ConfirmDialog open={Boolean(cancelling)} onClose={() => setCancelling(null)} onConfirm={cancel} danger title="Cancel payment?"
-                     message={`${cancelling?.receipt_number ?? ''} (${money(cancelling?.amount)}) will no longer count towards ${cancelling?.invoice_number ?? 'the invoice'}.`}
+                     message={`${cancelling?.receipt_number ?? ''} (${money(cancelling?.amount)}) will no longer count towards ${cancelling?.invoice_number ?? 'the invoice'}, and its Accounts income is marked Cancelled.`}
                      confirmLabel="Cancel Payment" cancelLabel="Keep" />
     </Card>
   )

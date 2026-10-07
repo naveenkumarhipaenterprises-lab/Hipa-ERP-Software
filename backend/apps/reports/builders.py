@@ -228,7 +228,7 @@ def quality(p):
 
 
 def finance(p):
-    tx = Transaction.objects.filter(date__range=(p.start, p.end))
+    tx = Transaction.objects.counted().filter(date__range=(p.start, p.end))
     trend = []
     for s, e, label in day_buckets(p):
         part = tx.filter(date__range=(s, e))

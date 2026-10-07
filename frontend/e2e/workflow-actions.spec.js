@@ -160,3 +160,38 @@ test('a due post is marked published after posting it by hand', async ({ page })
   await expect(page.getByText('Post marked published')).toBeVisible()
   expect(sent(calls, 'POST /api/marketing/posts/4/status/')).toEqual({ status: 'published' })
 })
+
+test('a transaction posted from a sales payment shows its source and cannot be edited in Accounts', async ({ page }) => {
+  await signIn(page, 'finance')
+  await mockApi(page, {
+    ...SHELL,
+    ...FINANCE_SHELL,
+    'GET /api/finance/overview/': { recent_transactions: [{ id: 9, date: '2026-10-06', description: 'Payment TEST-RCP-1 for TEST-INV-3', type: 'income',
+      category: 'Product Sales', amount: 1000, status: 'Completed', reference: 'TEST-RCP-1',
+      source: { kind: 'sales_payment', label: 'Sales payment', number: 'TEST-RCP-1', link: '/sales?tab=payments' }, can_edit: false, can_mark_paid: false }] },
+  })
+  await page.goto('/finance')
+  await expect(page.getByText('From sales payment TEST-RCP-1')).toBeVisible()
+  await page.getByRole('button', { name: 'Payment TEST-RCP-1 for TEST-INV-3' }).click()
+  const details = page.getByRole('dialog', { name: 'Payment TEST-RCP-1 for TEST-INV-3' })
+  await expect(details.getByRole('link', { name: 'Sales payment TEST-RCP-1' })).toBeVisible()
+  await expect(details.getByRole('button', { name: 'Edit' })).toHaveCount(0)
+})
+
+test('a made supplier payment can be cancelled', async ({ page }) => {
+  await signIn(page, 'purchase')
+  const calls = await mockApi(page, {
+    ...SHELL,
+    'GET /api/purchase/options/': { suppliers: [], materials: [], products: [], purchases: [], supplier_payment_statuses: [], payment_methods: [] },
+    'GET /api/purchase/payments/': { count: 1, results: [{ id: 4, payment_number: 'TEST-SPY-1', supplier: 'TEST Farms', purchase_number: 'TEST-PUR-1',
+      amount: 2000, payment_date: '2026-10-06', payment_method: 'UPI', status: 'Paid', can_mark_paid: false, can_delete: false, can_cancel: true }] },
+    'POST /api/purchase/payments/4/cancel/': { id: 4, payment_number: 'TEST-SPY-1', status: 'Cancelled' },
+  })
+  await page.goto('/purchase?tab=payments')
+  await page.getByRole('button', { name: 'Cancel TEST-SPY-1' }).click()
+  const dialog = page.getByRole('dialog', { name: 'Cancel this payment?' })
+  await expect(dialog.getByText(/Accounts expense is marked Cancelled/)).toBeVisible()
+  await dialog.getByRole('button', { name: 'Cancel Payment' }).click()
+  await expect(page.getByText('TEST-SPY-1 cancelled')).toBeVisible()
+  expect(calls.some((c) => c.key === 'POST /api/purchase/payments/4/cancel/')).toBe(true)
+})

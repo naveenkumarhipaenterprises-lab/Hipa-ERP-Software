@@ -68,7 +68,7 @@ def company_summary(user):
     if can_read(user, "finance"):
         from apps.finance.models import Transaction
 
-        tx = Transaction.objects.filter(date__range=(cur.start, cur.end))
+        tx = Transaction.objects.counted().filter(date__range=(cur.start, cur.end))
         inc = tx.filter(type="income").aggregate(t=Sum("amount"))["t"] or 0
         exp = tx.filter(type="expense").aggregate(t=Sum("amount"))["t"] or 0
         out["finance_this_month"] = {"revenue_inr": num(inc), "expenses_inr": num(exp), "net_inr": num(inc - exp)}

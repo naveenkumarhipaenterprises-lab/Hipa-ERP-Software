@@ -23,4 +23,5 @@ urlpatterns = [
     path("payments/", views.PaymentsView.as_view()),
     path("payments/<int:pk>/", views.PaymentDetailView.as_view()),
     path("payments/<int:pk>/mark-paid/", views.MarkPaymentPaidView.as_view()),
+    path("payments/<int:pk>/cancel/", views.CancelPaymentView.as_view()),
 ]

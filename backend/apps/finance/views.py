@@ -26,7 +26,7 @@ def total(qs):
 
 
 def in_period(start, end):
-    return T.objects.filter(date__range=(start, end))
+    return T.objects.counted().filter(date__range=(start, end))
 
 
 def display_status(t, today):
@@ -40,7 +40,35 @@ def tx_row(t, today=None):
     return {"id": t.id, "date": t.date, "description": t.description, "type": t.type,
             "category": T.category_label(t.category), "category_value": t.category, "amount": num(t.amount),
             "status": display_status(t, today), "reference": t.reference or None, "party": t.party or None,
-            "due_date": t.due_date, "can_mark_paid": t.status == T.Status.PENDING}
+            "due_date": t.due_date, "source": tx_source(t),
+            # Posted rows follow their payment; only hand-entered rows are edited or marked paid here
+            "can_edit": not t.is_posted, "can_mark_paid": not t.is_posted and t.status == T.Status.PENDING}
+
+
+def tx_source(t):
+    """Where a posted row comes from (None for hand-entered rows)."""
+    if t.sales_payment_id:
+        return {"kind": "sales_payment", "label": "Sales payment", "number": t.sales_payment.receipt_number,
+                "link": "/sales?tab=payments"}
+    if t.supplier_payment_id:
+        return {"kind": "supplier_payment", "label": "Supplier payment", "number": t.supplier_payment.payment_number,
+                "link": "/purchase?tab=payments"}
+    return None
+
+
+def transactions_qs():
+    return T.objects.select_related("sales_payment", "supplier_payment")
+
+
+POSTED = ("This transaction comes from {source} {number} and changes with it. "
+          "Edit or cancel the payment in {module} instead.")
+
+
+def refuse_posted(t):
+    s = tx_source(t)
+    return Response({"detail": POSTED.format(source=s["label"].lower(), number=s["number"],
+                                             module="Sales → Payments" if s["kind"] == "sales_payment" else "Purchase → Payments")},
+                    status=status.HTTP_409_CONFLICT)
 
 
 def month_start(d):
@@ -97,7 +125,7 @@ class OverviewView(FinanceView):
             "kpis": {"revenue": kpi(r1, r0), "expenses": kpi(e1, e0), "net_profit": kpi(n1, n0), "profit_margin_pct": kpi(m1, m0)},
             "expense_breakdown": breakdown(qs.filter(type=T.Type.EXPENSE)),
             "income_sources": breakdown(qs.filter(type=T.Type.INCOME)),
-            "recent_transactions": [tx_row(t, today) for t in T.objects.all()[:6]],
+            "recent_transactions": [tx_row(t, today) for t in transactions_qs()[:6]],
             "budget": budget_block(today),
             "pending_payments": [
                 {"id": t.id, "party": t.party or t.description, "kind": T.KIND_FOR_CATEGORY.get(t.category, "other"),
@@ -200,7 +228,7 @@ def clean_transaction(d):
 
 class TransactionsView(FinanceView):
     def get(self, request):
-        qs = T.objects.all()
+        qs = transactions_qs()
         q = self.param("search")
         if q:
             qs = qs.filter(Q(description__icontains=q) | Q(reference__icontains=q) | Q(party__icontains=q))
@@ -230,7 +258,9 @@ class TransactionDetailView(FinanceView):
     EDITABLE = ("description", "category", "amount", "date", "party", "due_date", "reference")
 
     def patch(self, request, pk):
-        t = get_object_or_404(T, pk=pk)
+        t = get_object_or_404(transactions_qs(), pk=pk)
+        if t.is_posted:
+            return refuse_posted(t)
         if "type" in request.data and request.data.get("type") != t.type:
             raise ValidationError({"type": ["The type can't be changed. Record a new transaction instead."]})
         current = {"type": t.type, "category": t.category, "description": t.description, "amount": t.amount,
@@ -252,6 +282,8 @@ class MarkPaidView(FinanceView):
     def post(self, request, pk):
         with transaction.atomic():
             t = get_object_or_404(T.objects.select_for_update(), pk=pk)
+            if t.is_posted:
+                return refuse_posted(transactions_qs().get(pk=pk))
             if t.status != T.Status.PENDING:
                 raise ValidationError({"status": ["This transaction is already completed."]})
             t.status = T.Status.COMPLETED

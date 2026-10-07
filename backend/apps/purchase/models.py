@@ -369,6 +369,7 @@ class SupplierPayment(models.Model):
     A payment to a supplier, optionally against one purchase. A scheduled payment is Pending
     (shown as Overdue once its date has passed); a made payment is Paid when it settles the
     purchase and Partially Paid when a balance remains.
+    A made payment can be cancelled. Made payments are posted to Accounts automatically.
     """
 
     class Method(models.TextChoices):
@@ -384,6 +385,7 @@ class SupplierPayment(models.Model):
         PARTIALLY_PAID = "partially_paid", "Partially Paid"
         PAID = "paid", "Paid"
         OVERDUE = "overdue", "Overdue"  # shown for pending payments past their date; never stored
+        CANCELLED = "cancelled", "Cancelled"  # a made payment that was reversed
 
     payment_number = models.CharField("payment ID", max_length=20, unique=True, editable=False)
     supplier = models.ForeignKey(Supplier, on_delete=models.PROTECT, related_name="payments")

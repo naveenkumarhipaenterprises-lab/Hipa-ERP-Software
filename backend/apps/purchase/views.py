@@ -117,6 +117,7 @@ def payment_row(pm, editable=True):
         "transaction_reference": pm.transaction_reference or None, "status": SPSt(pm.display_status).label,
         "notes": pm.notes or None, "can_mark_paid": editable and pm.status == SPSt.PENDING,
         "can_delete": editable and pm.status == SPSt.PENDING,
+        "can_cancel": editable and pm.status in (SPSt.PAID, SPSt.PARTIALLY_PAID),
     }
 
 
@@ -961,6 +962,15 @@ class PaymentDetailView(PurchaseView):
             pm.delete()
         audit.record(request, "Deleted scheduled supplier payment", number)
         return Response(status=status.HTTP_204_NO_CONTENT)
+
+
+class CancelPaymentView(PurchaseView):
+    write_module = "supplier_payments"
+
+    def post(self, request, pk):
+        pm = services.cancel_payment(get_object_or_404(SupplierPayment, pk=pk))
+        audit.record(request, "Cancelled supplier payment", pm.payment_number)
+        return Response(payment_row(payments_qs().get(pk=pk), True))
 
 
 class MarkPaymentPaidView(PurchaseView):

@@ -80,4 +80,6 @@ export const purchaseApi = {
   createPayment: (body) => api.post('/purchase/payments/', body),
   markPaymentPaid: (id, body) => api.post(`/purchase/payments/${id}/mark-paid/`, body),
   deletePayment: (id) => api.delete(`/purchase/payments/${id}/`),
+  // A made payment (Paid / Partially Paid): reverses it; its Accounts expense is marked Cancelled
+  cancelPayment: (id) => api.post(`/purchase/payments/${id}/cancel/`),
 }

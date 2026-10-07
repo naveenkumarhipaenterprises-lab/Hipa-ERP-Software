@@ -5,7 +5,18 @@ from django.core.validators import MinValueValidator
 from django.db import models
 
 
+class TransactionQuerySet(models.QuerySet):
+    def counted(self):
+        """Rows that count in totals: a cancelled transaction (its payment was cancelled) stays visible but counts nowhere."""
+        return self.exclude(status=Transaction.Status.CANCELLED)
+
+
 class Transaction(models.Model):
+    """
+    One income or expense line in Accounts. Rows linked to a sales payment or a supplier payment are posted
+    automatically from that payment (apps/finance/services.py) and change only through it; the others are entered by hand.
+    """
+
     class Type(models.TextChoices):
         INCOME = "income", "Income"
         EXPENSE = "expense", "Expense"
@@ -30,6 +41,7 @@ class Transaction(models.Model):
     class Status(models.TextChoices):
         COMPLETED = "completed", "Completed"
         PENDING = "pending", "Pending"
+        CANCELLED = "cancelled", "Cancelled"  # only for posted rows whose payment was cancelled
 
     # Pending-payment "kind" shown in Accounts → Pending Payments
     KIND_FOR_CATEGORY = {
@@ -46,15 +58,30 @@ class Transaction(models.Model):
     party = models.CharField(max_length=150, blank=True, help_text="Customer, supplier or payee")
     due_date = models.DateField(null=True, blank=True)
     reference = models.CharField(max_length=60, blank=True)
+    # Source payment of a posted row; one-to-one, so a payment can never be posted twice
+    sales_payment = models.OneToOneField("sales.SalesPayment", null=True, blank=True, on_delete=models.PROTECT,
+                                         related_name="accounts_transaction")
+    supplier_payment = models.OneToOneField("purchase.SupplierPayment", null=True, blank=True, on_delete=models.PROTECT,
+                                            related_name="accounts_transaction")
     created_by = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.SET_NULL, related_name="+")
     created_at = models.DateTimeField(auto_now_add=True)
 
+    objects = TransactionQuerySet.as_manager()
+
     class Meta:
         ordering = ["-date", "-id"]
-        constraints = [models.CheckConstraint(condition=models.Q(amount__gt=0), name="transaction_amount_positive")]
+        constraints = [
+            models.CheckConstraint(condition=models.Q(amount__gt=0), name="transaction_amount_positive"),
+            models.CheckConstraint(condition=models.Q(sales_payment__isnull=True) | models.Q(supplier_payment__isnull=True),
+                                   name="transaction_one_source"),
+        ]
 
     def __str__(self):
         return f"{self.date} {self.get_type_display()} ₹{self.amount} {self.description}"
+
+    @property
+    def is_posted(self):
+        return self.sales_payment_id is not None or self.supplier_payment_id is not None
 
     @classmethod
     def category_label(cls, value):

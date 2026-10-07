@@ -1,4 +1,5 @@
 import { CircleCheck, Pencil } from 'lucide-react'
+import { Link } from 'react-router-dom'
 import Badge from '../../../components/common/Badge'
 import Button from '../../../components/common/Button'
 import Modal from '../../../components/common/Modal'
@@ -6,12 +7,16 @@ import { formatDate, formatINR } from '../../../utils/formatters'
 
 const TYPE_LABEL = { income: 'Income', expense: 'Expense' }
 
-/** One transaction; managers can edit it, or mark a pending one paid. */
+/**
+ * One transaction; managers can edit a hand-entered one or mark it paid. A posted row (from a sales or supplier
+ * payment) shows its source and changes only through that payment.
+ */
 export default function TransactionDetailsModal({ transaction: t, onClose, onEdit, onMarkPaid }) {
   if (!t) return null
-  const footer = (onEdit || (onMarkPaid && t.can_mark_paid)) && (
+  const canEdit = onEdit && t.can_edit !== false
+  const footer = (canEdit || (onMarkPaid && t.can_mark_paid)) && (
     <>
-      {onEdit && <Button variant="outline" icon={Pencil} onClick={() => onEdit(t)}>Edit</Button>}
+      {canEdit && <Button variant="outline" icon={Pencil} onClick={() => onEdit(t)}>Edit</Button>}
       {onMarkPaid && t.can_mark_paid && (
         <Button icon={CircleCheck} onClick={() => onMarkPaid(t)}>{t.type === 'income' ? 'Mark received' : 'Mark paid'}</Button>
       )}
@@ -36,6 +41,16 @@ export default function TransactionDetailsModal({ transaction: t, onClose, onEdi
           <>
             <dt>Due date</dt>
             <dd>{formatDate(t.due_date)}</dd>
+          </>
+        )}
+        {t.source && (
+          <>
+            <dt>Source</dt>
+            <dd>
+              <Link to={t.source.link} className="link">{t.source.label} {t.source.number}</Link>
+              <br />
+              <small className="muted">Posted automatically; it changes with the payment.</small>
+            </dd>
           </>
         )}
         <dt>Reference</dt>
