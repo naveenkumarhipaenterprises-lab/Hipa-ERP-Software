@@ -215,18 +215,20 @@ Retention (Settings → Data & Backup) deletes only old `hipa_masala-supabase-*.
 
 ### Daily scheduled task
 
-The Windows Task Scheduler task **"HIPA MASALA daily tasks"** runs `scripts/daily_tasks.py` every day at 02:00. If the PC is off at that time, it runs as soon as the PC is next on. It uses `pythonw.exe`, so no window appears. It:
+The Windows Task Scheduler task **"HIPA MASALA daily tasks"** starts `scripts/daily_tasks.py` every hour from 09:30 to 18:30. The jobs run **once a day**, at the first start when the PC is awake: the date of the last successful run is kept in `logs/daily_tasks.last`, later starts that day do nothing, and after a failure the next hour tries again. (It used to run at 02:00, but this PC sleeps at night and Windows doesn't catch up a missed run after waking from sleep, so it stopped running.) It uses `pythonw.exe`, so no window appears. It:
 
 1. runs `expire_quotations` (draft / sent quotations past their valid-until date become Expired);
 2. runs `send_due_alerts` (purchases not received on time, supplier payments due within 2 days, overdue invoices — each alert once);
 3. runs `run_analytics` (insights, including HIGH-priority purchase recommendations shown on the Dashboard and in the AI Business Report);
 4. runs `run_backup --scheduled`, which backs up only when **Automatic backup** is on in Settings and deletes this app's backups older than the chosen retention period.
 
-Output is appended to `backend/logs/daily_tasks.log`. To run it now: `Start-ScheduledTask -TaskName "HIPA MASALA daily tasks"`. To recreate it on another PC:
+Output is appended to `backend/logs/daily_tasks.log`. To run the jobs again today: `.venv\Scripts\python scripts\daily_tasks.py --force`. To recreate the task on another PC:
 
 ```powershell
 $action = New-ScheduledTaskAction -Execute "<backend>\.venv\Scripts\pythonw.exe" -Argument '"<backend>\scripts\daily_tasks.py"' -WorkingDirectory "<backend>"
-Register-ScheduledTask -TaskName "HIPA MASALA daily tasks" -Action $action -Trigger (New-ScheduledTaskTrigger -Daily -At 2:00AM) -Settings (New-ScheduledTaskSettingsSet -StartWhenAvailable)
+$trigger = New-ScheduledTaskTrigger -Daily -At 09:30
+$trigger.Repetition = (New-ScheduledTaskTrigger -Once -At 09:30 -RepetitionInterval (New-TimeSpan -Hours 1) -RepetitionDuration (New-TimeSpan -Hours 9)).Repetition
+Register-ScheduledTask -TaskName "HIPA MASALA daily tasks" -Action $action -Trigger $trigger -Settings (New-ScheduledTaskSettingsSet -StartWhenAvailable)
 ```
 
 Each job can also be run by hand: `manage.py run_analytics`, `manage.py run_backup`.
