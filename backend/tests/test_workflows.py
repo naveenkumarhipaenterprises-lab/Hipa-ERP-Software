@@ -323,6 +323,30 @@ class WorkflowTests(TestCase):
         self.assertTrue(self.api.get(f"{API}/finance/revenue-expenses/?granularity=quarterly").data)
         self.assertEqual(self.api.get(f"{API}/finance/transactions/?type=expense").data["count"], 1)
 
+    def test_edit_transaction_and_mark_a_pending_payment_paid(self):
+        bill = self.post("/finance/transactions/", {"type": "expense", "description": "TEST power bill", "category": "utilities",
+                                                    "amount": 400, "date": today().isoformat(), "status": "pending",
+                                                    "party": "TEST Electricity Board", "due_date": (today() + timedelta(days=5)).isoformat()})
+        self.assertEqual((bill["status"], bill["party"], bill["can_mark_paid"], bill["category_value"]),
+                         ("Pending", "TEST Electricity Board", True, "utilities"))
+        path = f"{API}/finance/transactions/{bill['id']}/"
+        res = self.api.patch(path, {"amount": 450, "description": "TEST power bill (Oct)"}, format="json")
+        self.assertEqual(res.status_code, 200, res.data)
+        self.assertEqual((res.data["amount"], res.data["description"], res.data["party"]), (450, "TEST power bill (Oct)", "TEST Electricity Board"))
+        self.assertIn("category", self.api.patch(path, {"category": "product_sales"}, format="json").data)  # an income category
+        self.assertIn("type", self.api.patch(path, {"type": "income"}, format="json").data)
+        self.assertTrue(AuditLog.objects.filter(action="Edited expense").exists())
+
+        paid = self.post(f"/finance/transactions/{bill['id']}/mark-paid/", {"reference": "TEST-UTR-9"}, expected=200)
+        self.assertEqual((paid["status"], paid["reference"], paid["can_mark_paid"]), ("Completed", "TEST-UTR-9", False))
+        self.post(f"/finance/transactions/{bill['id']}/mark-paid/", {}, expected=400)
+        ov = self.api.get(f"{API}/finance/overview/").data
+        self.assertEqual(ov["pending_payments"], [])
+        self.assertEqual(ov["kpis"]["expenses"]["value"], 450)
+        self.assertEqual(self.api.get(f"{API}/finance/cash-flow/").data[-1]["outflow"], 450)
+        res = client_for(make_user("sales")).patch(path, {"amount": 1}, format="json")
+        self.assertEqual(res.status_code, 403)
+
     # --- Marketing ---------------------------------------------------------------------
     def test_campaigns_and_posts(self):
         c = self.post("/marketing/campaigns/", {"name": "TEST Diwali", "platform": "instagram", "objective": "sales",

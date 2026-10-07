@@ -1,7 +1,9 @@
 from datetime import date, timedelta
 from decimal import Decimal, InvalidOperation
 
+from django.db import transaction
 from django.db.models import Q, Sum
+from django.shortcuts import get_object_or_404
 from django.utils.dateparse import parse_date
 from rest_framework import status
 from rest_framework.exceptions import ValidationError
@@ -36,8 +38,9 @@ def display_status(t, today):
 def tx_row(t, today=None):
     today = today or periods.today()
     return {"id": t.id, "date": t.date, "description": t.description, "type": t.type,
-            "category": T.category_label(t.category), "amount": num(t.amount), "status": display_status(t, today),
-            "reference": t.reference or None}
+            "category": T.category_label(t.category), "category_value": t.category, "amount": num(t.amount),
+            "status": display_status(t, today), "reference": t.reference or None, "party": t.party or None,
+            "due_date": t.due_date, "can_mark_paid": t.status == T.Status.PENDING}
 
 
 def month_start(d):
@@ -151,6 +154,50 @@ def money(value, field, allow_zero=False):
         raise ValidationError({field: ["Enter an amount " + ("of 0 or more" if allow_zero else "greater than 0") + " (up to 2 decimals)."]})
 
 
+def clean_transaction(d):
+    """Validated transaction fields from request data (shared by create and edit)."""
+    errors = {}
+    type_ = d.get("type")
+    category = None
+    if type_ not in T.Type.values:
+        errors["type"] = ["Choose income or expense."]
+    else:
+        allowed = T.IncomeCategory if type_ == T.Type.INCOME else T.ExpenseCategory
+        try:
+            category = resolve_choice(allowed, d.get("category"), "category")
+            if not category:
+                errors["category"] = ["Choose a category."]
+        except ValidationError as exc:
+            errors.update(exc.detail)
+    description = str(d.get("description") or "").strip()
+    if not description:
+        errors["description"] = ["Enter a description."]
+    amount = None
+    try:
+        amount = money(d.get("amount"), "amount")
+    except ValidationError as exc:
+        errors.update(exc.detail)
+    day = parse_date(str(d.get("date") or ""))
+    if not day:
+        errors["date"] = ["Enter the date (YYYY-MM-DD)."]
+    st = T.Status.COMPLETED
+    if d.get("status"):
+        try:
+            st = resolve_choice(T.Status, d.get("status"), "status")
+        except ValidationError as exc:
+            errors.update(exc.detail)
+    due = None
+    if d.get("due_date"):
+        due = parse_date(str(d.get("due_date")))
+        if not due:
+            errors["due_date"] = ["Enter the due date (YYYY-MM-DD)."]
+    if errors:
+        raise ValidationError(errors)
+    return {"type": type_, "category": category, "description": description[:255], "amount": amount, "date": day,
+            "status": st, "due_date": due, "party": str(d.get("party") or "").strip()[:150],
+            "reference": str(d.get("reference") or "").strip()[:60]}
+
+
 class TransactionsView(FinanceView):
     def get(self, request):
         qs = T.objects.all()
@@ -169,45 +216,52 @@ class TransactionsView(FinanceView):
         return self.paginated(qs, lambda t: tx_row(t, today))
 
     def post(self, request):
-        d = request.data
-        errors = {}
-        type_ = d.get("type")
-        if type_ not in T.Type.values:
-            errors["type"] = ["Choose income or expense."]
-        else:
-            allowed = T.IncomeCategory if type_ == T.Type.INCOME else T.ExpenseCategory
-            try:
-                category = resolve_choice(allowed, d.get("category"), "category")
-                if not category:
-                    errors["category"] = ["Choose a category."]
-            except ValidationError as exc:
-                errors.update(exc.detail)
-        description = str(d.get("description") or "").strip()
-        if not description:
-            errors["description"] = ["Enter a description."]
-        try:
-            amount = money(d.get("amount"), "amount")
-        except ValidationError as exc:
-            errors.update(exc.detail)
-        day = parse_date(str(d.get("date") or ""))
-        if not day:
-            errors["date"] = ["Enter the date (YYYY-MM-DD)."]
-        st = T.Status.COMPLETED
-        if d.get("status"):
-            try:
-                st = resolve_choice(T.Status, d.get("status"), "status")
-            except ValidationError as exc:
-                errors.update(exc.detail)
-        due = parse_date(str(d.get("due_date") or "")) if d.get("due_date") else None
-        if errors:
-            raise ValidationError(errors)
-        t = T.objects.create(type=type_, category=category, description=description[:255], amount=amount, date=day,
-                             status=st, due_date=due, party=str(d.get("party") or "").strip()[:150],
-                             reference=str(d.get("reference") or "").strip()[:60], created_by=request.user)
-        audit.record(request, f"Recorded {t.get_type_display().lower()}", f"₹{amount} {description[:80]}")
+        fields = clean_transaction(request.data)
+        t = T.objects.create(**fields, created_by=request.user)
+        audit.record(request, f"Recorded {t.get_type_display().lower()}", f"₹{t.amount} {t.description[:80]}")
         if t.status == T.Status.PENDING and t.type == T.Type.EXPENSE:
-            notifications.notify("payment_due", "New pending payment", f"{t.party or t.description}: ₹{amount}", type="warning", link="/finance")
+            notifications.notify("payment_due", "New pending payment", f"{t.party or t.description}: ₹{t.amount}", type="warning", link="/finance")
         return Response(tx_row(t), status=status.HTTP_201_CREATED)
+
+
+class TransactionDetailView(FinanceView):
+    """PATCH: edit description, category, amount, date, party, due date, reference. The type stays; paying is mark-paid."""
+
+    EDITABLE = ("description", "category", "amount", "date", "party", "due_date", "reference")
+
+    def patch(self, request, pk):
+        t = get_object_or_404(T, pk=pk)
+        if "type" in request.data and request.data.get("type") != t.type:
+            raise ValidationError({"type": ["The type can't be changed. Record a new transaction instead."]})
+        current = {"type": t.type, "category": t.category, "description": t.description, "amount": t.amount,
+                   "date": t.date.isoformat(), "status": t.status, "due_date": t.due_date.isoformat() if t.due_date else "",
+                   "party": t.party, "reference": t.reference}
+        fields = clean_transaction({**current, **{k: request.data.get(k) for k in self.EDITABLE if k in request.data}})
+        changed = [k for k in self.EDITABLE if getattr(t, k) != fields[k]]
+        for k in changed:
+            setattr(t, k, fields[k])
+        if changed:
+            t.save(update_fields=changed)
+            audit.record(request, f"Edited {t.get_type_display().lower()}", f"{t.description[:80]}: {', '.join(changed)}")
+        return Response(tx_row(t))
+
+
+class MarkPaidView(FinanceView):
+    """POST {reference?}: a pending transaction is paid (or received). Its date stays the date it was recorded for."""
+
+    def post(self, request, pk):
+        with transaction.atomic():
+            t = get_object_or_404(T.objects.select_for_update(), pk=pk)
+            if t.status != T.Status.PENDING:
+                raise ValidationError({"status": ["This transaction is already completed."]})
+            t.status = T.Status.COMPLETED
+            reference = str(request.data.get("reference") or "").strip()[:60]
+            if reference:
+                t.reference = reference
+            t.save(update_fields=["status", "reference"])
+        audit.record(request, "Marked payment paid" if t.type == T.Type.EXPENSE else "Marked income received",
+                     f"₹{t.amount} {(t.party or t.description)[:80]}")
+        return Response(tx_row(t))
 
 
 class BudgetView(FinanceView):

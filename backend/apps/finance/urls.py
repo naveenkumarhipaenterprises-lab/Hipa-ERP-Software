@@ -8,5 +8,7 @@ urlpatterns = [
     path("cash-flow/", views.CashFlowView.as_view()),
     path("options/", views.OptionsView.as_view()),
     path("transactions/", views.TransactionsView.as_view()),
+    path("transactions/<int:pk>/", views.TransactionDetailView.as_view()),
+    path("transactions/<int:pk>/mark-paid/", views.MarkPaidView.as_view()),
     path("budget/", views.BudgetView.as_view()),
 ]

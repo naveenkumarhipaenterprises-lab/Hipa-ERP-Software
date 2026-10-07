@@ -93,3 +93,47 @@ test('a scheduled audit is completed with its findings', async ({ page }) => {
   await expect(page.getByText(/TEST FSSAI Inspection on .* completed/)).toBeVisible()
   expect(sent(calls, 'POST /api/quality/audits/2/status/')).toEqual({ status: 'completed', findings: 'TEST: all labels compliant' })
 })
+
+const FINANCE_SHELL = {
+  'GET /api/finance/revenue-expenses/': [],
+  'GET /api/finance/cash-flow/': [],
+  'GET /api/finance/options/': { income_categories: [{ value: 'product_sales', label: 'Product Sales' }],
+    expense_categories: [{ value: 'utilities', label: 'Utilities' }], statuses: [] },
+}
+
+test('an expense can be recorded as a pending payment', async ({ page }) => {
+  await signIn(page, 'finance')
+  const calls = await mockApi(page, { ...SHELL, ...FINANCE_SHELL, 'GET /api/finance/overview/': {}, 'POST /api/finance/transactions/': { id: 1 } })
+  await page.goto('/finance')
+  await page.getByRole('button', { name: 'Record Expense' }).first().click()
+  const form = page.getByRole('dialog', { name: 'Record Expense' })
+  await form.getByLabel(/Description/).fill('TEST power bill')
+  await form.getByLabel(/Category/).selectOption('utilities')
+  await form.getByLabel(/Amount/).fill('400')
+  await expect(form.getByLabel('Pay to')).toHaveCount(0)
+  await form.getByLabel(/Payment/).selectOption('pending')
+  await form.getByLabel('Pay to').fill('TEST Electricity Board')
+  await form.getByLabel('Due date').fill('2099-01-10')
+  await form.getByRole('button', { name: 'Save Expense' }).click()
+  await expect(page.getByText(/Expense of .*400.* recorded/)).toBeVisible()
+  expect(sent(calls, 'POST /api/finance/transactions/')).toMatchObject({ type: 'expense', status: 'pending', party: 'TEST Electricity Board',
+    due_date: '2099-01-10', amount: 400 })
+})
+
+test('a pending payment is marked paid with its reference', async ({ page }) => {
+  await signIn(page, 'finance')
+  const calls = await mockApi(page, {
+    ...SHELL,
+    ...FINANCE_SHELL,
+    'GET /api/finance/overview/': { pending_payments: [{ id: 7, party: 'TEST Electricity Board', kind: 'utility', due_date: '2099-01-10',
+      amount: 400, status: 'Pending' }] },
+    'POST /api/finance/transactions/7/mark-paid/': { id: 7, status: 'Completed' },
+  })
+  await page.goto('/finance')
+  await page.getByRole('button', { name: 'Mark TEST Electricity Board paid' }).click()
+  const form = page.getByRole('dialog', { name: 'Mark TEST Electricity Board paid' })
+  await form.getByLabel('Payment reference').fill('TEST-UTR-9')
+  await form.getByRole('button', { name: 'Confirm' }).click()
+  await expect(page.getByText('TEST Electricity Board marked paid')).toBeVisible()
+  expect(sent(calls, 'POST /api/finance/transactions/7/mark-paid/')).toEqual({ reference: 'TEST-UTR-9' })
+})

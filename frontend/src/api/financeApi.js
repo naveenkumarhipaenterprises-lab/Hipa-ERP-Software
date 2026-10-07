@@ -19,8 +19,10 @@ import { api, cleanParams as clean } from './client'
  * GET /finance/options/  ->  { income_categories: [{ value, label }], expense_categories: [{ value, label }], statuses: [{ value, label }] }
  *
  * GET  /finance/transactions/?page=&page_size=&search=&type=income|expense&status=
- *      { count, results: [{ id, date, description, type, category, amount, status, reference? }] }
- * POST /finance/transactions/   { type, description, category, amount, date, reference? }
+ *      { count, results: [{ id, date, description, type, category, category_value, amount, status, reference?, party?, due_date?, can_mark_paid }] }
+ * POST  /finance/transactions/   { type, description, category, amount, date, reference?, status?: 'completed' | 'pending', party?, due_date? }
+ * PATCH /finance/transactions/<id>/            { description?, category?, amount?, date?, reference?, party?, due_date? }   (type can't change)
+ * POST  /finance/transactions/<id>/mark-paid/  { reference? }   (pending only)
  * PUT  /finance/budget/         { revenue_target, expense_limit }     // current budget period
  */
 export const financeApi = {
@@ -30,5 +32,7 @@ export const financeApi = {
   getOptions: () => api.get('/finance/options/'),
   listTransactions: (params) => api.get('/finance/transactions/', clean(params)),
   createTransaction: (tx) => api.post('/finance/transactions/', tx),
+  updateTransaction: (id, changes) => api.patch(`/finance/transactions/${id}/`, changes),
+  markPaid: (id, body = {}) => api.post(`/finance/transactions/${id}/mark-paid/`, body),
   setBudget: (budget) => api.put('/finance/budget/', budget),
 }

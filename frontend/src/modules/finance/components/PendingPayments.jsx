@@ -1,13 +1,14 @@
 import { CircleCheck, Landmark, Package, Receipt, Users, Zap } from 'lucide-react'
 import Badge from '../../../components/common/Badge'
+import Button from '../../../components/common/Button'
 import EmptyState from '../../../components/common/EmptyState'
 import { formatDate, formatINR } from '../../../utils/formatters'
 
 // Styling only: an icon per payment kind
 const KIND_ICON = { supplier: Package, utility: Zap, salary: Users, tax: Landmark, other: Receipt }
 
-/** Payments due, from the API: [{ id, party, kind?, due_date, amount, status }] */
-export default function PendingPayments({ items }) {
+/** Payments due, from the API: [{ id, party, kind?, due_date, amount, status }]; onMarkPaid(item) for managers. */
+export default function PendingPayments({ items, onMarkPaid }) {
   const rows = Array.isArray(items) ? items : []
   if (rows.length === 0) {
     return <EmptyState compact icon={CircleCheck} title="No pending payments" message="Bills and payables that are due will appear here." />
@@ -27,6 +28,11 @@ export default function PendingPayments({ items }) {
               <strong>{p.amount != null ? formatINR(p.amount) : '—'}</strong>
               {p.status && <Badge>{p.status}</Badge>}
             </span>
+            {onMarkPaid && (
+              <Button size="sm" variant="soft" icon={CircleCheck} onClick={() => onMarkPaid(p)} aria-label={`Mark ${p.party} paid`}>
+                Paid
+              </Button>
+            )}
           </li>
         )
       })}

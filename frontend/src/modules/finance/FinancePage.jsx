@@ -8,6 +8,7 @@ import Button from '../../components/common/Button'
 import Card from '../../components/common/Card'
 import DateRangeSelect, { MiniSelect } from '../../components/common/DateRangeSelect'
 import ErrorMessage from '../../components/common/ErrorMessage'
+import FormModal from '../../components/common/FormModal'
 import PageHeader from '../../components/common/PageHeader'
 import Table from '../../components/common/Table'
 import { ActionsPanel, InsightPanel } from '../../components/dashboard/InsightPanel'
@@ -63,6 +64,8 @@ export default function FinancePage() {
   const [txType, setTxType] = useState(null) // 'income' | 'expense'
   const [modal, setModal] = useState(null) // 'budget' | 'ledger'
   const [viewing, setViewing] = useState(null)
+  const [editing, setEditing] = useState(null)
+  const [paying, setPaying] = useState(null)
   const [refreshKey, setRefreshKey] = useState(0)
 
   const canManage = FINANCE_MANAGERS.includes(user?.role)
@@ -84,6 +87,18 @@ export default function FinancePage() {
   const saveTransaction = async (values) => {
     await financeApi.createTransaction(values)
     toast.success(`${values.type === 'income' ? 'Income' : 'Expense'} of ${formatINR(values.amount)} recorded`)
+    refresh()
+  }
+
+  const updateTransaction = async (values) => {
+    await financeApi.updateTransaction(editing.id, values)
+    toast.success('Transaction updated')
+    refresh()
+  }
+
+  const markPaid = async (values) => {
+    await financeApi.markPaid(paying.id, { reference: values.reference?.trim() || undefined })
+    toast.success(`${paying.party || paying.description} marked ${paying.type === 'income' ? 'received' : 'paid'}`)
     refresh()
   }
 
@@ -241,7 +256,7 @@ export default function FinancePage() {
               )}
             </Card>
             <Card title="Pending Payments">
-              {loading ? <div className="skeleton skeleton--list" aria-label="Loading" /> : <PendingPayments items={data?.pending_payments} />}
+              {loading ? <div className="skeleton skeleton--list" aria-label="Loading" /> : <PendingPayments items={data?.pending_payments} onMarkPaid={canManage ? setPaying : undefined} />}
             </Card>
           </div>
 
@@ -265,13 +280,28 @@ export default function FinancePage() {
       <BudgetModal open={modal === 'budget'} budget={data?.budget} onClose={() => setModal(null)} onSave={saveBudget} />
       {/* The ledger hides while a transaction's details are open, so only one dialog is active */}
       <LedgerModal
-        open={modal === 'ledger' && !viewing}
+        open={modal === 'ledger' && !viewing && !editing && !paying}
         statuses={options.data?.statuses}
         refreshKey={refreshKey}
         onClose={() => setModal(null)}
         onView={setViewing}
       />
-      <TransactionDetailsModal transaction={viewing} onClose={() => setViewing(null)} />
+      <TransactionDetailsModal
+        transaction={viewing}
+        onClose={() => setViewing(null)}
+        onEdit={canManage ? (t) => { setViewing(null); setEditing(t) } : undefined}
+        onMarkPaid={canManage ? (t) => { setViewing(null); setPaying(t) } : undefined}
+      />
+      <TransactionModal transaction={editing} options={options} onClose={() => setEditing(null)} onSave={updateTransaction} />
+      <FormModal
+        open={Boolean(paying)}
+        onClose={() => setPaying(null)}
+        title={paying ? `Mark ${paying.party || paying.description} ${paying.type === 'income' ? 'received' : 'paid'}` : 'Mark paid'}
+        subtitle={paying?.amount != null ? formatINR(paying.amount) : undefined}
+        fields={[{ name: 'reference', label: 'Payment reference', placeholder: 'UTR, cheque or receipt no. (optional)', full: true }]}
+        submitLabel="Confirm"
+        onSubmit={markPaid}
+      />
     </div>
   )
 }
