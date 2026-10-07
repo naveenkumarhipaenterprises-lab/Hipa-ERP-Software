@@ -1,0 +1,23 @@
+# Line endings: text files are stored and checked out with LF, so files saved on Windows
+# (e.g. Django's generated migrations, which use CRLF) don't mix line endings in the repository.
+* text=auto eol=lf
+
+# Windows scripts keep CRLF
+*.bat text eol=crlf
+*.cmd text eol=crlf
+*.ps1 text eol=crlf
+
+# Binary files: never converted or diffed as text
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.ico binary
+*.webp binary
+*.ttf binary
+*.otf binary
+*.woff binary
+*.woff2 binary
+*.pdf binary
+*.xlsx binary
+*.gz binary
