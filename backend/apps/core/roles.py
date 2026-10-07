@@ -12,7 +12,7 @@ class Role(models.TextChoices):
     PURCHASE = "purchase", "Purchase Team"
     INVENTORY = "inventory", "Inventory Team"
     MARKETING = "marketing", "Marketing Team"
-    FINANCE = "finance", "Finance Team"
+    FINANCE = "finance", "Accounts Team"
     QUALITY = "quality", "Quality Team"
     SUPPLY_CHAIN = "supply_chain", "Supply Chain Team"
 

@@ -32,7 +32,7 @@ class RolePermissionTests(TestCase):
                 self.assertEqual(res.status_code, expected, f"{role} GET {path}")
 
     def test_read_only_roles_cannot_write(self):
-        # Finance can view sales but not create orders
+        # The Accounts team (role finance) can view sales but not create orders
         res = client_for(make_user("finance")).post(f"{API}/sales/orders/", {}, format="json")
         self.assertEqual(res.status_code, 403)
         self.assertEqual(res.data["detail"], "Your role can view this module but not change it.")

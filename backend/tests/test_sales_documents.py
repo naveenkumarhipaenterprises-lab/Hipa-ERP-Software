@@ -1,6 +1,5 @@
 """Sales quotations, invoices, customer payments, returns and PDFs (TEST records only)."""
 from datetime import timedelta
-from decimal import Decimal
 
 from django.test import TestCase
 

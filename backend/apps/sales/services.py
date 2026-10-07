@@ -22,7 +22,7 @@ from apps.system.models import BillingSettings
 from services import notifications
 
 from .models import (QuotationStatusChange, SalesInvoice, SalesInvoiceItem, SalesOrder, SalesOrderItem, SalesPayment,
-                     SalesQuotation, SalesQuotationItem, SalesReturn)
+                     SalesQuotation, SalesReturn)
 
 QS = SalesQuotation.Status
 MAX_QTY = Decimal("999999999")

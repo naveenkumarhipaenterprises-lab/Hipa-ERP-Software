@@ -12,7 +12,7 @@ class Report(models.Model):
         CUSTOMERS = "customers", "Customer Report"
         SUPPLY_CHAIN = "supply_chain", "Supply Chain Report"
         QUALITY = "quality", "Quality Report"
-        FINANCE = "finance", "Finance Report"
+        FINANCE = "finance", "Accounts Report"
         AI_BUSINESS = "ai_business", "AI Business Report"
 
     class Format(models.TextChoices):

@@ -237,7 +237,7 @@ def finance(p):
         if rev or exp:
             trend.append({"label": label, "revenue": num(rev or 0), "expenses": num(exp or 0)})
     return {
-        "title": f"Finance Report — {p.label}",
+        "title": f"Accounts Report — {p.label}",
         "chart": chart("Revenue and expenses", "bar", trend, [{"key": "revenue", "name": "Revenue"}, {"key": "expenses", "name": "Expenses"}], "inr"),
         "breakdown": breakdown("Expenses by category", [{"name": Transaction.category_label(r["category"]), "value": num(r["t"])}
                                                         for r in tx.filter(type="expense").values("category").annotate(t=Sum("amount")).order_by("-t")], "inr"),

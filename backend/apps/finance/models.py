@@ -31,7 +31,7 @@ class Transaction(models.Model):
         COMPLETED = "completed", "Completed"
         PENDING = "pending", "Pending"
 
-    # Pending-payment "kind" shown in Finance → Pending Payments
+    # Pending-payment "kind" shown in Accounts → Pending Payments
     KIND_FOR_CATEGORY = {
         "raw_materials": "supplier", "packaging": "supplier", "transport": "supplier",
         "utilities": "utility", "salaries": "salary", "tax": "tax",
@@ -72,7 +72,7 @@ class Transaction(models.Model):
 
 
 class Budget(models.Model):
-    """Targets for one calendar month (Finance → Set Budget sets the current month)."""
+    """Targets for one calendar month (Accounts → Set Budget sets the current month)."""
 
     month = models.DateField(unique=True, help_text="First day of the month")
     revenue_target = models.DecimalField(max_digits=14, decimal_places=2, validators=[MinValueValidator(Decimal("0"))])

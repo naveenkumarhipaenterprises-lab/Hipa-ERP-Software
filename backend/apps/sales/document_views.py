@@ -16,7 +16,7 @@ from apps.system.models import BillingSettings
 from services import audit
 
 from . import pdf, services
-from .models import PaymentMethod, SalesInvoice, SalesInvoiceItem, SalesPayment, SalesQuotation, SalesQuotationItem, SalesReturn
+from .models import PaymentMethod, SalesInvoice, SalesPayment, SalesQuotation, SalesQuotationItem, SalesReturn
 from .views import SalesView, item_row
 
 QS = SalesQuotation.Status

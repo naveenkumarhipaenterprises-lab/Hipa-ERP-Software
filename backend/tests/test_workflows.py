@@ -305,7 +305,7 @@ class WorkflowTests(TestCase):
         report = self.post("/reports/", {"type": "purchase", "range": "this_month", "format": "pdf"})
         self.assertEqual(report["status"], "Ready")
 
-    # --- Finance -----------------------------------------------------------------------
+    # --- Accounts ----------------------------------------------------------------------
     def test_finance_transactions_and_budget(self):
         self.post("/finance/transactions/", {"type": "income", "description": "TEST sale", "category": "product_sales",
                                              "amount": 1000, "date": today().isoformat()})

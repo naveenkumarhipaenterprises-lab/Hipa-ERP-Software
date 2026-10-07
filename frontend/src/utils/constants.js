@@ -32,7 +32,7 @@ export const ROLE_LABELS = {
   purchase: 'Purchase Team',
   inventory: 'Inventory Team',
   marketing: 'Marketing Team',
-  finance: 'Finance Team',
+  finance: 'Accounts Team',
   quality: 'Quality Team',
   supply_chain: 'Supply Chain Team',
 }

@@ -50,7 +50,7 @@ def upcoming(user, today):
                           "date": pm.payment_date, "category": "Purchase"})
     if can_read(user, "finance"):
         for t in Transaction.objects.filter(status=Transaction.Status.PENDING, type=Transaction.Type.EXPENSE, due_date__range=(today, horizon)):
-            items.append({"id": f"payment-{t.id}", "title": f"Payment due: {t.party or t.description}", "date": t.due_date, "category": "Finance"})
+            items.append({"id": f"payment-{t.id}", "title": f"Payment due: {t.party or t.description}", "date": t.due_date, "category": "Accounts"})
     if can_read(user, "marketing"):
         for c in Campaign.objects.filter(ended_on__isnull=True, start_date__range=(today, horizon)):
             items.append({"id": f"campaign-{c.id}", "title": f"Campaign starts: {c.name}", "date": c.start_date, "category": "Marketing"})
