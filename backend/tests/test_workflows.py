@@ -34,6 +34,30 @@ class WorkflowTests(TestCase):
         return self.post("/customers/", {"name": name, "type": "retailer", "city": "Erode", "phone": "98765 43210"})
 
     # --- Inventory ----------------------------------------------------------------
+    def test_edit_product_details_and_switch_it_off(self):
+        item, other = self.product(), self.product(name="TEST Chilli")
+        path = f"{API}/inventory/items/{item['id']}/"
+        res = self.api.patch(path, {"product_name": " TEST Turmeric Premium ", "price_per_kg": 280, "min_stock_kg": 15,
+                                    "reorder_level_kg": 40}, format="json")
+        self.assertEqual(res.status_code, 200, res.data)
+        self.assertEqual((res.data["product"], res.data["price_per_kg"], res.data["min_stock_kg"], res.data["reorder_level_kg"]),
+                         ("TEST Turmeric Premium", 280, 15, 40))
+        self.assertEqual(res.data["stock_kg"], 100)  # stock is not editable here
+        self.assertTrue(AuditLog.objects.filter(action="Edited inventory item").exists())
+        # Validation: duplicate name, reorder below minimum, stock can't be set
+        self.assertIn("product_name", self.api.patch(path, {"product_name": "test chilli"}, format="json").data)
+        self.assertIn("reorder_level_kg", self.api.patch(path, {"min_stock_kg": 50}, format="json").data)
+        self.api.patch(path, {"stock_kg": 5}, format="json")
+        self.assertEqual(Product.objects.get(pk=item["id"]).stock_kg, 100)
+        # Switched off: gone from the active list and from new orders, listed under inactive, can be switched back on
+        self.assertFalse(self.api.patch(path, {"is_active": False}, format="json").data["is_active"])
+        self.assertEqual([r["id"] for r in self.api.get(f"{API}/inventory/items/").data["results"]], [other["id"]])
+        self.assertEqual([r["id"] for r in self.api.get(f"{API}/inventory/items/?active=false").data["results"]], [item["id"]])
+        self.assertNotIn(item["id"], [p["id"] for p in self.api.get(f"{API}/sales/options/").data["products"]])
+        self.assertTrue(self.api.patch(path, {"is_active": True}, format="json").data["is_active"])
+        # Read-only roles can't edit
+        self.assertEqual(client_for(make_user("purchase")).patch(path, {"price_per_kg": 1}, format="json").status_code, 403)
+
     def test_inventory_item_and_movements(self):
         item = self.product()
         self.assertEqual(item["stock_kg"], 100)

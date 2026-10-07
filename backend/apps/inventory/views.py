@@ -37,6 +37,7 @@ def item_row(p):
         "price_per_kg": num(p.price_per_kg),
         "stock_value": num(p.stock_value.quantize(Decimal("0.01"))),
         "status": S(p.stock_status).label,
+        "is_active": p.is_active,
         "updated_at": p.updated_at,
     }
 
@@ -105,7 +106,8 @@ class OptionsView(InventoryView):
 
 
 def filtered_items(params):
-    qs = Product.objects.filter(is_active=True)
+    # ?active=false lists switched-off products, so they can be found and switched back on
+    qs = Product.objects.filter(is_active=str(params.get("active", "true")).lower() != "false")
     q = (params.get("search") or "").strip()
     if q:
         qs = qs.filter(name__icontains=q)
@@ -130,6 +132,31 @@ class CreateItemSerializer(serializers.Serializer):
 
     def validate(self, attrs):
         if attrs["reorder_level_kg"] < attrs["min_stock_kg"]:
+            raise serializers.ValidationError({"reorder_level_kg": ["Reorder level can't be below the minimum stock."]})
+        return attrs
+
+
+class UpdateItemSerializer(serializers.Serializer):
+    """Product details only: stock always changes through movements."""
+
+    product_name = serializers.CharField(max_length=120, required=False)
+    price_per_kg = serializers.DecimalField(max_digits=10, decimal_places=2, min_value=Decimal("0"), required=False)
+    min_stock_kg = serializers.DecimalField(max_digits=12, decimal_places=3, min_value=Decimal("0"), required=False)
+    reorder_level_kg = serializers.DecimalField(max_digits=12, decimal_places=3, min_value=Decimal("0"), required=False)
+    is_active = serializers.BooleanField(required=False)
+
+    def validate_product_name(self, value):
+        value = value.strip()
+        if not value:
+            raise serializers.ValidationError("Enter the product name.")
+        if Product.objects.filter(name__iexact=value).exclude(pk=self.context["product"].pk).exists():
+            raise serializers.ValidationError(f"{value} already exists.")
+        return value
+
+    def validate(self, attrs):
+        product = self.context["product"]
+        min_kg = attrs.get("min_stock_kg", product.min_stock_kg)
+        if attrs.get("reorder_level_kg", product.reorder_level_kg) < min_kg:
             raise serializers.ValidationError({"reorder_level_kg": ["Reorder level can't be below the minimum stock."]})
         return attrs
 
@@ -197,3 +224,22 @@ class MovementsView(InventoryView):
 class ItemDetailView(InventoryView):
     def get(self, request, pk):
         return Response(item_row(get_object_or_404(Product, pk=pk)))
+
+    def patch(self, request, pk):
+        product = get_object_or_404(Product, pk=pk)
+        ser = UpdateItemSerializer(data=request.data, context={"product": product})
+        ser.is_valid(raise_exception=True)
+        v = ser.validated_data
+        fields = {"product_name": "name", "price_per_kg": "price_per_kg", "min_stock_kg": "min_stock_kg",
+                  "reorder_level_kg": "reorder_level_kg", "is_active": "is_active"}
+        changed = [model_field for key, model_field in fields.items() if key in v and getattr(product, model_field) != v[key]]
+        for key, model_field in fields.items():
+            if key in v:
+                setattr(product, model_field, v[key])
+        if changed:
+            try:
+                product.save(update_fields=[*changed, "updated_at"])
+            except IntegrityError:
+                raise ValidationError({"product_name": [f"{product.name} already exists."]})
+            audit.record(request, "Edited inventory item", f"{product.name}: {', '.join(changed)}")
+        return Response(item_row(product))

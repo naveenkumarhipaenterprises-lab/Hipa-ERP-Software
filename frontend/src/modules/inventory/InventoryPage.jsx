@@ -195,7 +195,7 @@ export default function InventoryPage() {
       {/* When the overview fails its banner covers the page; Retry reloads the table too */}
       {!failed && (
         <div className="grid-main-side">
-          <InventoryItemsTable refreshKey={refreshKey} statuses={options.data?.statuses} />
+          <InventoryItemsTable refreshKey={refreshKey} statuses={options.data?.statuses} canManage={canManage} onChanged={refresh} />
           <div className="stack">
             <Card title="Low Stock Alerts">
               {loading ? <div className="skeleton skeleton--list" aria-label="Loading" /> : <LowStockAlerts items={data?.low_stock} />}

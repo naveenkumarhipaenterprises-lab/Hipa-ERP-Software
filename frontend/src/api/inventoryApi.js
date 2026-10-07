@@ -15,14 +15,15 @@
  *
  * GET /inventory/options/  ->  { items: [{ id, name, stock_kg }], statuses: [{ value, label }] }
  *
- * GET /inventory/items/?page=&page_size=&search=&status=
- * { count, results: [{ id, product, stock_kg, min_stock_kg, reorder_level_kg, price_per_kg, stock_value, status, updated_at }] }
+ * GET /inventory/items/?page=&page_size=&search=&status=&active=false   (active=false lists switched-off products)
+ * { count, results: [{ id, product, stock_kg, min_stock_kg, reorder_level_kg, price_per_kg, stock_value, status, is_active, updated_at }] }
  *
  * GET /inventory/movements/?item=&page_size=   ->  { count, results: [movement] }
  * GET /inventory/items/export/                  ->  CSV file of all items
  *
  * POST /inventory/items/      { product_name, opening_stock_kg, price_per_kg, min_stock_kg, reorder_level_kg }
  * POST /inventory/movements/  { item_id, type: 'in' | 'out', quantity_kg, note? }
+ * PATCH /inventory/items/<id>/ { product_name?, price_per_kg?, min_stock_kg?, reorder_level_kg?, is_active? }   (stock only changes through movements)
  */
 export const inventoryApi = {
   getOverview: ({ range }) => api.get('/inventory/overview/', clean({ range })),
@@ -30,6 +31,7 @@ export const inventoryApi = {
   listItems: (params) => api.get('/inventory/items/', clean(params)),
   listMovements: (params) => api.get('/inventory/movements/', clean(params)),
   createItem: (item) => api.post('/inventory/items/', item),
+  updateItem: (id, changes) => api.patch(`/inventory/items/${id}/`, changes),
   recordMovement: (movement) => api.post('/inventory/movements/', movement),
   exportItems: () => api.download('/inventory/items/export/', {}, 'hipa-inventory-report.csv'),
 }
