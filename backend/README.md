@@ -53,7 +53,8 @@ To regenerate `supabase/schema.sql` after adding migrations: `python scripts/exp
 | `PG_DUMP_PATH`, `BACKUP_DIR` | | Database backups (`pg_dump` is found automatically in `C:\Program Files\PostgreSQL\<version>\bin`) |
 | `JWT_ACCESS_MINUTES` | | Access-token lifetime (default 480 = one working day). Logout, password change and password reset end the user's sessions on every device straight away |
 | `LOGIN_THROTTLE_RATE`, `AI_CHAT_THROTTLE_RATE` | | Failed sign-ins per IP (default `10/min`, also applied to `/admin/` sign-in) and AI chat messages per user (default `20/min`) |
-| `NUM_PROXIES` | | Only behind a reverse proxy: how many. Unset = `X-Forwarded-For` is ignored, since anyone can fake it |
+| `NUM_PROXIES` | | Only behind a reverse proxy: how many. Unset = `X-Forwarded-For` is ignored, since anyone can fake it. On Vercel it defaults to 1 (Vercel sets that header itself) |
+| `PSYCOPG_IMPL` | | Postgres driver. On Windows with PostgreSQL's client tools installed it defaults to `python` (uses PostgreSQL's own `libpq.dll`); set `binary` to use the bundled driver instead |
 
 `.env` holds secrets: never commit or share it. `.gitignore` already excludes it.
 
@@ -267,7 +268,7 @@ The test runner creates a separate `test_hipa_masala` database on the Supabase s
 
 ## 8. Notes and troubleshooting
 
-- **Postgres driver:** `psycopg[binary]`, whose wheel bundles `libpq`, so no local PostgreSQL install is needed. It loads under Windows Smart App Control on this PC.
+- **Postgres driver:** `psycopg[binary]` is installed (Linux hosts such as Vercel use it). On 2026-10-08 Smart App Control blocked its compiled module (`psycopg_binary`) once, which stops the backend reaching the database, so on Windows, when PostgreSQL's client tools are installed (they are, for `pg_dump`), `config/settings.py` switches psycopg to its pure-Python driver with PostgreSQL's own `libpq.dll` (`PSYCOPG_IMPL=python`, the same library `pg_dump` loads for every backup). Set `PSYCOPG_IMPL=binary` in `.env` to go back.
 - **scikit-learn is pinned to 1.9.0 and pandas to 3.0.5** for the same reason: Smart App Control blocks a compiled file in scikit-learn 1.9.1 and in pandas 3.0.6 (`groupby`). Smart App Control can change its verdict later. If a start-up error says `An Application Control policy has blocked this file`, note the package in the error and try its previous release with `python -m pip install "<package>==<version>"`, then update `requirements.txt`.
 - The analytics engine (`ml/`: pandas, scikit-learn) is loaded only when an analytics feature or `run_analytics` needs it. If one of its files is ever blocked, only those features return 503 "analytics engine unavailable"; login and every other page keep working.
 - `No module named 'rest_framework'` (or `django`) → the command ran on a Python without the project packages and `.venv` is missing. Create it with the setup commands in section 1.

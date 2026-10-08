@@ -15,6 +15,17 @@ from dotenv import load_dotenv
 BASE_DIR = Path(__file__).resolve().parent.parent
 load_dotenv(BASE_DIR / ".env")
 
+# Windows Smart App Control has blocked psycopg's compiled driver (psycopg_binary), which stops the backend from
+# reaching the database. On Windows with PostgreSQL's client tools installed (they are, for pg_dump backups), use
+# psycopg's pure-Python driver with PostgreSQL's own libpq.dll instead. Set PSYCOPG_IMPL=binary in .env to opt out.
+# Linux hosts (Vercel) are unchanged.
+if os.name == "nt" and "PSYCOPG_IMPL" not in os.environ:
+    _pg_bins = [b for b in Path(r"C:\Program Files\PostgreSQL").glob("*/bin") if (b / "libpq.dll").exists()]
+    if _pg_bins:
+        _pg_bin = max(_pg_bins, key=lambda b: int(b.parent.name) if b.parent.name.isdigit() else 0)
+        os.environ["PSYCOPG_IMPL"] = "python"
+        os.environ["PATH"] = f"{_pg_bin}{os.pathsep}{os.environ.get('PATH', '')}"
+
 
 # Vercel imports these settings during the build (to find WSGI_APPLICATION and run collectstatic).
 # The build never opens the database, so a missing secret there must not fail the deploy: Vercel
@@ -194,7 +205,8 @@ REST_FRAMEWORK = {
                                "ai_chat": env("AI_CHAT_THROTTLE_RATE", "20/min")},
     # How many proxies (e.g. nginx) sit in front of Django. 0 = none: the X-Forwarded-For header is ignored,
     # because anyone can fake it to dodge the rate limits. Set it only when the server is behind a proxy.
-    "NUM_PROXIES": int(env("NUM_PROXIES", "0")),
+    # On Vercel it defaults to 1: Vercel's edge sets X-Forwarded-For to the visitor's IP itself.
+    "NUM_PROXIES": int(env("NUM_PROXIES", "1" if os.environ.get("VERCEL") else "0")),
     "TEST_REQUEST_DEFAULT_FORMAT": "json",
     # The frontend uses ?format=pdf|xlsx|csv for report files, so DRF must not treat it as a renderer switch
     "URL_FORMAT_OVERRIDE": None,
