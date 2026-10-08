@@ -52,7 +52,7 @@ To regenerate `supabase/schema.sql` after adding migrations: `python scripts/exp
 | `GEMINI_API_KEY`, `GEMINI_MODEL` | | AI Assistant chat with Google Gemini (default model `gemini-3.8-flash`). Empty key = assistant shows "not connected" |
 | `PG_DUMP_PATH`, `BACKUP_DIR` | | Database backups (`pg_dump` is found automatically in `C:\Program Files\PostgreSQL\<version>\bin`) |
 | `JWT_ACCESS_MINUTES` | | Access-token lifetime (default 480 = one working day). Logout, password change and password reset end the user's sessions on every device straight away |
-| `LOGIN_THROTTLE_RATE`, `AI_CHAT_THROTTLE_RATE` | | Failed sign-ins per IP (default `10/min`, also applied to `/admin/` sign-in) and AI chat messages per user (default `20/min`) |
+| `LOGIN_THROTTLE_RATE`, `AI_CHAT_THROTTLE_RATE` | | Failed sign-ins per IP (default `10/min`, also applied to `/admin/` sign-in) and AI chat messages per user (default `20/min`). The counters are kept in the shared `django_cache` table in Supabase (created by migration `core 0001`), so every server process, including Vercel's, counts together |
 | `NUM_PROXIES` | | Only behind a reverse proxy: how many. Unset = `X-Forwarded-For` is ignored, since anyone can fake it. On Vercel it defaults to 1 (Vercel sets that header itself) |
 | `PSYCOPG_IMPL` | | Postgres driver. On Windows with PostgreSQL's client tools installed it defaults to `python` (uses PostgreSQL's own `libpq.dll`); set `binary` to use the bundled driver instead |
 

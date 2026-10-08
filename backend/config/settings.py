@@ -222,6 +222,17 @@ SIMPLE_JWT = {
     "AUTH_HEADER_TYPES": ("Bearer",),
 }
 
+# --- Cache: one table in the database, shared by every server process ------------
+# Login / password-reset / AI-chat limits and cached results must be shared: Vercel runs several server
+# instances and restarts them, so per-process memory would reset the counters. Table created by core 0001.
+CACHES = {
+    "default": {
+        "BACKEND": "django.core.cache.backends.db.DatabaseCache",
+        "LOCATION": "django_cache",
+        "OPTIONS": {"MAX_ENTRIES": 5000},
+    }
+}
+
 # --- CORS (the React app runs on its own origin in development) -----------------
 CORS_ALLOWED_ORIGINS = env_list("CORS_ALLOWED_ORIGINS", "http://localhost:5173")
 CORS_EXPOSE_HEADERS = ["Content-Disposition"]  # the frontend reads download file names

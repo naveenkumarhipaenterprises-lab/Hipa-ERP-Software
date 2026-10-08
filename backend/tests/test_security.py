@@ -136,3 +136,16 @@ class TokenRevocationTests(TestCase):
         self.assertTrue(self.works(old))
         self.user.revoke_tokens()
         self.assertFalse(self.works(old))
+
+
+class SharedCacheTests(TestCase):
+    """Rate-limit counters live in the database, so every server process (Vercel runs several) sees the same ones."""
+
+    def test_counters_are_shared_between_processes(self):
+        from django.core.cache.backends.db import DatabaseCache
+
+        cache.clear()
+        for _ in range(3):
+            self.client.post("/admin/login/", {"username": "nobody", "password": "wrong"})
+        another_process = DatabaseCache("django_cache", {})  # a fresh cache object, as in another server
+        self.assertEqual(another_process.get("admin-login-failures:127.0.0.1"), 3)
