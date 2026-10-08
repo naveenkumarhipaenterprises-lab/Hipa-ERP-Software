@@ -9,7 +9,6 @@ from apps.core.metrics import kpi, num
 from apps.core.roles import can_read
 from apps.core.views import ModuleAPIView
 from apps.customers.models import Customer
-from apps.finance.models import Transaction
 from apps.inventory.models import Product
 from apps.marketing.models import Campaign
 from apps.purchase.models import Purchase, PurchaseReturn, Supplier, SupplierPayment
@@ -20,16 +19,6 @@ from apps.sales.models import SalesOrder, SalesOrderItem
 
 def end_of(day):
     return timezone.make_aware(datetime.combine(day, time.max))
-
-
-def net_profit_pair(cur, prev):
-    """(net profit for cur, for prev) in one query (the database is remote; each query is a round trip)."""
-    def period(p, kind):
-        return Sum("amount", filter=Q(date__range=(p.start, p.end), type=kind))
-
-    a = Transaction.objects.counted().aggregate(i1=period(cur, Transaction.Type.INCOME), e1=period(cur, Transaction.Type.EXPENSE),
-                                      i2=period(prev, Transaction.Type.INCOME), e2=period(prev, Transaction.Type.EXPENSE))
-    return (a["i1"] or 0) - (a["e1"] or 0), (a["i2"] or 0) - (a["e2"] or 0)
 
 
 def upcoming(user, today):
@@ -48,9 +37,6 @@ def upcoming(user, today):
                                                                             payment_date__range=(today, horizon)):
             items.append({"id": f"supplier-payment-{pm.id}", "title": f"Supplier payment: {pm.supplier.name}",
                           "date": pm.payment_date, "category": "Purchase"})
-    if can_read(user, "finance"):
-        for t in Transaction.objects.filter(status=Transaction.Status.PENDING, type=Transaction.Type.EXPENSE, due_date__range=(today, horizon)):
-            items.append({"id": f"payment-{t.id}", "title": f"Payment due: {t.party or t.description}", "date": t.due_date, "category": "Accounts"})
     if can_read(user, "marketing"):
         for c in Campaign.objects.filter(ended_on__isnull=True, start_date__range=(today, horizon)):
             items.append({"id": f"campaign-{c.id}", "title": f"Campaign starts: {c.name}", "date": c.start_date, "category": "Marketing"})
@@ -120,8 +106,6 @@ class SummaryView(ModuleAPIView):
                                                 for i in latest("purchase", 5)]
             data["supplier_performance"] = supplier_performance(today - timedelta(days=180))[:5]
             data["low_stock_materials"] = low_stock_materials()[:5]
-        if can_read(user, "finance"):
-            k["net_profit"] = kpi(*net_profit_pair(cur, prev))
         if can_read(user, "inventory"):
             low = [p for p in Product.objects.filter(is_active=True) if p.stock_status != Product.StockStatus.IN_STOCK]
             data["low_stock"] = [

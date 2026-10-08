@@ -369,7 +369,7 @@ class SupplierPayment(models.Model):
     A payment to a supplier, optionally against one purchase. A scheduled payment is Pending
     (shown as Overdue once its date has passed); a made payment is Paid when it settles the
     purchase and Partially Paid when a balance remains.
-    A made payment can be cancelled. Made payments are posted to Accounts automatically.
+    A made payment can be cancelled.
     """
 
     class Method(models.TextChoices):

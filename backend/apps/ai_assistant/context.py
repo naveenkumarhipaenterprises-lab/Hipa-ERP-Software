@@ -14,7 +14,6 @@ from apps.core.roles import can_read
 def _record_models():
     """module -> models whose rows count as business data for that module."""
     from apps.customers.models import Customer
-    from apps.finance.models import Transaction
     from apps.inventory.models import Product
     from apps.marketing.models import Campaign, MarketingMetric
     from apps.purchase.models import Purchase, RawMaterial, Supplier
@@ -23,7 +22,7 @@ def _record_models():
     from apps.supply_chain.models import Shipment
 
     return {
-        "sales": [SalesOrder], "inventory": [Product], "customers": [Customer], "finance": [Transaction],
+        "sales": [SalesOrder], "inventory": [Product], "customers": [Customer],
         "purchase": [Purchase, Supplier, RawMaterial], "quality": [QualityTest], "supply_chain": [Shipment],
         "marketing": [Campaign, MarketingMetric],
     }
@@ -65,13 +64,6 @@ def company_summary(user):
         from apps.customers.models import Customer
 
         out["customers"] = {"total": Customer.objects.count(), "active": Customer.objects.filter(status="active").count()}
-    if can_read(user, "finance"):
-        from apps.finance.models import Transaction
-
-        tx = Transaction.objects.counted().filter(date__range=(cur.start, cur.end))
-        inc = tx.filter(type="income").aggregate(t=Sum("amount"))["t"] or 0
-        exp = tx.filter(type="expense").aggregate(t=Sum("amount"))["t"] or 0
-        out["finance_this_month"] = {"revenue_inr": num(inc), "expenses_inr": num(exp), "net_inr": num(inc - exp)}
     if can_read(user, "purchase"):
         from apps.purchase.models import Purchase, RawMaterial
         from apps.purchase.views import outstanding_total

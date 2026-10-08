@@ -1,7 +1,7 @@
 import {
   Bot,
   BarChart3,
-  Database,
+  CalendarCheck,
   FileText,
   House,
   Megaphone,
@@ -63,7 +63,6 @@ export const NAV_ITEMS = [
       { label: 'Reports', to: '/reports?type=sales', module: 'reports' },
     ],
   },
-  { key: 'inventory', label: 'Inventory', path: '/inventory', icon: Package, roles: ['admin', 'management', 'inventory', 'purchase', 'supply_chain'] },
   {
     key: 'purchase',
     label: 'Purchase',
@@ -81,13 +80,28 @@ export const NAV_ITEMS = [
       { tab: 'recommendations', label: 'AI Recommendations' },
     ],
   },
-  { key: 'marketing', label: 'Marketing', path: '/marketing', icon: Megaphone, roles: ['admin', 'management', 'marketing'] },
+  { key: 'inventory', label: 'Inventory', path: '/inventory', icon: Package, roles: ['admin', 'management', 'inventory', 'purchase', 'supply_chain'] },
   { key: 'customers', label: 'Customers', path: '/customers', icon: Users, roles: ['admin', 'management', 'sales', 'marketing'] },
   { key: 'supplyChain', label: 'Supply Chain', path: '/supply-chain', icon: Truck, roles: ['admin', 'management', 'inventory', 'quality', 'purchase', 'supply_chain'] },
   { key: 'quality', label: 'Quality', path: '/quality', icon: ShieldCheck, roles: ['admin', 'management', 'quality', 'purchase'] },
-  { key: 'finance', label: 'Accounts', path: '/finance', icon: Database, roles: ['admin', 'management', 'finance'] },
-  { key: 'aiAssistant', label: 'AI Assistant', path: '/ai-assistant', icon: Bot, roles: ALL },
+  {
+    key: 'attendance',
+    label: 'Attendance',
+    path: '/attendance',
+    icon: CalendarCheck,
+    roles: ALL, // everyone marks their own attendance; each action needs its own permission (Settings → Users)
+    children: [
+      { tab: 'attendance', label: 'Attendance' },
+      { tab: 'employees', label: 'Employees' },
+      { tab: 'leave', label: 'Leave / Permission' },
+      { tab: 'calendar', label: 'Calendar' },
+      { tab: 'reports', label: 'Reports' },
+      { tab: 'settings', label: 'Settings' },
+    ],
+  },
   { key: 'reports', label: 'Reports', path: '/reports', icon: FileText, roles: ALL },
+  { key: 'marketing', label: 'Marketing', path: '/marketing', icon: Megaphone, roles: ['admin', 'management', 'marketing'] },
+  { key: 'aiAssistant', label: 'AI Assistant', path: '/ai-assistant', icon: Bot, roles: ALL },
   { key: 'settings', label: 'Settings', path: '/settings', icon: Settings, roles: ['admin', 'management'] },
 ]
 

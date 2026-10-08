@@ -83,6 +83,7 @@ class BusinessDataContextTests(TestCase):
         self.assertFalse(has_business_data(make_user("marketing")))
 
     def test_summary_contains_only_readable_modules(self):
-        summary = company_summary(make_user("finance"))
-        self.assertIn("finance_this_month", summary)
+        summary = company_summary(make_user("quality"))
+        self.assertIn("quality_this_month", summary)
         self.assertNotIn("inventory", summary)
+        self.assertNotIn("finance_this_month", summary)  # Accounts was retired

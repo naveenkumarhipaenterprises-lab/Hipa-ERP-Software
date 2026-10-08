@@ -94,50 +94,6 @@ test('a scheduled audit is completed with its findings', async ({ page }) => {
   expect(sent(calls, 'POST /api/quality/audits/2/status/')).toEqual({ status: 'completed', findings: 'TEST: all labels compliant' })
 })
 
-const FINANCE_SHELL = {
-  'GET /api/finance/revenue-expenses/': [],
-  'GET /api/finance/cash-flow/': [],
-  'GET /api/finance/options/': { income_categories: [{ value: 'product_sales', label: 'Product Sales' }],
-    expense_categories: [{ value: 'utilities', label: 'Utilities' }], statuses: [] },
-}
-
-test('an expense can be recorded as a pending payment', async ({ page }) => {
-  await signIn(page, 'finance')
-  const calls = await mockApi(page, { ...SHELL, ...FINANCE_SHELL, 'GET /api/finance/overview/': {}, 'POST /api/finance/transactions/': { id: 1 } })
-  await page.goto('/finance')
-  await page.getByRole('button', { name: 'Record Expense' }).first().click()
-  const form = page.getByRole('dialog', { name: 'Record Expense' })
-  await form.getByLabel(/Description/).fill('TEST power bill')
-  await form.getByLabel(/Category/).selectOption('utilities')
-  await form.getByLabel(/Amount/).fill('400')
-  await expect(form.getByLabel('Pay to')).toHaveCount(0)
-  await form.getByLabel(/Payment/).selectOption('pending')
-  await form.getByLabel('Pay to').fill('TEST Electricity Board')
-  await form.getByLabel('Due date').fill('2099-01-10')
-  await form.getByRole('button', { name: 'Save Expense' }).click()
-  await expect(page.getByText(/Expense of .*400.* recorded/)).toBeVisible()
-  expect(sent(calls, 'POST /api/finance/transactions/')).toMatchObject({ type: 'expense', status: 'pending', party: 'TEST Electricity Board',
-    due_date: '2099-01-10', amount: 400 })
-})
-
-test('a pending payment is marked paid with its reference', async ({ page }) => {
-  await signIn(page, 'finance')
-  const calls = await mockApi(page, {
-    ...SHELL,
-    ...FINANCE_SHELL,
-    'GET /api/finance/overview/': { pending_payments: [{ id: 7, party: 'TEST Electricity Board', kind: 'utility', due_date: '2099-01-10',
-      amount: 400, status: 'Pending' }] },
-    'POST /api/finance/transactions/7/mark-paid/': { id: 7, status: 'Completed' },
-  })
-  await page.goto('/finance')
-  await page.getByRole('button', { name: 'Mark TEST Electricity Board paid' }).click()
-  const form = page.getByRole('dialog', { name: 'Mark TEST Electricity Board paid' })
-  await form.getByLabel('Payment reference').fill('TEST-UTR-9')
-  await form.getByRole('button', { name: 'Confirm' }).click()
-  await expect(page.getByText('TEST Electricity Board marked paid')).toBeVisible()
-  expect(sent(calls, 'POST /api/finance/transactions/7/mark-paid/')).toEqual({ reference: 'TEST-UTR-9' })
-})
-
 test('a due post is marked published after posting it by hand', async ({ page }) => {
   await signIn(page, 'marketing')
   const calls = await mockApi(page, {
@@ -161,23 +117,6 @@ test('a due post is marked published after posting it by hand', async ({ page })
   expect(sent(calls, 'POST /api/marketing/posts/4/status/')).toEqual({ status: 'published' })
 })
 
-test('a transaction posted from a sales payment shows its source and cannot be edited in Accounts', async ({ page }) => {
-  await signIn(page, 'finance')
-  await mockApi(page, {
-    ...SHELL,
-    ...FINANCE_SHELL,
-    'GET /api/finance/overview/': { recent_transactions: [{ id: 9, date: '2026-10-06', description: 'Payment TEST-RCP-1 for TEST-INV-3', type: 'income',
-      category: 'Product Sales', amount: 1000, status: 'Completed', reference: 'TEST-RCP-1',
-      source: { kind: 'sales_payment', label: 'Sales payment', number: 'TEST-RCP-1', link: '/sales?tab=payments' }, can_edit: false, can_mark_paid: false }] },
-  })
-  await page.goto('/finance')
-  await expect(page.getByText('From sales payment TEST-RCP-1')).toBeVisible()
-  await page.getByRole('button', { name: 'Payment TEST-RCP-1 for TEST-INV-3' }).click()
-  const details = page.getByRole('dialog', { name: 'Payment TEST-RCP-1 for TEST-INV-3' })
-  await expect(details.getByRole('link', { name: 'Sales payment TEST-RCP-1' })).toBeVisible()
-  await expect(details.getByRole('button', { name: 'Edit' })).toHaveCount(0)
-})
-
 test('a made supplier payment can be cancelled', async ({ page }) => {
   await signIn(page, 'purchase')
   const calls = await mockApi(page, {
@@ -190,7 +129,7 @@ test('a made supplier payment can be cancelled', async ({ page }) => {
   await page.goto('/purchase?tab=payments')
   await page.getByRole('button', { name: 'Cancel TEST-SPY-1' }).click()
   const dialog = page.getByRole('dialog', { name: 'Cancel this payment?' })
-  await expect(dialog.getByText(/Accounts expense is marked Cancelled/)).toBeVisible()
+  await expect(dialog.getByText(/no longer counts as paid on TEST-PUR-1/)).toBeVisible()
   await dialog.getByRole('button', { name: 'Cancel Payment' }).click()
   await expect(page.getByText('TEST-SPY-1 cancelled')).toBeVisible()
   expect(calls.some((c) => c.key === 'POST /api/purchase/payments/4/cancel/')).toBe(true)

@@ -20,7 +20,7 @@ const PurchasePage = lazy(() => import('../modules/purchase/PurchasePage'))
 const MarketingPage = lazy(() => import('../modules/marketing/MarketingPage'))
 const SupplyChainPage = lazy(() => import('../modules/supplyChain/SupplyChainPage'))
 const QualityPage = lazy(() => import('../modules/quality/QualityPage'))
-const FinancePage = lazy(() => import('../modules/finance/FinancePage'))
+const AttendancePage = lazy(() => import('../modules/attendance/AttendancePage'))
 const ReportsPage = lazy(() => import('../modules/reports/ReportsPage'))
 const AIAssistantPage = lazy(() => import('../modules/aiAssistant/AIAssistantPage'))
 const SettingsPage = lazy(() => import('../modules/settings/SettingsPage'))
@@ -35,7 +35,7 @@ const MODULE_PAGES = {
   marketing: MarketingPage,
   supplyChain: SupplyChainPage,
   quality: QualityPage,
-  finance: FinancePage,
+  attendance: AttendancePage,
   reports: ReportsPage,
   aiAssistant: AIAssistantPage,
   settings: SettingsPage,

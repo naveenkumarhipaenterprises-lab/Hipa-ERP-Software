@@ -129,15 +129,15 @@ export function ReturnsPanel({ options, canManage, refreshKey, onNew, onChanged 
 
 /**
  * Supplier payments: Pending (scheduled), Overdue (scheduled and past its date), Partially Paid, Paid, Cancelled.
- * Made payments are posted to Accounts automatically; cancelling one marks its Accounts expense Cancelled.
+ * A made payment can be cancelled; it then no longer counts towards the purchase.
  */
 const DONE = { pay: 'recorded as paid', delete: 'deleted', cancel: 'cancelled' }
 const CONFIRM_TITLE = { pay: 'Record as paid today?', delete: 'Delete scheduled payment?', cancel: 'Cancel this payment?' }
 const CONFIRM_LABEL = { pay: 'Mark Paid', delete: 'Delete', cancel: 'Cancel Payment' }
 const confirmMessage = ({ row, kind }) => ({
-  pay: `${money(row.amount)} to ${row.supplier} will be recorded as paid today. It is added to Accounts as an expense.`,
+  pay: `${money(row.amount)} to ${row.supplier} will be recorded as paid today.`,
   delete: 'This scheduled payment will be removed.',
-  cancel: `${row.payment_number} (${money(row.amount)} to ${row.supplier}) no longer counts as paid${row.purchase_number ? ` on ${row.purchase_number}` : ''}, and its Accounts expense is marked Cancelled. This cannot be undone.`,
+  cancel: `${row.payment_number} (${money(row.amount)} to ${row.supplier}) no longer counts as paid${row.purchase_number ? ` on ${row.purchase_number}` : ''}. This cannot be undone.`,
 })[kind]
 
 export function PaymentsPanel({ options, canPay, refreshKey, onNew, onChanged }) {

@@ -13,7 +13,6 @@ import { api } from './client'
  *     active_suppliers: { value, change? },
  *     purchase_value:   { value, change? },   // ₹, roles that can open Purchase
  *     outstanding_supplier_payments: { value },   // ₹
- *     net_profit:       { value, change? },   // ₹
  *   },
  *   purchase_overview:        { purchases, pending, received, returns },
  *   purchase_trend:           [{ label, value }],              // last 6 months; [] when nothing was bought

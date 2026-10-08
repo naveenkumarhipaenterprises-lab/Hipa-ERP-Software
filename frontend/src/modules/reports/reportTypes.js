@@ -11,7 +11,6 @@ export const REPORT_TYPES = [
   { key: 'customers', label: 'Customer Report', module: 'customers' },
   { key: 'supply_chain', label: 'Supply Chain Report', module: 'supplyChain' },
   { key: 'quality', label: 'Quality Report', module: 'quality' },
-  { key: 'finance', label: 'Accounts Report', module: 'finance' },
   { key: 'ai_business', label: 'AI Business Report', module: 'reports' },
 ]
 

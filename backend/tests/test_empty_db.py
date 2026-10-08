@@ -8,13 +8,12 @@ LIST_ENDPOINTS = [
     "/sales/orders/", "/inventory/items/", "/inventory/movements/", "/customers/", "/purchase/purchases/",
     "/purchase/suppliers/", "/purchase/raw-materials/", "/purchase/goods-receipts/", "/purchase/returns/", "/purchase/payments/",
     "/marketing/campaigns/", "/marketing/posts/?status=scheduled", "/supply-chain/shipments/",
-    "/quality/tests/", "/finance/transactions/", "/reports/",
+    "/quality/tests/", "/reports/", "/attendance/history/", "/attendance/leave/",
 ]
 
 ARRAY_ENDPOINTS = [
     "/dashboard/sales-trend/", "/sales/trend/", "/customers/growth/", "/marketing/performance/", "/marketing/audience/",
-    "/supply-chain/supplier-performance/", "/purchase/trend/", "/quality/trend/", "/quality/standards/", "/finance/revenue-expenses/",
-    "/finance/cash-flow/",
+    "/supply-chain/supplier-performance/", "/purchase/trend/", "/quality/trend/", "/quality/standards/",
 ]
 
 RANGES = ["this_month", "last_month", "last_3_months", "this_year"]
@@ -61,7 +60,6 @@ class EmptyDatabaseTests(TestCase):
         for rng in RANGES:
             for path in ["/dashboard/summary/", "/sales/overview/", "/inventory/overview/", "/customers/overview/",
                          "/marketing/overview/", "/purchase/overview/", "/supply-chain/overview/", "/quality/overview/",
-                         "/finance/overview/",
                          "/reports/overview/"]:
                 data = self.get(f"{path}?range={rng}")
                 self.assertTrue(all(n == 0 for n in all_numbers(data)), f"{path}?range={rng} -> {data}")
@@ -79,7 +77,7 @@ class EmptyDatabaseTests(TestCase):
         self.assertEqual(self.get("/supply-chain/options/")["suppliers"], [])
         self.assertEqual(self.get("/quality/options/")["pending_receipts"], [])
         self.assertEqual(self.get("/customers/options/")["offer_channels"], [])  # no e-mail configured
-        self.assertTrue(self.get("/finance/options/")["expense_categories"])
+        self.assertEqual(self.get("/attendance/options/")["employees"], [])
         self.assertTrue(self.get("/marketing/options/")["platforms"])
         self.assertTrue(self.get("/settings/options/")["roles"])
 
@@ -93,8 +91,8 @@ class EmptyDatabaseTests(TestCase):
         self.assertTrue(all(p["enabled"] for p in self.get("/settings/notifications/")))
         self.assertEqual([i["connected"] for i in self.get("/settings/integrations/")], [False, False])
 
-    def test_finance_budget_null(self):
-        self.assertIsNone(self.get("/finance/overview/")["budget"])
+    def test_accounts_is_retired(self):
+        self.assertEqual(self.api.get(f"{API}/finance/overview/").status_code, 404)
 
     def test_notifications_empty(self):
         d = self.get("/notifications/")
@@ -109,7 +107,7 @@ class EmptyDatabaseTests(TestCase):
         self.assertEqual(res.status_code, 503)
 
     def test_report_previews_are_empty(self):
-        for t in ("sales", "quotations", "inventory", "purchase", "marketing", "customers", "supply_chain", "quality", "finance",
+        for t in ("sales", "quotations", "inventory", "purchase", "marketing", "customers", "supply_chain", "quality",
                   "ai_business"):
             d = self.get(f"/reports/preview/?type={t}&range=this_month")
             self.assertIsNone(d["chart"], t)

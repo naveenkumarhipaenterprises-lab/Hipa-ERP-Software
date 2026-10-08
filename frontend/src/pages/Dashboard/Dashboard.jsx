@@ -3,7 +3,6 @@ import {
   Bot,
   FileText,
   House,
-  IndianRupee,
   Megaphone,
   Package,
   PackageCheck,
@@ -54,7 +53,6 @@ const KPIS = [
   { key: 'active_suppliers', label: 'Active Suppliers', icon: Truck, tone: 'red', module: 'purchase', format: formatNumber },
   { key: 'purchase_value', label: 'Purchase Value', icon: ShoppingBag, tone: 'teal', module: 'purchase', format: formatINR },
   { key: 'outstanding_supplier_payments', label: 'Supplier Payments Due', icon: Wallet, tone: 'yellow', module: 'purchase', format: formatINR },
-  { key: 'net_profit', label: 'Net Profit', icon: IndianRupee, tone: 'purple', module: 'finance', format: formatINR },
 ]
 
 // `roles`: who may create that record (the backend refuses everyone else), so others don't get a dead button

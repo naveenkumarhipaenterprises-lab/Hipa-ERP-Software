@@ -18,6 +18,7 @@ from rest_framework.views import APIView
 from apps.accounts.models import LoginActivity
 from apps.core.exceptions import NotConfigured
 from apps.core.metrics import choices
+from apps.attendance import permissions as attendance_perms
 from apps.core.roles import Role
 from apps.core.views import ModuleAPIView, ModuleMixin
 from services import audit, notifications
@@ -46,6 +47,7 @@ class OptionsView(SettingsView):
             "currencies": pairs(s.CURRENCIES),
             "languages": pairs(s.LANGUAGES),
             "roles": choices(Role),
+            "attendance_permissions": [{"value": code, "label": label} for code, label in attendance_perms.LABELS.items()],
             "user_statuses": pairs(s.USER_STATUSES),
             "backup_retention": pairs(BackupSettings.RETENTION_CHOICES),
         })
@@ -110,7 +112,7 @@ class UsersView(ModuleMixin, generics.GenericAPIView):
     serializer_class = s.UserRowSerializer
 
     def get(self, request):
-        qs = User.objects.all().order_by("name", "id")
+        qs = User.objects.prefetch_related("user_permissions__content_type").order_by("name", "id")
         q = request.query_params.get("search", "").strip()
         if q:
             qs = qs.filter(Q(name__icontains=q) | Q(email__icontains=q) | Q(username__icontains=q))
@@ -160,9 +162,14 @@ class UserDetailView(SettingsView):
         if "status" in v and (v["status"] == "active") != user.is_active:
             user.is_active = v["status"] == "active"
             changes.append("activated" if user.is_active else "deactivated")
+        if "attendance_permissions" in v and user.effective_role != Role.ADMIN:  # a Super Admin always has all
+            wanted = sorted(set(v["attendance_permissions"]))
+            if wanted != attendance_perms.granted(user):
+                attendance_perms.set_granted(user, wanted)
+                changes.append("attendance permissions: " + (", ".join(attendance_perms.LABELS[c] for c in wanted) or "none"))
         user.save()
         if changes:
-            audit.record(request, f"Updated user ({', '.join(changes)})", user.email)
+            audit.record(request, f"Updated user ({', '.join(changes)})"[:200], user.email)
         return Response(s.UserRowSerializer(user).data)
 
 

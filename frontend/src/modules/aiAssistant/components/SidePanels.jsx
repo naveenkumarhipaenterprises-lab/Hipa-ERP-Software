@@ -1,4 +1,4 @@
-import { BarChart3, Lightbulb, Megaphone, MessageSquare, Package, ShoppingCart, Wallet } from 'lucide-react'
+import { BarChart3, Lightbulb, Megaphone, MessageSquare, Package, ShoppingCart } from 'lucide-react'
 import Card from '../../../components/common/Card'
 import EmptyState from '../../../components/common/EmptyState'
 import ErrorMessage from '../../../components/common/ErrorMessage'
@@ -10,7 +10,6 @@ const KIND = {
   inventory: { icon: Package, tone: 'orange' },
   purchase: { icon: ShoppingCart, tone: 'blue' },
   marketing: { icon: Megaphone, tone: 'purple' },
-  finance: { icon: Wallet, tone: 'teal' },
 }
 const list = (v) => (Array.isArray(v) ? v : [])
 

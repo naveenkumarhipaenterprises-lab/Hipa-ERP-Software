@@ -7,6 +7,7 @@ import Card from '../../../components/common/Card'
 import ConfirmDialog from '../../../components/common/ConfirmDialog'
 import ErrorMessage from '../../../components/common/ErrorMessage'
 import FormModal from '../../../components/common/FormModal'
+import AttendancePermissionsModal from './AttendancePermissionsModal'
 import Table from '../../../components/common/Table'
 import { useApi } from '../../../hooks/useApi'
 import { useAuth } from '../../../hooks/useAuth'
@@ -20,13 +21,17 @@ const PAGE_SIZE = 10
 const list = (v) => (Array.isArray(v) ? v : [])
 const INACTIVE = /^(inactive|disabled|suspended)$/i
 
-/** Team members: invite, change role or status. You can't change your own role or deactivate yourself. */
+/**
+ * Team members: invite, change role or status, and set each person's Attendance permissions.
+ * You can't change your own role or deactivate yourself.
+ */
 export default function UsersSection({ options }) {
   const { user: me } = useAuth()
   const toast = useToast()
   const [search, setSearch] = useState('')
   const [editing, setEditing] = useState(null) // 'new' | user
   const [confirming, setConfirming] = useState(null) // { user, changes }
+  const [permsFor, setPermsFor] = useState(null) // user whose Attendance permissions are open
   const [refreshKey, setRefreshKey] = useState(0)
   const query = useDebouncedValue(search.trim())
   const [page, setPage] = usePageReset(query)
@@ -42,6 +47,12 @@ export default function UsersSection({ options }) {
   const isMe = (u) => me && (u.id === me.id || (u.email && u.email === me.email))
 
   const refresh = () => setRefreshKey((k) => k + 1)
+  const attendancePermissions = list(options.data?.attendance_permissions)
+  const saveAttendancePermissions = async (codes) => {
+    await settingsApi.updateUser(permsFor.id, { attendance_permissions: codes })
+    toast.success(`Attendance permissions saved for ${permsFor.name || permsFor.email}`)
+    refresh()
+  }
 
   const saveUser = async (values) => {
     if (editing === 'new') {
@@ -134,9 +145,16 @@ export default function UsersSection({ options }) {
               header: <span className="sr-only">Actions</span>,
               align: 'right',
               render: (r) => (
-                <Button size="sm" variant="soft" onClick={() => setEditing(r)} aria-label={`Edit ${r.name || r.email}`}>
-                  Edit
-                </Button>
+                <span className="row-actions">
+                  {attendancePermissions.length > 0 && (
+                    <Button size="sm" variant="ghost" onClick={() => setPermsFor(r)} aria-label={`Attendance permissions for ${r.name || r.email}`}>
+                      Attendance
+                    </Button>
+                  )}
+                  <Button size="sm" variant="soft" onClick={() => setEditing(r)} aria-label={`Edit ${r.name || r.email}`}>
+                    Edit
+                  </Button>
+                </span>
               ),
             },
           ]}
@@ -153,6 +171,8 @@ export default function UsersSection({ options }) {
         fields={fields}
         onSubmit={saveUser}
       />
+      <AttendancePermissionsModal key={permsFor?.id} user={permsFor} permissions={attendancePermissions}
+                                  onClose={() => setPermsFor(null)} onSave={saveAttendancePermissions} />
       <ConfirmDialog
         open={Boolean(confirming)}
         onClose={() => {

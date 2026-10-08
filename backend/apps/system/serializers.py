@@ -3,6 +3,7 @@ import re
 from django.contrib.auth import get_user_model
 from rest_framework import serializers
 
+from apps.attendance import permissions as attendance_perms
 from apps.core.roles import Role
 
 from .models import AuditLog, BackupSettings, BillingSettings, CompanySettings, Notification
@@ -92,13 +93,18 @@ class BillingSettingsSerializer(serializers.ModelSerializer):
 class UserRowSerializer(serializers.ModelSerializer):
     role = serializers.CharField(source="effective_role")
     status = serializers.SerializerMethodField()
+    attendance_permissions = serializers.SerializerMethodField()
 
     class Meta:
         model = User
-        fields = ["id", "name", "email", "role", "status", "last_login"]
+        fields = ["id", "name", "email", "role", "status", "last_login", "attendance_permissions"]
 
     def get_status(self, obj):
         return obj.status.capitalize()
+
+    def get_attendance_permissions(self, obj):
+        """Attendance permission codes (a Super Admin has all)."""
+        return attendance_perms.granted(obj)
 
 
 class InviteUserSerializer(serializers.Serializer):
@@ -117,6 +123,8 @@ class UpdateUserSerializer(serializers.Serializer):
     name = serializers.CharField(max_length=150, required=False)
     role = serializers.ChoiceField(choices=Role.choices, required=False)
     status = serializers.CharField(required=False)
+    attendance_permissions = serializers.ListField(child=serializers.ChoiceField(choices=attendance_perms.CODES),
+                                                   required=False, allow_empty=True)
 
     def validate_status(self, value):
         value = value.strip().lower()

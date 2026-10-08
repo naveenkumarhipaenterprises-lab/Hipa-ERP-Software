@@ -10,7 +10,6 @@ import { useMediaQuery } from '../hooks/useMediaQuery'
 const FOOTER_SLOGANS = {
   '/dashboard': 'Good Food. Good Health. A Better Tomorrow.',
   '/customers': '“Together with our customers, we bring the authentic taste of India to every home.”',
-  '/finance': 'Good Taste Builds Good Business',
   '/ai-assistant': 'Good Data. Good Decisions. A Spicier Tomorrow.',
   '/quality': 'Quality in Every Step • From Nature to Your Kitchen',
   '/reports': 'Good Marketing. Greater Reach. A Better Tomorrow.',

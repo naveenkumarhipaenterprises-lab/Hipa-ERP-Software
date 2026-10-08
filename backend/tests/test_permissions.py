@@ -14,7 +14,7 @@ READ_PATH = {
     "customers": "/customers/",
     "supply_chain": "/supply-chain/overview/",
     "quality": "/quality/overview/",
-    "finance": "/finance/overview/",
+    "attendance": "/attendance/status/",
     "ai_assistant": "/ai/status/",
     "reports": "/reports/",
     "settings": "/settings/options/",
@@ -54,13 +54,13 @@ class RolePermissionTests(TestCase):
     def test_report_types_follow_module_access(self):
         api = client_for(make_user("sales"))
         self.assertEqual(api.get(f"{API}/reports/preview/?type=sales").status_code, 200)
-        self.assertEqual(api.get(f"{API}/reports/preview/?type=finance").status_code, 403)
-        self.assertEqual(api.get(f"{API}/reports/export/?type=finance&format=csv").status_code, 403)
+        self.assertEqual(api.get(f"{API}/reports/preview/?type=quality").status_code, 403)
+        self.assertEqual(api.get(f"{API}/reports/export/?type=quality&format=csv").status_code, 403)
+        self.assertEqual(api.get(f"{API}/reports/preview/?type=finance").status_code, 400)  # Accounts report retired
 
     def test_dashboard_hides_sections_by_role(self):
         data = client_for(make_user("quality")).get(f"{API}/dashboard/summary/").data
         self.assertNotIn("total_sales", data["kpis"])
-        self.assertNotIn("net_profit", data["kpis"])
         self.assertNotIn("recent_orders", data)
         self.assertEqual(client_for(make_user("quality", username="q2")).get(f"{API}/dashboard/sales-trend/").data, [])
 

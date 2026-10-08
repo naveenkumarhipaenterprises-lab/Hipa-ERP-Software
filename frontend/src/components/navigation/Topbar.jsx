@@ -14,7 +14,7 @@ const SEARCH_HINTS = {
   '/customers': 'Search customers, locations, orders, or contacts...',
   '/supply-chain': 'Search suppliers, orders, shipments, routes...',
   '/quality': 'Search batches, products, test reports...',
-  '/finance': 'Search invoices, expenses, vendors, reports...',
+  '/attendance': 'Search employees, leave, attendance...',
   '/ai-assistant': 'Ask anything about sales, inventory, purchases, marketing...',
   '/reports': 'Search reports, sales, marketing, inventory, customers...',
   '/settings': 'Search settings, users, preferences, integrations...',

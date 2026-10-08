@@ -30,7 +30,6 @@ NO_DATA_NOTE = ("Note: there is no business data in HIPA MASALA yet, so I can't 
 PROMPTS = {
     "sales": "How are sales this month compared with last month?",
     "inventory": "Which products are low on stock right now?",
-    "finance": "Summarise this month's revenue and expenses.",
     "purchase": "Which raw materials are at or below their reorder level?",
     "quality": "How many quality tests failed this month?",
     "customers": "How many active customers do we have?",
@@ -131,7 +130,7 @@ class ChatView(AIView):
             sources.append({"title": "HIPA MASALA business data"})
         elif use_data:
             parts.append("Company data: the HIPA MASALA database has no business records yet "
-                         "(no sales, stock, customers, finance or other records).")
+                         "(no sales, stock, customers or other records).")
         if attached:
             parts.append(f"Attached file {upload.name}:\n{attached}")
             sources.append({"title": f"Attached file: {upload.name}"})

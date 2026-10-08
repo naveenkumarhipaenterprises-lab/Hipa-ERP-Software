@@ -90,7 +90,7 @@ backend/
     accounts/      users (with role), login activity, auth endpoints
     system/        settings, notifications, audit log, backups
     dashboard/  sales/  inventory/  purchase/  marketing/  customers/
-    supply_chain/  quality/  finance/  reports/  ai_assistant/
+    supply_chain/  quality/  attendance/  finance/ (retired: tables only)  reports/  ai_assistant/
     legacy_production/  migration history of the retired Production module only (label "production"; drops its tables)
   supabase/      schema.sql: the Postgres schema the migrations create (generated)
   services/      audit trail, notifications, backups, report exporters, AI engine client
@@ -121,8 +121,8 @@ The exact request and response shapes are documented in the frontend's `src/api/
 | Customers | `customers/` (GET, POST) · `customers/<id>/` (GET, PATCH) · `overview/` · `growth/` · `options/` · `export/` · `import/template/` · `import/` · `offers/` |
 | Supply chain | `supply-chain/overview/` · `supplier-performance/` · `options/` · `shipments/` (GET, POST from an open purchase or supplier + material) · `shipments/<id>/status/` (POST: In Transit ↔ Delayed, Delivered with date and inward quality result; final) (suppliers and purchases are in Purchase) |
 | Quality | `overview/` · `trend/` · `options/` · `tests/` (GET, POST) · `standards/` · `audits/` (GET `?status=`, POST) · `audits/<id>/status/` (POST: completed with findings, from the audit date; or cancelled) · `report/` |
-| Finance | `overview/` · `revenue-expenses/` · `cash-flow/` · `options/` · `transactions/` (GET, POST; an expense can be `pending` with `party` and `due_date`) · `transactions/<id>/` (PATCH, type fixed) · `transactions/<id>/mark-paid/` (POST, optional `reference`); both refuse (409) rows posted from a payment · `budget/` (GET, PUT) |
-| Reports | types: sales, quotations, inventory, purchase, marketing, customers, supply_chain, quality, finance, ai_business · `reports/` (GET, POST) · `overview/` · `preview/?type=&range=` · `export/?type=&range=&format=pdf|xlsx|csv` · `<id>/download/` |
+| Attendance | `attendance/status/` · `check-in/` · `check-out/` (POST; server time only, refused while the window is closed) · `history/` (own) · `records/` · `options/` · `employees/` (GET, POST) · `employees/<id>/` (GET, PATCH, DELETE = removed from the list, history kept) · `leave/` (GET own or `?scope=all`, POST) · `leave/<id>/` (PATCH own pending) · `leave/<id>/approve|reject|cancel/` · `calendar/?month=&employee=` · `reports/?type=daily|monthly|employee|leave&date_from=&date_to=&employee=&department=&status=&format=json|pdf|xlsx|csv` · `settings/` (GET, PATCH) |
+| Reports | types: sales, quotations, inventory, purchase, marketing, customers, supply_chain, quality, ai_business · `reports/` (GET, POST) · `overview/` · `preview/?type=&range=` · `export/?type=&range=&format=pdf|xlsx|csv` · `<id>/download/` |
 | AI assistant | `ai/status/` · `ai/home/` · `ai/chat/` · `ai/conversations/<id>/` |
 | Settings | `settings/options/` · `general/` · `company/` · `billing/` (tax & billing defaults, bank details) · `users/` · `users/<id>/` · `notifications/` · `backup/` · `backup/run/` · `integrations/` · `security/` · `security/login-activity/` · `audit-logs/` |
 | Notifications | `notifications/` · `notifications/<id>/read/` · `notifications/mark-all-read/` |
@@ -147,7 +147,7 @@ Enforced on the server for every request (`apps/core/roles.py`), matching the fr
 | Customers | admin, management, sales, marketing | admin, management, sales (offers: marketing) |
 | Supply Chain | admin, management, inventory, quality, purchase, supply_chain | admin, management, inventory, supply_chain |
 | Quality | admin, management, quality, purchase | admin, management, quality |
-| Finance | admin, management, finance | admin, management, finance |
+| Attendance | everyone | per user (Settings → Users → Attendance): check in, check out, apply / view all / approve / reject leave, manage employees, view every calendar, reports, settings. A Super Admin has all |
 | Settings | admin, management | admin, management (only a Super Admin can manage Super Admins) |
 
 ---
@@ -167,7 +167,7 @@ Stock always changes through movements, so product and material stock can't be e
 
 **Sales orders** move forward one step at a time in the portal: Pending → Processing → In Transit → Delivered (final). Pending and Processing orders can be cancelled, which puts the stock back.
 
-**Accounts posting** (`apps/finance/services.py`): payments flow into Accounts by themselves, so nothing is entered twice. A received sales payment becomes an Income transaction (Product Sales; Export Sales for export customers) and a paid or partly paid supplier payment becomes an Expense (Raw Materials), for the cash that moved (GST included), dated the payment date. Each transaction links to its payment one-to-one (`sales_payment` / `supplier_payment`), so the database refuses a second transaction for the same payment, and every save of the payment updates that same row. Scheduled supplier payments post when they are marked paid. A cancelled payment (sales payments: Sales → Payments; supplier payments: Purchase → Payments → Cancel) leaves its transaction in the ledger marked **Cancelled**, and every Accounts total (revenue, expenses, net profit, cash flow, budget, Dashboard, Accounts report, AI) leaves cancelled rows out. Posted rows can't be edited or marked paid in Accounts. Payments recorded before this link were posted by migration `finance 0003`, which linked a hand-entered income row instead of duplicating it when its amount matched and its reference was the invoice number. Returns are credits, not cash, so they don't post.
+**Attendance** (`apps/attendance`, replaced Accounts on 2026-10-08): the window is open from 05:00 PM to 09:20 AM the next day and closed from 09:20 AM to 05:00 PM, every day (times in Attendance → Settings), decided only by the server clock in Asia/Kolkata; each record is filed under the date its window opened, so a 2 AM check-in belongs to the previous evening. One check-in and one check-out per window, both stamped with the server time; a check-in that is never checked out shows "Not checked out". Absent = a finished window with no check-in and no approved leave (active employees only); there is no holiday list. An employee is linked to a portal login to mark their own attendance; deleting an employee only removes them from the list. Every action checks its own per-user permission on the server (403 without it). **Accounts** was removed from the app: no screens, endpoints, Dashboard Net Profit, report, AI data or payment posting any more. Its tables (`finance_transaction`, `finance_budget`) and their data were kept untouched; the `finance` app stays installed only for that.
 
 **Sales documents:** Customer → Quotation (Draft → Sent → Accepted / Rejected; Expired automatically after its valid-until date, daily and whenever quotations are listed) → Sales Order → Sales Invoice → Payment. Converting a quotation creates a new order or invoice with its own number and copies the customer and lines (price, discount, GST); a quotation converts once. Stock: an order takes stock out; an invoice made from an order does not move stock again; an invoice made without an order takes stock out (and puts it back if cancelled); a sales return marked "restock" puts goods back. Line totals: subtotal − discount + GST; sales figures in reports and analytics are net of GST. Quotation and invoice PDFs use company details from Settings → Company Profile and Tax & Billing, the original logo (`assets/hipa-logo.png`) and Noto Sans (`assets/fonts`, SIL Open Font License) so ₹ prints.
 
@@ -261,7 +261,7 @@ This procedure was tested on 2026-10-07: a backup restored into a throw-away dat
 .\.venv\Scripts\python.exe manage.py test tests
 ```
 
-The test runner creates a separate `test_hipa_masala` database on the Supabase server and deletes it afterwards; the real database is never touched. The suite covers login, tokens, password reset, role permissions for every module, every endpoint on an empty database, validation errors, CORS, and full workflows (orders and stock, purchases with goods receipts / returns / supplier payments, quality tests on goods receipts, supply chain, finance, reports in all three formats).
+The test runner creates a separate `test_hipa_masala` database on the Supabase server and deletes it afterwards; the real database is never touched. The suite covers login, tokens, password reset, role permissions for every module, every endpoint on an empty database, validation errors, CORS, and full workflows (orders and stock, purchases with goods receipts / returns / supplier payments, quality tests on goods receipts, supply chain, attendance (the window loop, separate check-in / check-out permissions, employees, leave, calendar, reports, settings), reports in all three formats).
 
 ---
 

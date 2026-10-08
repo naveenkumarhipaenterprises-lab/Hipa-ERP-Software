@@ -60,7 +60,8 @@ INSTALLED_APPS = [
     "apps.marketing",
     "apps.supply_chain",
     "apps.quality",
-    "apps.finance",
+    "apps.finance",  # Accounts: removed from the app; its tables and data are kept
+    "apps.attendance",
     "apps.reports",
     "apps.ai_assistant",
     "apps.dashboard",

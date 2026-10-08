@@ -226,7 +226,7 @@ export default function AIAssistantPage() {
               <div className="chat__welcome">
                 <Bot size={34} aria-hidden />
                 <p>
-                  <strong>Hello{firstName ? ` ${firstName}` : ''}!</strong> Ask a question about sales, stock, purchases, marketing or finance.
+                  <strong>Hello{firstName ? ` ${firstName}` : ''}!</strong> Ask a question about sales, stock, purchases, marketing or quality.
                 </p>
                 {available && suggestions.length > 0 && (
                   <div className="chat__suggestions">

@@ -19,7 +19,7 @@ api_v1 = [
     path("customers/", include("apps.customers.urls")),
     path("supply-chain/", include("apps.supply_chain.urls")),
     path("quality/", include("apps.quality.urls")),
-    path("finance/", include("apps.finance.urls")),
+    path("attendance/", include("apps.attendance.urls")),
     path("ai/", include("apps.ai_assistant.urls")),
     path("reports/", include("apps.reports.urls")),
     path("settings/", include(settings_urls)),

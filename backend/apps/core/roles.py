@@ -29,7 +29,8 @@ MODULE_READ = {
     "customers": ["admin", "management", "sales", "marketing"],
     "supply_chain": ["admin", "management", "inventory", "quality", "purchase", "supply_chain"],
     "quality": ["admin", "management", "quality", "purchase"],
-    "finance": ["admin", "management", "finance"],
+    # Every user opens Attendance; each action checks its own per-user permission (apps/attendance/permissions.py)
+    "attendance": ALL,
     "ai_assistant": ALL,
     "reports": ALL,
     "settings": ["admin", "management"],
@@ -48,7 +49,7 @@ MODULE_WRITE = {
     "customer_offers": ["admin", "management", "marketing"],
     "supply_chain": ["admin", "management", "inventory", "supply_chain"],
     "quality": ["admin", "management", "quality"],
-    "finance": ["admin", "management", "finance"],
+    "attendance": ALL,
     "reports": ALL,
     "ai_assistant": ALL,
     "settings": ["admin", "management"],

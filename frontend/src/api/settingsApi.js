@@ -4,7 +4,8 @@ import { api, cleanParams as clean, tokenStorage } from './client'
  * Settings endpoints (Django REST API). Admin / management only; the backend enforces this.
  *
  * GET /settings/options/
- * { timezones, date_formats, time_formats, currencies, languages, roles, user_statuses, backup_retention }   // each [{ value, label }]
+ * { timezones, date_formats, time_formats, currencies, languages, roles, user_statuses, backup_retention,
+ *   attendance_permissions }   // each [{ value, label }]
  *
  * GET/PUT  /settings/general/    { company_name, tagline?, timezone, date_format, time_format, currency, language }
  * GET/PUT  /settings/company/    { legal_name, address, email, phone, website?, gstin? }
@@ -13,9 +14,9 @@ import { api, cleanParams as clean, tokenStorage } from './client'
  *                                  bank_name, bank_account_name, bank_account_number, bank_ifsc, upi_id, authorised_signatory,
  *                                  default_supplier_credit_days }   // all optional; blank numbers = not set
  *
- * GET   /settings/users/?page=&page_size=&search=   ->  { count, results: [{ id, name, email, role, status, last_login? }] }
+ * GET   /settings/users/?page=&page_size=&search=   ->  { count, results: [{ id, name, email, role, status, last_login?, attendance_permissions }] }
  * POST  /settings/users/            { name, email, role }        // sends an invitation email
- * PATCH /settings/users/<id>/       { name?, role?, status? }
+ * PATCH /settings/users/<id>/       { name?, role?, status?, attendance_permissions?: [code] }   // a Super Admin always has all
  *
  * GET   /settings/notifications/    ->  [{ key, title, description?, enabled }]
  * PATCH /settings/notifications/    { key, enabled }

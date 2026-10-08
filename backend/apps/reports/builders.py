@@ -13,7 +13,6 @@ from django.utils import timezone
 from apps.core import periods
 from apps.core.metrics import num, ratio_pct
 from apps.customers.models import Customer
-from apps.finance.models import Transaction
 from apps.inventory.models import Product
 from apps.marketing.models import Campaign, MarketingMetric, Platform
 from apps.purchase.models import Purchase
@@ -25,7 +24,7 @@ from apps.supply_chain.models import Shipment
 # report type -> module a role must be able to read
 MODULE_FOR_TYPE = {
     "sales": "sales", "inventory": "inventory", "purchase": "purchase", "marketing": "marketing",
-    "customers": "customers", "supply_chain": "supply_chain", "quality": "quality", "finance": "finance",
+    "customers": "customers", "supply_chain": "supply_chain", "quality": "quality",
 }
 
 
@@ -227,29 +226,6 @@ def quality(p):
     }
 
 
-def finance(p):
-    tx = Transaction.objects.counted().filter(date__range=(p.start, p.end))
-    trend = []
-    for s, e, label in day_buckets(p):
-        part = tx.filter(date__range=(s, e))
-        rev = part.filter(type="income").aggregate(t=Sum("amount"))["t"]
-        exp = part.filter(type="expense").aggregate(t=Sum("amount"))["t"]
-        if rev or exp:
-            trend.append({"label": label, "revenue": num(rev or 0), "expenses": num(exp or 0)})
-    return {
-        "title": f"Accounts Report — {p.label}",
-        "chart": chart("Revenue and expenses", "bar", trend, [{"key": "revenue", "name": "Revenue"}, {"key": "expenses", "name": "Expenses"}], "inr"),
-        "breakdown": breakdown("Expenses by category", [{"name": Transaction.category_label(r["category"]), "value": num(r["t"])}
-                                                        for r in tx.filter(type="expense").values("category").annotate(t=Sum("amount")).order_by("-t")], "inr"),
-        "table": {
-            "columns": [col("date", "Date", "date"), col("description", "Description"), col("type", "Type"), col("category", "Category"),
-                        col("amount", "Amount", "inr"), col("status", "Status")],
-            "rows": [{"date": t.date, "description": t.description, "type": t.get_type_display(), "category": Transaction.category_label(t.category),
-                      "amount": num(t.amount), "status": t.get_status_display()} for t in tx.order_by("date", "id")],
-        },
-    }
-
-
 def quotations(p):
     from apps.sales.models import SalesQuotation
     from apps.sales.views import quotation_summary
@@ -312,7 +288,7 @@ def ai_business(p, user=None):
 
 
 BUILDERS = {"sales": sales, "quotations": quotations, "inventory": inventory, "purchase": purchase, "marketing": marketing,
-            "customers": customers, "supply_chain": supply_chain, "quality": quality, "finance": finance, "ai_business": ai_business}
+            "customers": customers, "supply_chain": supply_chain, "quality": quality, "ai_business": ai_business}
 MODULE_FOR_TYPE["quotations"] = "sales"
 MODULE_FOR_TYPE["ai_business"] = "reports"
 

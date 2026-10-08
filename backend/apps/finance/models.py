@@ -13,8 +13,8 @@ class TransactionQuerySet(models.QuerySet):
 
 class Transaction(models.Model):
     """
-    One income or expense line in Accounts. Rows linked to a sales payment or a supplier payment are posted
-    automatically from that payment (apps/finance/services.py) and change only through it; the others are entered by hand.
+    One income or expense line from the retired Accounts module (replaced by Attendance on 2026-10-08). Kept only so
+    the recorded data stays in the database: nothing in the app reads or writes these rows any more.
     """
 
     class Type(models.TextChoices):

@@ -28,7 +28,6 @@ CATALOGUE = {
     "invoice_overdue": ("Overdue invoices", "When a sales invoice passes its due date unpaid", "sales"),
     "quality_failures":("Quality test failures", "When a quality test fails or is put on hold", "quality"),
     "shipment_delays": ("Shipment delays", "When a supplier shipment is marked delayed", "supply_chain"),
-    "payment_due": ("Pending payments", "When a new pending payment is recorded", "finance"),
     "report_ready": ("Reports ready", "When a report you generated is ready", "reports"),
 }
 
