@@ -22,10 +22,15 @@ PERMISSIONS = [
 
 
 class AttendanceSettings(SingletonModel):
-    """The daily attendance window. Open from open_time to close_time; when close_time is earlier it ends the next day."""
+    """
+    The daily attendance window: open from open_time (check-out for the day) to close_time the next morning (latest
+    check-in), frozen in between. work_start / work_end are the working hours, shown for information.
+    """
 
     open_time = models.TimeField(default=time(17, 0))
     close_time = models.TimeField(default=time(9, 20))
+    work_start = models.TimeField(default=time(9, 0))
+    work_end = models.TimeField(default=time(17, 30))
     updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:

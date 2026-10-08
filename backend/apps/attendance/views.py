@@ -26,7 +26,7 @@ from services.exporters import MIME, export
 from . import permissions as perms
 from . import reports, services, window
 from .models import AttendanceRecord, AttendanceSettings, Employee, LeaveRequest
-from .services import DAY_LABELS, current_employees, duration_label, employee_of, record_status
+from .services import DAY_LABELS, approved_permissions, current_employees, duration_label, employee_of, figures, record_status
 
 LS = LeaveRequest.Status
 MAX_REPORT_DAYS = 93
@@ -52,10 +52,23 @@ def employee_row(e):
             "user": {"id": e.user_id, "name": e.user.name or e.user.username, "email": e.user.email} if e.user_id else None}
 
 
-def record_row(r, w):
+def figures_block(f):
+    """Total time, approved permission inside it, and actual working hours (total − permission)."""
+    return {"total_duration": duration_label(f["total"]), "permission_duration": duration_label(f["permission"]),
+            "working_duration": duration_label(f["working"])}
+
+
+def record_row(r, w, permissions=()):
     return {"id": r.id, "attendance_date": r.attendance_date, "employee": employee_brief(r.employee),
             "check_in_at": iso(r.check_in_at), "check_out_at": iso(r.check_out_at),
-            "duration": duration_label(r.duration), "status": record_status(r, w)}
+            **figures_block(figures(r, permissions)), "status": record_status(r, w)}
+
+
+def record_rows(records, w):
+    """Rows for a page of records, with their approved permissions fetched in one query."""
+    records = list(records)
+    found = approved_permissions(records)
+    return [record_row(r, w, found.get((r.employee_id, r.attendance_date), [])) for r in records]
 
 
 def leave_row(lr, user):
@@ -72,8 +85,10 @@ def leave_row(lr, user):
 
 
 def window_block(w, s):
-    return {"is_open": w.is_open, "attendance_date": w.attendance_date, "opens_at": iso(w.opens_at), "closes_at": iso(w.closes_at),
+    return {"is_open": w.is_open, "checkin_date": w.checkin_date, "checkout_date": w.checkout_date,
+            "opens_at": iso(w.opens_at), "closes_at": iso(w.closes_at),
             "open_time": s.open_time.strftime("%H:%M"), "close_time": s.close_time.strftime("%H:%M"),
+            "work_start": s.work_start.strftime("%H:%M"), "work_end": s.work_end.strftime("%H:%M"),
             "message": None if w.is_open else window.closed_message(w)}
 
 
@@ -83,18 +98,26 @@ def status_payload(user):
     s = AttendanceSettings.load()
     w = window.state(settings=s)
     emp = employee_of(user)
-    record = (AttendanceRecord.objects.select_related("employee").filter(employee=emp, attendance_date=w.last_date).first()
-              if emp else None)
-    current = record if (record and w.is_open) else None
+    today = window.now().date()
+    wanted = {today} | ({w.checkin_date, w.checkout_date} if w.is_open else set())
+    recs = ({r.attendance_date: r for r in AttendanceRecord.objects.select_related("employee").filter(employee=emp, attendance_date__in=wanted)}
+            if emp else {})
+    to_close = recs.get(w.checkout_date) if w.is_open else None
     flags = perms.flags(user)
+    can_out = bool(flags["check_out"] and to_close and to_close.check_out_at is None)
+    can_in = bool(flags["check_in"] and w.is_open and emp and w.checkin_date not in recs)
+    # The work day to show: the one still to be checked out, otherwise today
+    record = to_close if can_out else recs.get(today)
     return {
         "server_time": iso(window.now()),
         "timezone": "Asia/Kolkata (IST)",
         "window": window_block(w, s),
         "employee": employee_brief(emp) if emp else None,
-        "record": record_row(record, w) if record else None,
-        "can_check_in": bool(flags["check_in"] and w.is_open and emp and current is None),
-        "can_check_out": bool(flags["check_out"] and w.is_open and current and current.check_out_at is None),
+        "work_date": record.attendance_date if record else today,
+        "record": record_rows([record], w)[0] if record else None,
+        "can_check_in": can_in,
+        "check_in_for": w.checkin_date if w.is_open else None,
+        "can_check_out": can_out,
         "permissions": flags,
     }
 
@@ -122,8 +145,7 @@ class HistoryView(AttendanceView):
     def get(self, request):
         emp = employee_of(request.user)
         qs = AttendanceRecord.objects.select_related("employee").filter(employee=emp) if emp else AttendanceRecord.objects.none()
-        w = window.state()
-        return self.paginated(qs, lambda r: record_row(r, w))
+        return self.get_paginated_response(record_rows(self.paginate_queryset(qs), window.state()))
 
 
 class RecordsView(AttendanceView):
@@ -142,8 +164,7 @@ class RecordsView(AttendanceView):
             qs = qs.filter(employee_id=emp)
         if self.param("department"):
             qs = qs.filter(employee__department__iexact=self.param("department"))
-        w = window.state()
-        return self.paginated(qs, lambda r: record_row(r, w))
+        return self.get_paginated_response(record_rows(self.paginate_queryset(qs), window.state()))
 
 
 class OptionsView(AttendanceView):
@@ -402,7 +423,7 @@ class CalendarView(AttendanceView):
             rec = day["record"]
             out.append({"date": d, "statuses": day["statuses"], "labels": [DAY_LABELS[s] for s in day["statuses"]],
                         "check_in_at": iso(rec.check_in_at) if rec else None, "check_out_at": iso(rec.check_out_at) if rec else None,
-                        "duration": duration_label(rec.duration) if rec else None,
+                        **figures_block(day["figures"]),
                         "leaves": [{"type": lr.get_type_display(), "from_time": lr.from_time.strftime("%H:%M") if lr.from_time else None,
                                     "to_time": lr.to_time.strftime("%H:%M") if lr.to_time else None, "reason": lr.reason}
                                    for lr in day["leaves"]]})
@@ -453,8 +474,12 @@ class ReportView(AttendanceView):
 
 # --- Settings -----------------------------------------------------------------------------------
 
+SETTING_TIMES = {"open_time": "open time", "close_time": "close time", "work_start": "working hours start",
+                 "work_end": "working hours end"}
+
+
 def settings_payload(s):
-    return {"open_time": s.open_time.strftime("%H:%M"), "close_time": s.close_time.strftime("%H:%M"),
+    return {**{name: getattr(s, name).strftime("%H:%M") for name in SETTING_TIMES},
             "timezone": "Asia/Kolkata (IST)", "updated_at": iso(s.updated_at)}
 
 
@@ -465,19 +490,21 @@ class SettingsView(AttendanceView):
     def patch(self, request):
         perms.require(request.user, "settings_manage", "You don't have permission to change attendance settings.")
         s = AttendanceSettings.load()
-        errors = {}
-        open_t = read_time(request.data, "open_time", errors) if "open_time" in request.data else s.open_time
-        close_t = read_time(request.data, "close_time", errors) if "close_time" in request.data else s.close_time
+        errors, values = {}, {}
+        for name, label in SETTING_TIMES.items():
+            values[name] = read_time(request.data, name, errors) if name in request.data else getattr(s, name)
+            if values[name] is None and name not in errors:
+                errors[name] = [f"Enter the {label}."]
         if not errors:
-            if open_t is None:
-                errors["open_time"] = ["Enter the open time."]
-            if close_t is None:
-                errors["close_time"] = ["Enter the close time."]
-            if open_t and close_t and open_t == close_t:
+            if values["open_time"] == values["close_time"]:
                 errors["close_time"] = ["The close time must differ from the open time."]
+            if values["work_end"] <= values["work_start"]:
+                errors["work_end"] = ["The working hours must end after they start."]
         if errors:
             raise ValidationError(errors)
-        s.open_time, s.close_time = open_t, close_t
+        for name, value in values.items():
+            setattr(s, name, value)
         s.save()
-        audit.record(request, "Changed attendance window", f"{open_t:%H:%M} → {close_t:%H:%M}")
+        audit.record(request, "Changed attendance settings",
+                     f"open {s.open_time:%H:%M}, close {s.close_time:%H:%M}, working hours {s.work_start:%H:%M}–{s.work_end:%H:%M}")
         return Response(settings_payload(s))

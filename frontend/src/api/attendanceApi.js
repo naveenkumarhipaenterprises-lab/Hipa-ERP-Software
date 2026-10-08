@@ -4,8 +4,11 @@ import { api, cleanParams as clean } from './client'
  * Attendance endpoints (Django REST API). The server decides everything time-related: whether the window is open,
  * and every check-in / check-out time. Nothing time-related is ever sent from the browser.
  *
- * GET  /attendance/status/     -> { server_time, timezone, window: { is_open, attendance_date, opens_at, closes_at,
- *                                   open_time, close_time, message }, employee, record, can_check_in, can_check_out, permissions }
+ * GET  /attendance/status/     -> { server_time, timezone, window: { is_open, checkin_date, checkout_date, opens_at, closes_at,
+ *                                   open_time, close_time, work_start, work_end, message }, employee, work_date, record,
+ *                                   can_check_in, check_in_for, can_check_out, permissions }
+ *      record: { attendance_date (the work day), check_in_at, check_out_at, total_duration, permission_duration,
+ *                working_duration, status }   // working = total − approved permission inside it
  * POST /attendance/check-in/   -> status            POST /attendance/check-out/  -> status
  * GET  /attendance/history/    -> own records        GET /attendance/records/   -> everyone's (reports permission)
  * GET  /attendance/options/    -> { permissions, leave_types, leave_statuses, employee_statuses, day_statuses, report_types,

@@ -1,5 +1,6 @@
 """Attendance reports in the existing report format ({title, table}), exported by services.exporters to PDF / Excel / CSV."""
 from collections import Counter
+from datetime import timedelta
 
 from apps.reports.builders import col
 
@@ -35,27 +36,28 @@ def build(kind, start, end, employees, status=None):
             day = pic[emp.id].get(d)
             if not day or not day["statuses"] or (status and status not in day["statuses"]):
                 continue
-            rec = day["record"]
+            rec, f = day["record"], day["figures"]
             rows.append({"date": d, "employee_code": emp.employee_code, "employee": emp.name, "department": emp.department or None,
                          "check_in": clock(rec.check_in_at) if rec else None, "check_out": clock(rec.check_out_at) if rec else None,
-                         "duration": duration_label(rec.duration) if rec else None,
-                         "status": ", ".join(DAY_LABELS[s] for s in day["statuses"])})
+                         "total": duration_label(f["total"]), "permission": duration_label(f["permission"]),
+                         "working": duration_label(f["working"]), "status": ", ".join(DAY_LABELS[s] for s in day["statuses"])})
     return {"title": title(kind, start, end), "table": {
         "columns": [col("date", "Date", "date"), col("employee_code", "Employee ID"), col("employee", "Employee"),
                     col("department", "Department"), col("check_in", "Check-In"), col("check_out", "Check-Out"),
-                    col("duration", "Working Duration"), col("status", "Status")],
+                    col("total", "Total Duration"), col("permission", "Approved Permission"), col("working", "Working Hours"),
+                    col("status", "Status")],
         "rows": rows}}
 
 
 def monthly(start, end, employees, pic, status):
     rows = []
     for emp in employees:
-        counts, minutes = Counter(), 0
+        counts, working, permission = Counter(), timedelta(), timedelta()
         for day in pic[emp.id].values():
             counts.update(day["statuses"])
-            rec = day["record"]
-            if rec and rec.duration:
-                minutes += int(rec.duration.total_seconds() // 60)
+            if day["figures"]["working"] is not None:
+                working += day["figures"]["working"]
+                permission += day["figures"]["permission"]
         if status and not counts[status]:
             continue
         if not pic[emp.id]:
@@ -63,12 +65,13 @@ def monthly(start, end, employees, pic, status):
         rows.append({"employee_code": emp.employee_code, "employee": emp.name, "department": emp.department or None,
                      "present": counts[PRESENT], "not_checked_out": counts[NOT_CHECKED_OUT], "absent": counts[ABSENT],
                      "leave": counts[LEAVE], "permission": counts[PERMISSION],
-                     "hours": f"{minutes // 60:02d}h {minutes % 60:02d}m"})
+                     "permission_hours": duration_label(permission), "hours": duration_label(working)})
     return {"title": title("monthly", start, end), "table": {
         "columns": [col("employee_code", "Employee ID"), col("employee", "Employee"), col("department", "Department"),
                     col("present", "Present", align="right"), col("not_checked_out", "Not Checked Out", align="right"),
                     col("absent", "Absent", align="right"), col("leave", "Leave", align="right"),
-                    col("permission", "Permission", align="right"), col("hours", "Working Hours", align="right")],
+                    col("permission", "Permission", align="right"), col("permission_hours", "Approved Permission Hours", align="right"),
+                    col("hours", "Working Hours", align="right")],
         "rows": rows}}
 
 

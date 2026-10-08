@@ -61,6 +61,9 @@ export default function TodayPanel() {
   const r = s.record
   const completed = Boolean(r?.check_out_at)
   const serverNow = s.server_time ? new Date(now + (Date.parse(s.server_time) - s.receivedAt)) : null
+  const serverDay = s.server_time?.slice(0, 10)
+  // From 05:00 PM a check-in counts for the next work day, so the button says which day
+  const checkInLabel = !s.check_in_for || s.check_in_for === serverDay ? 'Check In' : `Check In for ${day(s.check_in_for)}`
 
   return (
     <div className="stack">
@@ -69,8 +72,12 @@ export default function TodayPanel() {
           <div className="attendance-today__state">
             <span className={`attendance-dot attendance-dot--${w.is_open ? 'open' : 'closed'}`} aria-hidden />
             <div>
-              <h2 className="attendance-today__title">{w.is_open ? 'Attendance Open' : 'Attendance Closed'}</h2>
-              <p className="muted">{w.is_open ? `Closes ${whichDay(w.closes_at, s.server_time).toLowerCase()} at ${clock(w.closes_at)}` : w.message}</p>
+              <h2 className="attendance-today__title">{w.is_open ? 'Attendance Open' : 'Attendance Frozen'}</h2>
+              <p className="muted">
+                {w.is_open
+                  ? `Check-out for the day from ${clock(w.open_time)} · Check-in until ${whichDay(w.closes_at, s.server_time).toLowerCase()} ${clock(w.closes_at)}`
+                  : w.message}
+              </p>
             </div>
           </div>
           <dl className="attendance-facts">
@@ -82,15 +89,19 @@ export default function TodayPanel() {
               <dt>Attendance window</dt>
               <dd>
                 {w.is_open
-                  ? `Opened ${whichDay(w.opens_at, s.server_time)} ${clock(w.opens_at)} · Closes ${whichDay(w.closes_at, s.server_time)} ${clock(w.closes_at)}`
+                  ? `Open until ${whichDay(w.closes_at, s.server_time)} ${clock(w.closes_at)}`
                   : `Next opening: ${whichDay(w.opens_at, s.server_time)} ${clock(w.opens_at)}`}
               </dd>
+            </div>
+            <div>
+              <dt>Working hours</dt>
+              <dd>{clock(w.work_start)} – {clock(w.work_end)}</dd>
             </div>
           </dl>
         </div>
       </Card>
 
-      <Card title="Today's Attendance" subtitle={r ? `Attendance date ${day(r.attendance_date)}` : undefined}>
+      <Card title="Today's Attendance" subtitle={`Work day ${day(s.work_date)}`}>
         {!s.employee ? (
           <p className="muted">Your login isn't linked to an employee yet. Ask an administrator to link it in Attendance → Employees.</p>
         ) : (
@@ -98,21 +109,23 @@ export default function TodayPanel() {
             <dl className="attendance-facts attendance-facts--row">
               <div><dt>Check-In</dt><dd className="attendance-time">{clock(r?.check_in_at)}</dd></div>
               <div><dt>Check-Out</dt><dd className="attendance-time">{clock(r?.check_out_at)}</dd></div>
-              <div><dt>Working Duration</dt><dd className="attendance-time">{r?.duration ?? '—'}</dd></div>
+              <div><dt>Total Duration</dt><dd className="attendance-time">{r?.total_duration ?? '—'}</dd></div>
+              <div><dt>Approved Permission</dt><dd className="attendance-time">{r?.permission_duration ?? '—'}</dd></div>
+              <div><dt>Working Hours</dt><dd className="attendance-time">{r?.working_duration ?? '—'}</dd></div>
               <div><dt>Status</dt><dd>{r ? <Badge tone={completed ? 'green' : r.status === 'Not checked out' ? 'red' : 'blue'}>{r.status}</Badge> : <Badge tone="amber">Not checked in</Badge>}</dd></div>
             </dl>
             <div className="attendance-actions">
-              {!r && (
-                <Button icon={LogIn} size="lg" onClick={() => act('in')} loading={busy} disabled={!s.can_check_in}>
-                  Check In
-                </Button>
-              )}
-              {r && !completed && (
-                <Button icon={LogOut} size="lg" onClick={() => act('out')} loading={busy} disabled={!s.can_check_out}>
-                  Check Out / Logout
-                </Button>
-              )}
-              {!w.is_open && !completed && <small className="muted">Check-In and Check-Out are available while attendance is open.</small>}
+              {s.can_check_out ? (
+                <Button icon={LogOut} size="lg" onClick={() => act('out')} loading={busy}>Check Out / Logout</Button>
+              ) : s.can_check_in ? (
+                <Button icon={LogIn} size="lg" onClick={() => act('in')} loading={busy}>{checkInLabel}</Button>
+              ) : r && !completed ? (
+                <Button icon={LogOut} size="lg" disabled>Check Out / Logout</Button>
+              ) : !r ? (
+                <Button icon={LogIn} size="lg" disabled>Check In</Button>
+              ) : null}
+              {!w.is_open && r && !completed && <small className="muted">Check-out opens at {clock(w.open_time)}.</small>}
+              {!w.is_open && !r && <small className="muted">Check-in is frozen during working hours. It opens again at {clock(w.open_time)}.</small>}
               {w.is_open && !r && !s.permissions.check_in && <small className="muted">You don't have the Check-In permission.</small>}
               {w.is_open && r && !completed && !s.permissions.check_out && <small className="muted">You don't have the Check-Out permission.</small>}
             </div>
@@ -134,7 +147,9 @@ export default function TodayPanel() {
               { key: 'attendance_date', header: 'Date', render: (x) => <span className="nowrap">{day(x.attendance_date)}</span> },
               { key: 'check_in_at', header: 'Check-In', render: (x) => clock(x.check_in_at) },
               { key: 'check_out_at', header: 'Check-Out', render: (x) => clock(x.check_out_at) },
-              { key: 'duration', header: 'Working Duration', render: (x) => x.duration ?? '—' },
+              { key: 'total_duration', header: 'Total Duration', render: (x) => x.total_duration ?? '—' },
+              { key: 'permission_duration', header: 'Approved Permission', render: (x) => x.permission_duration ?? '—' },
+              { key: 'working_duration', header: 'Working Hours', render: (x) => x.working_duration ?? '—' },
               { key: 'status', header: 'Status', render: (x) => <Badge tone={x.check_out_at ? 'green' : x.status === 'Not checked out' ? 'red' : 'blue'}>{x.status}</Badge> },
             ]}
           />

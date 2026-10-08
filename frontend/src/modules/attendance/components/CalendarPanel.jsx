@@ -95,7 +95,9 @@ export default function CalendarPanel({ options, refreshKey }) {
                   <dt>Status</dt><dd>{pick.labels.join(', ')}</dd>
                   {pick.check_in_at && (<><dt>Check-In</dt><dd>{clock(pick.check_in_at)}</dd></>)}
                   {pick.check_in_at && (<><dt>Check-Out</dt><dd>{clock(pick.check_out_at)}</dd></>)}
-                  {pick.duration && (<><dt>Working Duration</dt><dd>{pick.duration}</dd></>)}
+                  {pick.total_duration && (<><dt>Total Duration</dt><dd>{pick.total_duration}</dd></>)}
+                  {pick.total_duration && (<><dt>Approved Permission</dt><dd>{pick.permission_duration}</dd></>)}
+                  {pick.working_duration && (<><dt>Working Hours</dt><dd>{pick.working_duration}</dd></>)}
                   {pick.leaves.map((lv, i) => (
                     <Fragment key={i}>
                       <dt>{lv.type}</dt>

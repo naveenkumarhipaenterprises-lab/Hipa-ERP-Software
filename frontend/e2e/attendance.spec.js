@@ -15,15 +15,20 @@ const OPTIONS = (permissions) => ({
   departments: [], employees: [], users: [{ id: 7, name: 'TEST Ravi', email: 'ravi@test.invalid' }],
 })
 
+const OPEN_MORNING = { is_open: true, checkin_date: '2026-10-08', checkout_date: '2026-10-07', opens_at: '2026-10-07T17:00:00+05:30',
+  closes_at: '2026-10-08T09:20:00+05:30', open_time: '17:00', close_time: '09:20', work_start: '09:00', work_end: '17:30', message: null }
+
 const status = (over = {}) => ({
-  server_time: '2026-10-08T18:25:00+05:30',
+  server_time: '2026-10-08T08:25:00+05:30',
   timezone: 'Asia/Kolkata (IST)',
-  window: { is_open: true, attendance_date: '2026-10-08', opens_at: '2026-10-08T17:00:00+05:30', closes_at: '2026-10-09T09:20:00+05:30',
-    open_time: '17:00', close_time: '09:20', message: null },
+  window: OPEN_MORNING,
   employee: { id: 1, employee_code: 'TEST-001', name: 'TEST Worker', department: null },
-  record: null, can_check_in: true, can_check_out: false, permissions: ALL_PERMS,
+  work_date: '2026-10-08', record: null, can_check_in: true, check_in_for: '2026-10-08', can_check_out: false, permissions: ALL_PERMS,
   ...over,
 })
+
+const RECORD = { id: 3, attendance_date: '2026-10-08', check_in_at: '2026-10-08T08:25:00+05:30', check_out_at: null,
+  total_duration: null, permission_duration: null, working_duration: null, status: 'Checked in' }
 
 test('main menu follows the new order and Attendance has exactly six sections', async ({ page }) => {
   await signIn(page, 'admin')
@@ -37,39 +42,63 @@ test('main menu follows the new order and Attendance has exactly six sections', 
   await expect(menu.getByText('Accounts')).toHaveCount(0)
 })
 
-test('check in while open: the server sets the time and the button turns into Check Out / Logout', async ({ page }) => {
+test('morning check-in: the server sets the time; check-out waits for the evening', async ({ page }) => {
   await signIn(page, 'sales')
   const calls = await mockApi(page, {
     ...SHELL,
     'GET /api/attendance/options/': OPTIONS(ALL_PERMS),
     'GET /api/attendance/status/': status(),
     'GET /api/attendance/history/': { count: 0, results: [] },
-    'POST /api/attendance/check-in/': status({ can_check_in: false, can_check_out: true,
-      record: { id: 3, attendance_date: '2026-10-08', check_in_at: '2026-10-08T18:25:00+05:30', check_out_at: null, duration: null, status: 'Checked in' } }),
+    'POST /api/attendance/check-in/': status({ can_check_in: false, record: RECORD }),
   })
   await page.goto('/attendance')
   await expect(page.getByRole('heading', { name: 'Attendance Open' })).toBeVisible()
+  await expect(page.getByText('09:00 AM – 05:30 PM')).toBeVisible() // working hours
   await expect(page.getByText('No attendance records found.')).toBeVisible()
-  await page.getByRole('button', { name: 'Check In' }).click()
-  await expect(page.getByText('Checked in at 06:25 PM')).toBeVisible()
-  await expect(page.getByRole('button', { name: 'Check Out / Logout' })).toBeEnabled()
+  await page.getByRole('button', { name: 'Check In', exact: true }).click()
+  await expect(page.getByText('Checked in at 08:25 AM')).toBeVisible()
+  await expect(page.getByRole('button', { name: 'Check Out / Logout' })).toBeDisabled()
   expect(calls.find((c) => c.key === 'POST /api/attendance/check-in/').body).toBeFalsy() // no time sent from the browser
 })
 
-test('closed window: shows the next opening and disables check-in', async ({ page }) => {
+test('evening check-out shows total, approved permission and working hours', async ({ page }) => {
+  await signIn(page, 'sales')
+  const evening = { is_open: true, checkin_date: '2026-10-09', checkout_date: '2026-10-08', opens_at: '2026-10-08T17:00:00+05:30',
+    closes_at: '2026-10-09T09:20:00+05:30', open_time: '17:00', close_time: '09:20', work_start: '09:00', work_end: '17:30', message: null }
+  await mockApi(page, {
+    ...SHELL,
+    'GET /api/attendance/options/': OPTIONS(ALL_PERMS),
+    'GET /api/attendance/status/': status({ server_time: '2026-10-08T17:30:00+05:30', window: evening, record: RECORD,
+      can_check_in: true, check_in_for: '2026-10-09', can_check_out: true }),
+    'GET /api/attendance/history/': { count: 0, results: [] },
+    'POST /api/attendance/check-out/': status({ server_time: '2026-10-08T17:30:00+05:30', window: evening, can_check_out: false,
+      can_check_in: true, check_in_for: '2026-10-09', record: { ...RECORD, check_out_at: '2026-10-08T17:30:00+05:30',
+        total_duration: '09h 05m', permission_duration: '01h 00m', working_duration: '08h 05m', status: 'Attendance completed' } }),
+  })
+  await page.goto('/attendance')
+  await page.getByRole('button', { name: 'Check Out / Logout' }).click()
+  await expect(page.getByText('Checked out at 05:30 PM')).toBeVisible()
+  await expect(page.getByText('08h 05m')).toBeVisible()
+  await expect(page.getByText('01h 00m')).toBeVisible()
+  await expect(page.getByRole('button', { name: 'Check In for 09 Oct 2026' })).toBeVisible() // the next work day
+})
+
+test('working hours: check-in is frozen until 5 PM', async ({ page }) => {
   await signIn(page, 'sales')
   await mockApi(page, {
     ...SHELL,
     'GET /api/attendance/options/': OPTIONS(ALL_PERMS),
-    'GET /api/attendance/status/': status({ server_time: '2026-10-08T10:00:00+05:30', can_check_in: false,
-      window: { is_open: false, attendance_date: null, opens_at: '2026-10-08T17:00:00+05:30', closes_at: '2026-10-08T09:20:00+05:30',
-        open_time: '17:00', close_time: '09:20', message: 'Attendance is closed. Today\'s attendance window closed at 09:20 AM; it opens again at 05:00 PM.' } }),
+    'GET /api/attendance/status/': status({ server_time: '2026-10-08T10:00:00+05:30', can_check_in: false, check_in_for: null,
+      window: { is_open: false, checkin_date: null, checkout_date: null, opens_at: '2026-10-08T17:00:00+05:30',
+        closes_at: '2026-10-08T09:20:00+05:30', open_time: '17:00', close_time: '09:20', work_start: '09:00', work_end: '17:30',
+        message: 'Attendance is frozen during working hours. Check-in closed at 09:20 AM; it opens again at 05:00 PM.' } }),
     'GET /api/attendance/history/': { count: 0, results: [] },
   })
   await page.goto('/attendance')
-  await expect(page.getByRole('heading', { name: 'Attendance Closed' })).toBeVisible()
+  await expect(page.getByRole('heading', { name: 'Attendance Frozen' })).toBeVisible()
   await expect(page.getByText('Next opening: Today 05:00 PM')).toBeVisible()
   await expect(page.getByRole('button', { name: 'Check In' })).toBeDisabled()
+  await expect(page.getByText('Check-in is frozen during working hours. It opens again at 05:00 PM.')).toBeVisible()
 })
 
 test('employees: add, and delete asks for confirmation; no permission shows a message', async ({ page }) => {
