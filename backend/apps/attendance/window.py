@@ -1,17 +1,16 @@
 """
-The attendance window, decided only by the server clock in IST (never by the browser).
+Attendance timing, decided only by the server clock in IST (never by the browser).
 
-The work day is 09:00 AM to 05:30 PM. With the default settings attendance is OPEN from 05:00 PM to 09:20 AM the
-next morning and FROZEN from 09:20 AM to 05:00 PM (working hours), repeating every day:
-
-- from 05:00 PM, Check-Out / Logout ends that day's work (a late check-out after midnight still counts for it);
-- until 09:20 AM, Check-In starts that morning's work day (09:20 AM is the latest check-in).
-
-So an open window has two dates: the work day a check-out closes (the day the window opened) and the work day a
-check-in counts for (the morning the window closes). Every record is filed under its work day.
+Two separate rules:
+- Check-In window: open from 05:00 PM to 09:20 AM the next morning, closed from 09:20 AM to 05:00 PM, every day.
+  A check-in until 09:20 AM starts that morning's work day; a check-in from 05:00 PM counts for the next day.
+- Check-Out: allowed at any time for an open record, until 09:20 AM the morning after its work day; after that the
+  record is final ("Not checked out"). Nobody is ever checked out automatically.
+Office working hours (09:00 AM – 05:30 PM, settings work_start / work_end) are a third, separate rule: they set the
+scheduled hours and where approved permission is deducted.
 """
 from dataclasses import dataclass
-from datetime import date, datetime, timedelta
+from datetime import date, datetime, time, timedelta
 from zoneinfo import ZoneInfo
 
 from django.utils import timezone
@@ -27,11 +26,21 @@ def now():
 
 @dataclass(frozen=True)
 class Window:
-    is_open: bool
-    opens_at: datetime            # open: when this window opened; closed: when the next one opens
-    closes_at: datetime           # open: when this window closes; closed: when the last one closed
+    at: datetime                  # the moment this state was worked out for (server time, IST)
+    is_open: bool                 # whether Check-In is open
+    opens_at: datetime            # open: when this check-in window opened; closed: when the next one opens
+    closes_at: datetime           # open: when this check-in window closes; closed: when the last one closed
     checkin_date: date | None     # open: the work day a check-in now counts for (the morning the window closes)
-    checkout_date: date | None    # open: the work day a check-out now ends (the day the window opened)
+    open_time: time
+    close_time: time
+
+    def checkout_deadline(self, work_date):
+        """Until when a work day's record can still be checked out: the check-in window closing after it."""
+        day = work_date + DAY if self.close_time <= self.open_time else work_date
+        return _at(day, self.close_time)
+
+    def can_still_check_out(self, record):
+        return record.check_out_at is None and self.at < self.checkout_deadline(record.attendance_date)
 
 
 def _at(day, tm):
@@ -45,33 +54,32 @@ def state(at=None, settings=None):
     s = settings or AttendanceSettings.load()
     o, c, d, t = s.open_time, s.close_time, at.date(), at.time().replace(tzinfo=None)
 
-    def open_window(opens, closes):
-        return Window(True, opens, closes, closes.date(), opens.date())
+    def make(is_open, opens, closes):
+        return Window(at, is_open, opens, closes, closes.date() if is_open else None, o, c)
 
     if c <= o:  # overnight window, e.g. 17:00 → 09:20 next morning
         if t >= o:
-            return open_window(_at(d, o), _at(d + DAY, c))
+            return make(True, _at(d, o), _at(d + DAY, c))
         if t < c:
-            return open_window(_at(d - DAY, o), _at(d, c))
-        return Window(False, _at(d, o), _at(d, c), None, None)
+            return make(True, _at(d - DAY, o), _at(d, c))
+        return make(False, _at(d, o), _at(d, c))
     # same-day window, e.g. 07:00 → 19:00
     if o <= t < c:
-        return open_window(_at(d, o), _at(d, c))
+        return make(True, _at(d, o), _at(d, c))
     if t < o:
-        return Window(False, _at(d, o), _at(d - DAY, c), None, None)
-    return Window(False, _at(d + DAY, o), _at(d, c), None, None)
+        return make(False, _at(d, o), _at(d - DAY, c))
+    return make(False, _at(d + DAY, o), _at(d, c))
 
 
 def finished_date(w):
-    """The newest work day whose check-in time is over (no check-in by then = absent)."""
+    """The newest work day whose check-in time is over (no check-in by then = absent on a working day)."""
     return w.checkin_date - DAY if w.is_open else w.closes_at.date()
 
 
-def checkout_open_from(w):
-    """The oldest work day that can still be checked out now or later today; anything older is final."""
-    return w.checkout_date if w.is_open else w.opens_at.date()
+def clock(dt_or_time):
+    """5:00 PM (no leading zero)."""
+    return dt_or_time.strftime("%I:%M %p").lstrip("0")
 
 
 def closed_message(w):
-    return (f"Attendance is frozen during working hours. Check-in closed at {w.closes_at:%I:%M %p}; "
-            f"it opens again at {w.opens_at:%I:%M %p}.")
+    return f"Check-In is closed. It opens again at {clock(w.opens_at)}."

@@ -19,6 +19,11 @@ def require(user, code, message="You don't have permission to do this in Attenda
         raise PermissionDenied(message)
 
 
+def require_any(user, codes, message="You don't have permission to do this in Attendance."):
+    if not any(has(user, code) for code in codes):
+        raise PermissionDenied(message)
+
+
 def flags(user):
     return {code: has(user, code) for code in CODES}
 

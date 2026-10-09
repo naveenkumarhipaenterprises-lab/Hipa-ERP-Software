@@ -1,5 +1,11 @@
 export const list = (v) => (Array.isArray(v) ? v : [])
 
+/** Badge tone for each day status (the server's status keys). */
+export const STATUS_TONES = {
+  present: 'green', absent: 'red', leave: 'blue', permission: 'purple', not_checked_out: 'amber',
+  office_holiday: 'teal', weekly_holiday: 'gray',
+}
+
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
 
 /** "06:18 PM" from "HH:MM" or an ISO time from the server (already in IST; never converted by the browser). */

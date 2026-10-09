@@ -6,6 +6,7 @@ import ErrorMessage from '../../components/common/ErrorMessage'
 import PageHeader from '../../components/common/PageHeader'
 import { useApi } from '../../hooks/useApi'
 import { NAV_ITEMS } from '../../utils/constants'
+import AttendanceOverview from './components/AttendanceOverview'
 import CalendarPanel from './components/CalendarPanel'
 import EmployeesPanel from './components/EmployeesPanel'
 import LeavePanel from './components/LeavePanel'
@@ -59,6 +60,7 @@ export default function AttendancePage() {
       <div className="stack" role="tabpanel" id="attendance-tabpanel" aria-labelledby={`attendance-tab-${tab}`}>
         {options.error && !options.data && tab !== 'attendance' && <ErrorMessage message={options.error.message} onRetry={options.reload} />}
         {tab === 'attendance' && <TodayPanel />}
+        {tab === 'attendance' && options.data?.permissions?.view_all && <AttendanceOverview {...props} />}
         {tab === 'employees' && <EmployeesPanel {...props} />}
         {tab === 'leave' && <LeavePanel {...props} />}
         {tab === 'calendar' && <CalendarPanel {...props} />}

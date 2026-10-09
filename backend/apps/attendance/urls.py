@@ -17,4 +17,7 @@ urlpatterns = [
     path("calendar/", views.CalendarView.as_view()),
     path("reports/", views.ReportView.as_view()),
     path("settings/", views.SettingsView.as_view()),
+    path("holidays/", views.HolidaysView.as_view()),
+    path("holidays/<int:pk>/", views.HolidayDetailView.as_view()),
+    path("dashboard/", views.DashboardView.as_view()),
 ]

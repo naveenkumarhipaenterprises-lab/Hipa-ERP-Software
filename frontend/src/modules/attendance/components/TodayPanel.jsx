@@ -16,8 +16,9 @@ const received = (data) => ({ ...data, receivedAt: Date.now() })
 const IST_CLOCK = new Intl.DateTimeFormat('en-IN', { timeZone: 'Asia/Kolkata', hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: true })
 
 /**
- * The employee's own attendance. Open / closed, the times and the buttons all come from the server
- * (GET /attendance/status/); the clock only counts on from the server time between refreshes.
+ * The employee's own attendance. Check-In open / closed, the times and the buttons all come from the server
+ * (GET /attendance/status/); the clock only counts on from the server time between refreshes. Check-out is
+ * available at any time for an open record (until 09:20 AM the next morning).
  */
 export default function TodayPanel() {
   const toast = useToast()
@@ -72,11 +73,11 @@ export default function TodayPanel() {
           <div className="attendance-today__state">
             <span className={`attendance-dot attendance-dot--${w.is_open ? 'open' : 'closed'}`} aria-hidden />
             <div>
-              <h2 className="attendance-today__title">{w.is_open ? 'Attendance Open' : 'Attendance Frozen'}</h2>
+              <h2 className="attendance-today__title">{w.is_open ? 'Check-In Open' : 'Check-In Closed'}</h2>
               <p className="muted">
                 {w.is_open
-                  ? `Check-out for the day from ${clock(w.open_time)} · Check-in until ${whichDay(w.closes_at, s.server_time).toLowerCase()} ${clock(w.closes_at)}`
-                  : w.message}
+                  ? `Check-in until ${whichDay(w.closes_at, s.server_time).toLowerCase()} ${clock(w.closes_at)} · Check-out any time`
+                  : `${w.message} Check-out is still available.`}
               </p>
             </div>
           </div>
@@ -86,7 +87,7 @@ export default function TodayPanel() {
               <dd><Clock size={15} aria-hidden /> {serverNow ? `${IST_CLOCK.format(serverNow).toUpperCase()} IST` : '—'}</dd>
             </div>
             <div>
-              <dt>Attendance window</dt>
+              <dt>Check-In window</dt>
               <dd>
                 {w.is_open
                   ? `Open until ${whichDay(w.closes_at, s.server_time)} ${clock(w.closes_at)}`
@@ -94,24 +95,29 @@ export default function TodayPanel() {
               </dd>
             </div>
             <div>
-              <dt>Working hours</dt>
+              <dt>Office hours</dt>
               <dd>{clock(w.work_start)} – {clock(w.work_end)}</dd>
+            </div>
+            <div>
+              <dt>Weekly holiday</dt>
+              <dd>{w.weekly_holiday}</dd>
             </div>
           </dl>
         </div>
       </Card>
 
-      <Card title="Today's Attendance" subtitle={`Work day ${day(s.work_date)}`}>
+      <Card title="Today's Attendance" subtitle={`Work day ${day(s.work_date)}${s.holiday ? ` · ${s.holiday.label}: ${s.holiday.name}` : ''}`}>
         {!s.employee ? (
           <p className="muted">Your login isn't linked to an employee yet. Ask an administrator to link it in Attendance → Employees.</p>
         ) : (
           <div className="attendance-today">
             <dl className="attendance-facts attendance-facts--row">
-              <div><dt>Check-In</dt><dd className="attendance-time">{clock(r?.check_in_at)}</dd></div>
-              <div><dt>Check-Out</dt><dd className="attendance-time">{clock(r?.check_out_at)}</dd></div>
+              <div><dt>Scheduled Working Hours</dt><dd className="attendance-time">{r?.scheduled_duration ?? s.scheduled_duration ?? '—'}</dd></div>
+              <div><dt>Actual Check-In</dt><dd className="attendance-time">{clock(r?.check_in_at)}</dd></div>
+              <div><dt>Actual Check-Out</dt><dd className="attendance-time">{clock(r?.check_out_at)}</dd></div>
               <div><dt>Total Duration</dt><dd className="attendance-time">{r?.total_duration ?? '—'}</dd></div>
-              <div><dt>Approved Permission</dt><dd className="attendance-time">{r?.permission_duration ?? '—'}</dd></div>
-              <div><dt>Working Hours</dt><dd className="attendance-time">{r?.working_duration ?? '—'}</dd></div>
+              <div><dt>Approved Permission Duration</dt><dd className="attendance-time">{r?.permission_duration ?? '—'}</dd></div>
+              <div><dt>Actual Working Hours</dt><dd className="attendance-time">{r?.working_duration ?? '—'}</dd></div>
               <div><dt>Status</dt><dd>{r ? <Badge tone={completed ? 'green' : r.status === 'Not checked out' ? 'red' : 'blue'}>{r.status}</Badge> : <Badge tone="amber">Not checked in</Badge>}</dd></div>
             </dl>
             <div className="attendance-actions">
@@ -124,10 +130,12 @@ export default function TodayPanel() {
               ) : !r ? (
                 <Button icon={LogIn} size="lg" disabled>Check In</Button>
               ) : null}
-              {!w.is_open && r && !completed && <small className="muted">Check-out opens at {clock(w.open_time)}.</small>}
-              {!w.is_open && !r && <small className="muted">Check-in is frozen during working hours. It opens again at {clock(w.open_time)}.</small>}
+              {s.can_check_out && s.checkout_until && (
+                <small className="muted">Check-out available until {whichDay(s.checkout_until, s.server_time).toLowerCase()} {clock(s.checkout_until)}.</small>
+              )}
+              {!w.is_open && !s.can_check_out && (!r || completed) && <small className="muted">{w.message}</small>}
               {w.is_open && !r && !s.permissions.check_in && <small className="muted">You don't have the Check-In permission.</small>}
-              {w.is_open && r && !completed && !s.permissions.check_out && <small className="muted">You don't have the Check-Out permission.</small>}
+              {r && !completed && !s.permissions.check_out && <small className="muted">You don't have the Check-Out permission.</small>}
             </div>
           </div>
         )}
@@ -145,6 +153,7 @@ export default function TodayPanel() {
             emptyMessage="Your check-ins appear here."
             columns={[
               { key: 'attendance_date', header: 'Date', render: (x) => <span className="nowrap">{day(x.attendance_date)}</span> },
+              { key: 'scheduled_duration', header: 'Scheduled', render: (x) => x.scheduled_duration ?? '—' },
               { key: 'check_in_at', header: 'Check-In', render: (x) => clock(x.check_in_at) },
               { key: 'check_out_at', header: 'Check-Out', render: (x) => clock(x.check_out_at) },
               { key: 'total_duration', header: 'Total Duration', render: (x) => x.total_duration ?? '—' },

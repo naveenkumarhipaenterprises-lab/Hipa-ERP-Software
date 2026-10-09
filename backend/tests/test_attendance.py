@@ -1,6 +1,8 @@
 """
-Attendance: the 05:00 PM → 09:20 AM window (server time, IST), separate check-in / check-out permissions,
-employees, leave / permission requests, calendar, reports and settings. TEST records only; the clock is fixed.
+Attendance: the 05:00 PM → 09:20 AM Check-In window (server time, IST), check-out at any time for an open record,
+separate permissions, office hours and approved permission, weekly / office holidays, the dashboard, employees,
+leave / permission requests, calendar, reports and settings. TEST records only; the clock is fixed.
+(October 2026: the 4th and 11th are Sundays.)
 """
 from datetime import date, datetime, time
 from unittest import mock
@@ -9,7 +11,7 @@ from django.test import TestCase
 
 from apps.attendance import permissions as perms
 from apps.attendance import window
-from apps.attendance.models import AttendanceRecord, AttendanceSettings, Employee, LeaveRequest
+from apps.attendance.models import AttendanceRecord, AttendanceSettings, Employee, LeaveRequest, OfficeHoliday
 
 from .helpers import API, client_for, make_user
 
@@ -30,17 +32,17 @@ class WindowLoopTests(TestCase):
         for (hh, mm), is_open in cases:
             self.assertEqual(window.state(at(2026, 10, 8, hh, mm), s).is_open, is_open, f"{hh:02d}:{mm:02d}")
 
-    def test_each_window_has_a_check_out_day_and_a_check_in_day(self):
+    def test_check_in_day_and_check_out_deadline(self):
         s = AttendanceSettings.load()
-        evening = window.state(at(2026, 10, 8, 17, 0), s)  # from 05:00 PM: check out today's work, check in tomorrow's
-        self.assertEqual((evening.checkout_date, evening.checkin_date), (date(2026, 10, 8), date(2026, 10, 9)))
-        morning = window.state(at(2026, 10, 9, 8, 55), s)  # until 09:20 AM: check in this morning's work day
-        self.assertEqual((morning.checkout_date, morning.checkin_date), (date(2026, 10, 8), date(2026, 10, 9)))
-        self.assertEqual(morning.closes_at, at(2026, 10, 9, 9, 20))
-        frozen = window.state(at(2026, 10, 9, 12, 0), s)  # working hours: frozen
-        self.assertEqual((frozen.checkin_date, frozen.checkout_date, frozen.opens_at), (None, None, at(2026, 10, 9, 17, 0)))
-        self.assertEqual(window.finished_date(frozen), date(2026, 10, 9))  # no check-in by 09:20 = absent today
-        self.assertEqual(window.checkout_open_from(frozen), date(2026, 10, 9))  # today can still be checked out at 5 PM
+        evening = window.state(at(2026, 10, 8, 17, 0), s)  # from 05:00 PM a check-in counts for tomorrow
+        self.assertEqual(evening.checkin_date, date(2026, 10, 9))
+        morning = window.state(at(2026, 10, 9, 8, 55), s)  # until 09:20 AM: this morning's work day
+        self.assertEqual((morning.checkin_date, morning.closes_at), (date(2026, 10, 9), at(2026, 10, 9, 9, 20)))
+        closed = window.state(at(2026, 10, 9, 12, 0), s)
+        self.assertEqual((closed.checkin_date, closed.opens_at), (None, at(2026, 10, 9, 17, 0)))
+        self.assertEqual(window.finished_date(closed), date(2026, 10, 9))  # no check-in by 09:20 = absent today
+        self.assertEqual(closed.checkout_deadline(date(2026, 10, 9)), at(2026, 10, 10, 9, 20))  # check-out until next morning
+        self.assertEqual(window.closed_message(closed), "Check-In is closed. It opens again at 5:00 PM.")
 
     def test_browser_time_never_matters(self):
         """The server decides: the same request is accepted or refused only by the server clock."""
@@ -76,18 +78,20 @@ class CheckInOutTests(AttendanceBase):
         res = api.post(f"{API}/attendance/check-in/", {"check_in_at": "2020-01-01T00:00:00"}, format="json")  # ignored
         self.assertEqual(res.status_code, 201, res.data)
         self.assertTrue(res.data["record"]["check_in_at"].startswith("2026-10-08T08:50"))
-        self.assertEqual((res.data["work_date"], res.data["can_check_in"], res.data["can_check_out"]), (date(2026, 10, 8), False, False))
+        self.assertEqual((res.data["work_date"], res.data["can_check_in"], res.data["can_check_out"]), (date(2026, 10, 8), False, True))  # can check out at any time
         self.assertEqual(api.post(f"{API}/attendance/check-in/").status_code, 400)  # once per work day
-        self.clock(at(2026, 10, 8, 12, 0))  # working hours: frozen
-        self.assertEqual(api.post(f"{API}/attendance/check-out/").status_code, 400)
-        self.assertEqual(api.get(f"{API}/attendance/status/").data["record"]["status"], "Checked in")
+        self.clock(at(2026, 10, 8, 12, 0))  # Check-In closed; check-out still possible
+        status = api.get(f"{API}/attendance/status/").data
+        self.assertEqual((status["record"]["status"], status["can_check_in"], status["can_check_out"]), ("Checked in", False, True))
+        self.assertEqual((status["scheduled_duration"], status["office_hours"]), ("08h 30m", "9:00 AM – 5:30 PM"))
         self.clock(at(2026, 10, 8, 17, 20))
         self.assertTrue(api.get(f"{API}/attendance/status/").data["can_check_out"])
         res = api.post(f"{API}/attendance/check-out/")
         self.assertEqual(res.status_code, 200, res.data)
         r = res.data["record"]
-        self.assertEqual((r["attendance_date"], r["total_duration"], r["permission_duration"], r["working_duration"], r["status"]),
-                         (date(2026, 10, 8), "08h 30m", "00h 00m", "08h 30m", "Attendance completed"))
+        self.assertEqual((r["attendance_date"], r["scheduled_duration"], r["total_duration"], r["permission_duration"],
+                          r["working_duration"], r["status"]),
+                         (date(2026, 10, 8), "08h 30m", "08h 30m", "00h 00m", "08h 30m", "Attendance completed"))
         self.assertEqual(api.post(f"{API}/attendance/check-out/").status_code, 400)
         self.assertEqual(AttendanceRecord.objects.count(), 1)
 
@@ -99,17 +103,46 @@ class CheckInOutTests(AttendanceBase):
         self.assertEqual(api.post(f"{API}/attendance/check-out/").status_code, 200)
         self.assertEqual(AttendanceRecord.objects.get().attendance_date, date(2026, 10, 8))
 
-    def test_check_in_after_9_20_is_frozen_until_5_pm(self):
+    def test_check_in_times(self):
+        """09:19 AM allowed, 09:20 AM and 04:59 PM rejected, 05:00 PM allowed (for the next work day)."""
         _user, api = self.worker("check_in", "check_out")
-        for hh, mm in ((9, 20), (10, 0), (16, 59)):
+        expected = [((9, 19), 201), ((9, 20), 400), ((10, 0), 400), ((16, 59), 400), ((17, 0), 201)]
+        for (hh, mm), code in expected:
             self.clock(at(2026, 10, 8, hh, mm))
             res = api.post(f"{API}/attendance/check-in/")
-            self.assertEqual(res.status_code, 400, f"{hh}:{mm}")
-            self.assertIn("frozen", res.data["detail"])
-        status = api.get(f"{API}/attendance/status/").data
-        self.assertEqual((status["window"]["is_open"], status["can_check_in"]), (False, False))
-        self.assertIn("05:00 PM", status["window"]["message"])
-        self.assertFalse(AttendanceRecord.objects.exists())
+            self.assertEqual(res.status_code, code, f"{hh:02d}:{mm:02d}")
+            if code == 400:
+                self.assertEqual(res.data["detail"], "Check-In is closed. It opens again at 5:00 PM.")
+                status = api.get(f"{API}/attendance/status/").data
+                self.assertEqual((status["window"]["is_open"], status["can_check_in"]), (False, False))
+        self.assertEqual(sorted(AttendanceRecord.objects.values_list("attendance_date", flat=True)),
+                         [date(2026, 10, 8), date(2026, 10, 9)])
+
+    def test_check_out_after_9_20_is_allowed(self):
+        _user, api = self.worker("check_in", "check_out")
+        self.clock(at(2026, 10, 8, 9, 10))
+        api.post(f"{API}/attendance/check-in/")
+        self.clock(at(2026, 10, 8, 9, 25))
+        res = api.post(f"{API}/attendance/check-out/")
+        self.assertEqual(res.status_code, 200, res.data)
+        self.assertEqual(res.data["record"]["total_duration"], "00h 15m")
+
+    def test_evening_check_in_can_be_checked_out_the_next_day(self):
+        _user, api = self.worker("check_in", "check_out")
+        self.clock(at(2026, 10, 8, 18, 0))
+        api.post(f"{API}/attendance/check-in/")
+        self.clock(at(2026, 10, 9, 14, 0))  # Check-In closed, the record is still open
+        self.assertTrue(api.get(f"{API}/attendance/status/").data["can_check_out"])
+        self.assertEqual(api.post(f"{API}/attendance/check-out/").status_code, 200)
+        self.assertEqual(AttendanceRecord.objects.get().attendance_date, date(2026, 10, 9))
+
+    def test_nobody_is_checked_out_automatically(self):
+        _user, api = self.worker("check_in", "check_out")
+        self.clock(at(2026, 10, 8, 9, 0))
+        api.post(f"{API}/attendance/check-in/")
+        self.clock(at(2026, 10, 9, 12, 0))
+        api.get(f"{API}/attendance/status/")
+        self.assertIsNone(AttendanceRecord.objects.get().check_out_at)
 
     def test_evening_check_in_counts_for_the_next_work_day(self):
         _user, api = self.worker("check_in")
@@ -152,7 +185,8 @@ class CheckInOutTests(AttendanceBase):
         self.clock(at(2026, 10, 8, 8, 0))
         api.post(f"{API}/attendance/check-in/")
         self.clock(at(2026, 10, 9, 10, 0))
-        self.assertEqual(api.post(f"{API}/attendance/check-out/").status_code, 400)
+        res = api.post(f"{API}/attendance/check-out/")
+        self.assertEqual((res.status_code, res.data["detail"]), (400, "You have no open check-in to check out."))
         self.assertEqual(api.get(f"{API}/attendance/history/").data["results"][0]["status"], "Not checked out")
 
     def test_super_admin_has_every_permission(self):
@@ -162,7 +196,7 @@ class CheckInOutTests(AttendanceBase):
 
 
 class WorkingHoursTests(AttendanceBase):
-    """Actual working hours = check-in -> check-out minus the APPROVED permission inside it."""
+    """Actual working hours = check-in -> check-out minus the APPROVED permission inside it and inside office hours."""
 
     def setUp(self):
         super().setUp()
@@ -185,6 +219,26 @@ class WorkingHoursTests(AttendanceBase):
             self.permission(time(14), time(16), status=st)
         r = self.row()
         self.assertEqual((r["total_duration"], r["permission_duration"], r["working_duration"]), ("08h 30m", "01h 00m", "07h 30m"))
+
+    def test_the_requirement_example(self):
+        """Office 9:00 AM – 5:30 PM, permission 4:30 – 5:30 PM: 7h 30m."""
+        self.permission(time(16, 30), time(17, 30))
+        r = self.row()
+        self.assertEqual((r["scheduled_duration"], r["permission_duration"], r["working_duration"]), ("08h 30m", "01h 00m", "07h 30m"))
+
+    def test_permission_outside_office_hours_is_not_deducted(self):
+        self.record.check_in_at, self.record.check_out_at = at(2026, 10, 8, 8, 0), at(2026, 10, 8, 18, 30)
+        self.record.save()
+        self.permission(time(8), time(9))  # before office hours
+        self.permission(time(17), time(18))  # only 5:00 – 5:30 PM is inside office hours
+        r = self.row()
+        self.assertEqual((r["total_duration"], r["permission_duration"], r["working_duration"]), ("10h 30m", "00h 30m", "10h 00m"))
+
+    def test_office_hours_come_from_settings(self):
+        AttendanceSettings.objects.update_or_create(pk=1, defaults={"work_start": time(10), "work_end": time(17)})
+        self.permission(time(9), time(11))  # 10:00 – 11:00 is inside the new office hours
+        r = self.row()
+        self.assertEqual((r["scheduled_duration"], r["permission_duration"]), ("07h 00m", "01h 00m"))
 
     def test_only_the_part_inside_attendance_counts_and_overlaps_count_once(self):
         self.permission(time(8), time(10))  # 1 h inside (09:00-10:00)
@@ -245,6 +299,10 @@ class EmployeeTests(AttendanceBase):
         _user, api = self.worker("check_in")
         self.assertEqual(api.get(f"{API}/attendance/employees/").status_code, 403)
         self.assertEqual(api.post(f"{API}/attendance/employees/", {}, format="json").status_code, 403)
+        _viewer, viewer = self.worker("employee_view", username="viewer")
+        self.assertEqual(viewer.get(f"{API}/attendance/employees/").data["count"], 2)
+        self.assertEqual(viewer.post(f"{API}/attendance/employees/", {"employee_code": "TEST-9", "name": "TEST"},
+                                     format="json").status_code, 403)
 
 
 class LeaveTests(AttendanceBase):
@@ -296,7 +354,9 @@ class CalendarReportSettingsTests(AttendanceBase):
         self.assertEqual(days[date(2026, 10, 1)], ["present"])
         self.assertEqual(days[date(2026, 10, 2)], ["leave"])
         self.assertEqual(days[date(2026, 10, 3)], ["absent"])  # a pending request doesn't count
-        self.assertNotIn(date(2026, 10, 5), days)  # future days are left out
+        self.assertEqual(days[date(2026, 10, 4)], ["weekly_holiday"])  # Sunday: never absent
+        self.assertNotIn(date(2026, 10, 5), days)  # future working days are left out
+        self.assertEqual(days[date(2026, 10, 11)], ["weekly_holiday"])  # future holidays are shown
         other = self.employee(code="TEST-OTHER")
         self.assertEqual(api.get(f"{API}/attendance/calendar/?employee={other.id}").status_code, 403)
         self.assertEqual(self.admin_api.get(f"{API}/attendance/calendar/?employee={other.id}&month=2026-10").status_code, 200)
@@ -311,7 +371,7 @@ class CalendarReportSettingsTests(AttendanceBase):
         q = "date_from=2026-10-01&date_to=2026-10-03"
         daily = self.admin_api.get(f"{API}/attendance/reports/?type=daily&{q}").data
         statuses = {r["date"]: r["status"] for r in daily["table"]["rows"]}
-        self.assertEqual(statuses, {date(2026, 10, 1): "Present", date(2026, 10, 2): "Permission", date(2026, 10, 3): "Absent"})
+        self.assertEqual(statuses, {date(2026, 10, 1): "Present", date(2026, 10, 2): "On Permission", date(2026, 10, 3): "Absent"})
         self.assertEqual(daily["table"]["rows"][0]["working"], "02h 14m")
         monthly = self.admin_api.get(f"{API}/attendance/reports/?type=monthly&{q}").data["table"]["rows"][0]
         self.assertEqual((monthly["present"], monthly["absent"], monthly["permission"]), (1, 1, 1))
@@ -324,21 +384,30 @@ class CalendarReportSettingsTests(AttendanceBase):
             self.assertIn("attachment", res["Content-Disposition"])
         _user, api = self.worker("check_in")
         self.assertEqual(api.get(f"{API}/attendance/reports/?type=daily").status_code, 403)
+        _v, viewer = self.worker("report_view", username="viewer")
+        self.assertEqual(viewer.get(f"{API}/attendance/reports/?type=daily&{q}").status_code, 200)
+        self.assertEqual(viewer.get(f"{API}/attendance/reports/?type=daily&{q}&format=csv").status_code, 403)  # needs export
 
     def test_empty_report(self):
         self.clock(at(2026, 10, 4, 12, 0))
         self.assertEqual(self.admin_api.get(f"{API}/attendance/reports/?type=daily").data["table"]["rows"], [])
 
     def test_settings(self):
-        _user, api = self.worker("check_in")
-        shown = api.get(f"{API}/attendance/settings/").data  # anyone can see the rule
-        self.assertEqual((shown["open_time"], shown["close_time"], shown["timezone"]), ("17:00", "09:20", "Asia/Kolkata (IST)"))
+        _user, api = self.worker("settings_view")
+        shown = api.get(f"{API}/attendance/settings/").data
+        self.assertEqual((shown["open_time"], shown["close_time"], shown["timezone"], shown["weekly_holiday_label"],
+                          shown["scheduled_duration"]), ("17:00", "09:20", "Asia/Kolkata (IST)", "Sunday", "08h 30m"))
+        _u2, nobody = self.worker("check_in", username="nobody")
+        self.assertEqual(nobody.get(f"{API}/attendance/settings/").status_code, 403)
         self.assertEqual(api.patch(f"{API}/attendance/settings/", {"open_time": "18:00"}, format="json").status_code, 403)
         self.assertIn("close_time", self.admin_api.patch(f"{API}/attendance/settings/", {"open_time": "09:20"}, format="json").data)
         res = self.admin_api.patch(f"{API}/attendance/settings/", {"open_time": "18:00", "close_time": "08:00"}, format="json")
         self.assertEqual((res.data["open_time"], res.data["close_time"], res.data["work_start"], res.data["work_end"]),
                          ("18:00", "08:00", "09:00", "17:30"))
         self.assertIn("work_end", self.admin_api.patch(f"{API}/attendance/settings/", {"work_end": "08:00"}, format="json").data)
+        self.assertIn("weekly_holiday", self.admin_api.patch(f"{API}/attendance/settings/", {"weekly_holiday": 7}, format="json").data)
+        res = self.admin_api.patch(f"{API}/attendance/settings/", {"weekly_holiday": 5}, format="json")
+        self.assertEqual(res.data["weekly_holiday_label"], "Saturday")
         self.assertFalse(window.state(at(2026, 10, 8, 17, 30)).is_open)
         self.assertTrue(window.state(at(2026, 10, 8, 18, 0)).is_open)
 
@@ -357,6 +426,124 @@ class SettingsUsersPermissionTests(AttendanceBase):
         rows = {r["id"]: r for r in self.admin_api.get(f"{API}/settings/users/").data["results"]}
         self.assertEqual(rows[self.admin.id]["attendance_permissions"], perms.CODES)  # Super Admin: all
         labels = self.admin_api.get(f"{API}/settings/options/").data["attendance_permissions"]
-        self.assertEqual(len(labels), 10)
+        self.assertEqual(len(labels), len(perms.CODES))
         self.assertEqual(client_for(make_user("sales", username="s2")).patch(
             f"{API}/settings/users/{user.id}/", {"attendance_permissions": []}, format="json").status_code, 403)
+
+
+class HolidayTests(AttendanceBase):
+    def test_add_edit_delete_needs_the_holiday_permission(self):
+        res = self.admin_api.post(f"{API}/attendance/holidays/", {"name": "TEST Diwali", "date": "2026-11-09",
+                                                                  "description": "TEST"}, format="json")
+        self.assertEqual(res.status_code, 201, res.data)
+        hid = res.data["id"]
+        dup = self.admin_api.post(f"{API}/attendance/holidays/", {"name": "TEST again", "date": "2026-11-09"}, format="json")
+        self.assertIn("date", dup.data)
+        self.assertIn("name", self.admin_api.post(f"{API}/attendance/holidays/", {"date": "2026-11-10"}, format="json").data)
+        _u, api = self.worker("check_in")
+        self.assertEqual(api.get(f"{API}/attendance/holidays/?year=2026").data["count"], 1)  # everyone sees holidays
+        self.assertEqual(api.post(f"{API}/attendance/holidays/", {"name": "TEST", "date": "2026-11-11"}, format="json").status_code, 403)
+        self.assertEqual(api.patch(f"{API}/attendance/holidays/{hid}/", {"name": "x"}, format="json").status_code, 403)
+        self.assertEqual(api.delete(f"{API}/attendance/holidays/{hid}/").status_code, 403)
+        _m, manager = self.worker("holiday_manage", username="manager")
+        res = manager.patch(f"{API}/attendance/holidays/{hid}/", {"name": "TEST Deepavali"}, format="json")
+        self.assertEqual((res.data["name"], res.data["date"]), ("TEST Deepavali", date(2026, 11, 9)))
+        self.assertEqual(manager.delete(f"{API}/attendance/holidays/{hid}/").status_code, 204)
+        self.assertFalse(OfficeHoliday.objects.exists())
+
+    def test_holidays_are_never_absent_and_count_once(self):
+        user, api = self.worker("check_in")
+        OfficeHoliday.objects.create(name="TEST Gandhi Jayanti", date=date(2026, 10, 2))
+        OfficeHoliday.objects.create(name="TEST Sunday festival", date=date(2026, 10, 11))  # also the weekly holiday
+        self.clock(at(2026, 10, 12, 12, 0))
+        days = {d["date"]: d for d in api.get(f"{API}/attendance/calendar/?month=2026-10").data["days"]}
+        self.assertEqual(days[date(2026, 10, 2)]["statuses"], ["office_holiday"])
+        self.assertEqual(days[date(2026, 10, 2)]["holiday"]["name"], "TEST Gandhi Jayanti")
+        self.assertEqual(days[date(2026, 10, 3)]["statuses"], ["absent"])
+        self.assertEqual(days[date(2026, 10, 4)]["statuses"], ["weekly_holiday"])
+        self.assertEqual(days[date(2026, 10, 11)]["statuses"], ["office_holiday"])  # counted once
+        self.assertEqual(days[date(2026, 10, 2)]["scheduled_duration"], "00h 00m")
+        q = f"date_from=2026-10-01&date_to=2026-10-11&employee={user.employee.id}"
+        monthly = self.admin_api.get(f"{API}/attendance/reports/?type=monthly&{q}").data["table"]["rows"][0]
+        self.assertEqual((monthly["working_days"], monthly["absent"], monthly["office_holidays"], monthly["weekly_holidays"],
+                          monthly["scheduled_hours"]), (8, 8, 2, 1, "68h 00m"))
+        daily = {r["date"]: r["status"] for r in self.admin_api.get(f"{API}/attendance/reports/?type=daily&{q}").data["table"]["rows"]}
+        self.assertEqual(daily[date(2026, 10, 2)], "Office Holiday (TEST Gandhi Jayanti)")
+
+    def test_work_on_a_holiday_is_recorded_without_deductions(self):
+        user, api = self.worker("check_in")
+        emp = user.employee
+        AttendanceRecord.objects.create(employee=emp, attendance_date=date(2026, 10, 4), check_in_at=at(2026, 10, 4, 9, 0),
+                                        check_out_at=at(2026, 10, 4, 13, 0), status="completed")
+        LeaveRequest.objects.create(employee=emp, type="permission", date=date(2026, 10, 4), from_time=time(10), to_time=time(11),
+                                    reason="TEST", status="approved")
+        self.clock(at(2026, 10, 5, 12, 0))
+        day = next(d for d in api.get(f"{API}/attendance/calendar/?month=2026-10").data["days"] if d["date"] == date(2026, 10, 4))
+        self.assertEqual(day["statuses"], ["present", "permission", "weekly_holiday"])
+        self.assertEqual((day["scheduled_duration"], day["permission_duration"], day["working_duration"]), ("00h 00m", "00h 00m", "04h 00m"))
+
+    def test_weekly_holiday_can_be_changed(self):
+        _u, api = self.worker("check_in")
+        AttendanceSettings.objects.update_or_create(pk=1, defaults={"weekly_holiday": 5})  # Saturday
+        self.clock(at(2026, 10, 5, 12, 0))
+        days = {d["date"]: d["statuses"] for d in api.get(f"{API}/attendance/calendar/?month=2026-10").data["days"]}
+        self.assertEqual((days[date(2026, 10, 3)], days[date(2026, 10, 4)]), (["weekly_holiday"], ["absent"]))
+
+
+class DashboardTests(AttendanceBase):
+    def setUp(self):
+        super().setUp()
+        a, b, _c, d, e = (self.employee(code=f"TEST-{x}") for x in "ABCDE")
+        a.department = "Packing"
+        a.save()
+        AttendanceRecord.objects.create(employee=a, attendance_date=date(2026, 10, 8), check_in_at=at(2026, 10, 8, 9, 0),
+                                        check_out_at=at(2026, 10, 8, 16, 40), status="completed")
+        AttendanceRecord.objects.create(employee=b, attendance_date=date(2026, 10, 8), check_in_at=at(2026, 10, 8, 9, 5))
+        LeaveRequest.objects.create(employee=d, type="leave", date=date(2026, 10, 8), reason="TEST", status="approved")
+        AttendanceRecord.objects.create(employee=e, attendance_date=date(2026, 10, 8), check_in_at=at(2026, 10, 8, 9, 0))
+        LeaveRequest.objects.create(employee=e, type="permission", date=date(2026, 10, 8), from_time=time(16, 30),
+                                    to_time=time(17, 30), reason="TEST", status="approved")
+        self.clock(at(2026, 10, 8, 16, 45))
+
+    def board(self, query="", api=None):
+        return (api or self.admin_api).get(f"{API}/attendance/dashboard/?{query}")
+
+    def test_summary_and_table(self):
+        res = self.board()
+        self.assertEqual(res.status_code, 200, res.data)
+        self.assertEqual(res.data["summary"], {"total_active": 5, "present": 3, "absent": 1, "on_leave": 1, "on_permission": 1,
+                                               "not_checked_out": 2})
+        self.assertEqual(res.data["permission_label"], "Currently On Approved Permission")
+        rows = {r["employee"]["employee_code"]: r for r in res.data["results"]}
+        self.assertEqual((rows["TEST-A"]["scheduled_duration"], rows["TEST-A"]["working_duration"], rows["TEST-A"]["labels"]),
+                         ("08h 30m", "07h 40m", ["Present"]))
+        self.assertEqual(rows["TEST-C"]["labels"], ["Absent"])
+        self.assertEqual(rows["TEST-D"]["labels"], ["On Leave"])
+        self.assertEqual((rows["TEST-E"]["labels"], rows["TEST-E"]["permission_times"]), (["Present", "On Permission"], ["4:30 PM – 5:30 PM"]))
+
+    def test_filters_search_and_pagination(self):
+        self.assertEqual([r["employee"]["employee_code"] for r in self.board("status=absent").data["results"]], ["TEST-C"])
+        self.assertEqual(self.board("search=TEST-D").data["count"], 1)
+        self.assertEqual(self.board("department=Packing").data["summary"]["total_active"], 1)
+        e = Employee.objects.get(employee_code="TEST-E")
+        self.assertEqual(self.board(f"employee={e.id}").data["count"], 1)
+        page = self.board("page_size=2")
+        self.assertEqual((page.data["count"], len(page.data["results"])), (5, 2))
+        self.assertEqual(self.board("status=nope").status_code, 400)
+        self.assertEqual(self.board("date=2026-10-07").data["summary"]["absent"], 5)  # nobody came that day
+
+    def test_sunday_is_a_holiday_for_everyone(self):
+        res = self.board("date=2026-10-04")
+        self.assertEqual((res.data["summary"]["absent"], res.data["holiday"]["label"]), (0, "Weekly Holiday"))
+        self.assertEqual({tuple(r["labels"]) for r in res.data["results"]}, {("Weekly Holiday",)})
+
+    def test_needs_the_view_all_permission(self):
+        _u, api = self.worker("check_in", "report_view")
+        self.assertEqual(self.board(api=api).status_code, 403)
+        _v, viewer = self.worker("view_all", username="viewer")
+        self.assertEqual(self.board(api=viewer).status_code, 200)
+
+    def test_no_employees(self):
+        Employee.objects.update(status=Employee.Status.INACTIVE)
+        res = self.board()
+        self.assertEqual((res.data["count"], res.data["summary"]["total_active"]), (0, 0))

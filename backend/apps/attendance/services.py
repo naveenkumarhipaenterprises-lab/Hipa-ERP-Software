@@ -1,8 +1,9 @@
 """
-Check-in / check-out, working hours, and the day-by-day attendance picture used by the calendar and the reports.
-Every record belongs to a work day (09:00 AM – 05:30 PM); see window.py for when each action is allowed.
+Check-in / check-out, holidays, scheduled and working hours, and the day-by-day attendance picture used by the
+dashboard, calendar and reports. Every record belongs to a work day; see window.py for the timing rules.
 """
 from collections import defaultdict
+from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 
 from django.db import IntegrityError, transaction
@@ -10,13 +11,16 @@ from rest_framework.exceptions import ValidationError
 
 from . import permissions as perms
 from . import window
-from .models import AttendanceRecord, Employee, LeaveRequest
+from .models import AttendanceRecord, AttendanceSettings, Employee, LeaveRequest, OfficeHoliday
 
 DAY = timedelta(days=1)
+ZERO = timedelta()
 
-# Day statuses (calendar and reports)
+# Day statuses (dashboard, calendar and reports); each kept separate
 PRESENT, NOT_CHECKED_OUT, ABSENT, LEAVE, PERMISSION = "present", "not_checked_out", "absent", "leave", "permission"
-DAY_LABELS = {PRESENT: "Present", NOT_CHECKED_OUT: "Not checked out", ABSENT: "Absent", LEAVE: "Leave", PERMISSION: "Permission"}
+OFFICE_HOLIDAY, WEEKLY_HOLIDAY = "office_holiday", "weekly_holiday"
+DAY_LABELS = {PRESENT: "Present", NOT_CHECKED_OUT: "Not checked out", ABSENT: "Absent", LEAVE: "On Leave",
+              PERMISSION: "On Permission", OFFICE_HOLIDAY: "Office Holiday", WEEKLY_HOLIDAY: "Weekly Holiday"}
 
 
 def current_employees():
@@ -44,14 +48,54 @@ def duration_label(d):
 
 
 def is_not_checked_out(record, w):
-    """Checked in, never checked out, and the time to check out for that work day is over."""
-    return record.check_out_at is None and record.attendance_date < window.checkout_open_from(w)
+    """Checked in, never checked out, and its check-out time (until 09:20 AM the next morning) is over."""
+    return record.check_out_at is None and not w.can_still_check_out(record)
 
 
 def record_status(record, w):
     if record.check_out_at:
         return AttendanceRecord.Status.COMPLETED.label
     return DAY_LABELS[NOT_CHECKED_OUT] if is_not_checked_out(record, w) else AttendanceRecord.Status.CHECKED_IN.label
+
+
+# --- Schedule: office hours and holidays -------------------------------------------------------------
+
+@dataclass
+class Schedule:
+    """Office working hours, the weekly holiday and the office holidays of a date range."""
+
+    settings: AttendanceSettings
+    holidays: dict = field(default_factory=dict)  # {date: OfficeHoliday}
+
+    def holiday(self, day):
+        """OFFICE_HOLIDAY, WEEKLY_HOLIDAY or None. An office holiday on the weekly holiday counts once (as office)."""
+        if day in self.holidays:
+            return OFFICE_HOLIDAY
+        if day.weekday() == self.settings.weekly_holiday:
+            return WEEKLY_HOLIDAY
+        return None
+
+    def office_hours(self, day):
+        return (datetime.combine(day, self.settings.work_start, tzinfo=window.IST),
+                datetime.combine(day, self.settings.work_end, tzinfo=window.IST))
+
+    def scheduled(self, day):
+        """Scheduled working hours of a day: the office hours, or nothing on a holiday."""
+        if self.holiday(day):
+            return ZERO
+        start, end = self.office_hours(day)
+        return end - start
+
+
+def schedule_for(days, settings=None):
+    """A Schedule with the office holidays on the given dates (one query)."""
+    days = {d for d in days if d}
+    holidays = {h.date: h for h in OfficeHoliday.objects.filter(date__in=days)} if days else {}
+    return Schedule(settings or AttendanceSettings.load(), holidays)
+
+
+def schedule_between(start, end, settings=None):
+    return Schedule(settings or AttendanceSettings.load(), {h.date: h for h in OfficeHoliday.objects.filter(date__range=(start, end))})
 
 
 # --- Working hours ------------------------------------------------------------------------------
@@ -70,27 +114,34 @@ def approved_permissions(records):
     return out
 
 
-def figures(record, permissions):
+def figures(record, permissions, schedule, day=None):
     """
-    Total time (check-in → check-out), the part of it covered by APPROVED permission, and the actual working hours
-    (total − permission). Pending, rejected and cancelled requests never count. None until checked out.
+    Scheduled hours (office hours; nothing on a holiday), total time checked in, approved permission that overlaps
+    both the office hours and the time checked in, and actual working hours (total − that permission).
+    Pending, rejected and cancelled requests never count; overlapping requests count once. Worked out when shown,
+    so approving, editing or cancelling a request updates them. Total/permission/working are None until checked out.
     """
+    day = day or (record.attendance_date if record else None)
+    out = {"scheduled": schedule.scheduled(day) if day else None, "total": None, "permission": None, "working": None}
     if record is None or record.check_out_at is None:
-        return {"total": None, "permission": None, "working": None}
+        return out
     start, end = record.check_in_at, record.check_out_at
+    office_start, office_end = schedule.office_hours(record.attendance_date)
     spans = []
-    for lr in permissions:
-        if lr.status != LeaveRequest.Status.APPROVED or lr.type != LeaveRequest.Type.PERMISSION or not lr.from_time or not lr.to_time:
-            continue
-        a = max(start, datetime.combine(lr.date, lr.from_time, tzinfo=window.IST))
-        b = min(end, datetime.combine(lr.date, lr.to_time, tzinfo=window.IST))
-        if b > a:
-            spans.append((a, b))
-    covered = timedelta()
-    for a, b in _merge(sorted(spans)):  # overlapping requests are counted once
+    if not schedule.holiday(record.attendance_date):
+        for lr in permissions:
+            if lr.status != LeaveRequest.Status.APPROVED or lr.type != LeaveRequest.Type.PERMISSION or not lr.from_time or not lr.to_time:
+                continue
+            a = max(start, office_start, datetime.combine(lr.date, lr.from_time, tzinfo=window.IST))
+            b = min(end, office_end, datetime.combine(lr.date, lr.to_time, tzinfo=window.IST))
+            if b > a:
+                spans.append((a, b))
+    covered = ZERO
+    for a, b in _merge(sorted(spans)):
         covered += b - a
     total = end - start
-    return {"total": total, "permission": covered, "working": total - covered}
+    out.update(total=total, permission=covered, working=total - covered)
+    return out
 
 
 def _merge(spans):
@@ -104,6 +155,15 @@ def _merge(spans):
 
 
 # --- Check-in / check-out ----------------------------------------------------------------------
+
+def open_record(emp, w, lock=False):
+    """The employee's record that can be checked out now (the oldest still open), or None."""
+    qs = AttendanceRecord.objects.filter(employee=emp, check_out_at__isnull=True,
+                                         attendance_date__gte=w.at.date() - DAY).order_by("attendance_date")
+    if lock:
+        qs = qs.select_for_update()
+    return next((r for r in qs if w.can_still_check_out(r)), None)
+
 
 @transaction.atomic
 def check_in(user):
@@ -124,16 +184,13 @@ def check_in(user):
 
 @transaction.atomic
 def check_out(user):
+    """Allowed at any time (also while Check-In is closed) for an open record, until 09:20 AM the next morning."""
     perms.require(user, "check_out", "You don't have permission to check out.")
     w = window.state()
-    if not w.is_open:
-        raise ValidationError({"detail": window.closed_message(w)})
     emp = require_employee(user, lock=True)
-    record = AttendanceRecord.objects.select_for_update().filter(employee=emp, attendance_date=w.checkout_date).first()
+    record = open_record(emp, w, lock=True)
     if record is None:
-        raise ValidationError({"detail": f"You haven't checked in for {w.checkout_date:%d %b %Y}."})
-    if record.check_out_at:
-        raise ValidationError({"detail": f"You have already checked out for {w.checkout_date:%d %b %Y}."})
+        raise ValidationError({"detail": "You have no open check-in to check out."})
     record.check_out_at = window.now()
     record.status = AttendanceRecord.Status.COMPLETED
     record.save(update_fields=["check_out_at", "status", "updated_at"])
@@ -159,14 +216,16 @@ def days(start, end):
 
 def picture(employees, start, end):
     """
-    {employee_id: {work day: {"statuses": [...], "record": AttendanceRecord|None, "leaves": [LeaveRequest],
-    "figures": {...}}}} for the days each employee was employed. Absent = no check-in by the check-in deadline and no
-    approved leave (active employees only). Days still to come are left out. Three queries in total.
+    {employee_id: {work day: {"statuses": [...], "record", "leaves", "figures"}}} for the days each employee was
+    employed, plus the Window and Schedule used. Absent = no check-in by the check-in deadline on a working day, with
+    no approved leave or permission (active employees only); weekly and office holidays are never absent. Days still
+    to come are left out. Four queries in total.
     """
     w = window.state()
-    today = window.now().date()
+    today = w.at.date()
     finished = window.finished_date(w)
     last_day = max(today, w.checkin_date) if w.is_open else today
+    sched = schedule_between(start, end)
     ids = [e.id for e in employees]
     records = {(r.employee_id, r.attendance_date): r
                for r in AttendanceRecord.objects.filter(employee_id__in=ids, attendance_date__range=(start, end))}
@@ -181,6 +240,7 @@ def picture(employees, start, end):
         per_day = {}
         for d in days(first, last):
             rec, day_leaves = records.get((emp.id, d)), leaves.get((emp.id, d), [])
+            holiday = sched.holiday(d)
             statuses = []
             if rec:
                 statuses.append(NOT_CHECKED_OUT if is_not_checked_out(rec, w) else PRESENT)
@@ -188,8 +248,11 @@ def picture(employees, start, end):
                 statuses.append(LEAVE)
             if any(lr.type == LeaveRequest.Type.PERMISSION for lr in day_leaves):
                 statuses.append(PERMISSION)
-            if not statuses and d <= finished and emp.status == Employee.Status.ACTIVE:
+            if holiday:
+                statuses.append(holiday)
+            elif not statuses and d <= finished and emp.status == Employee.Status.ACTIVE:
                 statuses.append(ABSENT)
-            per_day[d] = {"statuses": statuses, "record": rec, "leaves": day_leaves, "figures": figures(rec, day_leaves)}
+            per_day[d] = {"statuses": statuses, "record": rec, "leaves": day_leaves,
+                          "holiday": sched.holidays.get(d), "figures": figures(rec, day_leaves, sched, d)}
         out[emp.id] = per_day
-    return out, w
+    return out, w, sched

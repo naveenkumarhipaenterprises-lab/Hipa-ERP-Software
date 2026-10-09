@@ -1,6 +1,7 @@
 """
 Attendance API. Every signed-in user can open the module; each action checks its own per-user permission
-(permissions.py) on the server, and check-in / check-out also need the attendance window to be open (window.py).
+(permissions.py) on the server. Check-in needs the Check-In window to be open; check-out works at any time for an
+open record until 09:20 AM the next morning (window.py).
 """
 import re
 from calendar import monthrange
@@ -8,7 +9,7 @@ from datetime import date, datetime
 
 from django.core.exceptions import ValidationError as DjangoValidationError
 from django.core.validators import validate_email
-from django.db import transaction
+from django.db import IntegrityError, transaction
 from django.db.models import Q
 from django.http import HttpResponse
 from django.shortcuts import get_object_or_404
@@ -25,8 +26,9 @@ from services.exporters import MIME, export
 
 from . import permissions as perms
 from . import reports, services, window
-from .models import AttendanceRecord, AttendanceSettings, Employee, LeaveRequest
-from .services import DAY_LABELS, approved_permissions, current_employees, duration_label, employee_of, figures, record_status
+from .models import WEEKDAYS, AttendanceRecord, AttendanceSettings, Employee, LeaveRequest, OfficeHoliday
+from .services import (ABSENT, DAY_LABELS, LEAVE, OFFICE_HOLIDAY, approved_permissions, current_employees, duration_label,
+                       employee_of, figures, record_status, schedule_for)
 
 LS = LeaveRequest.Status
 MAX_REPORT_DAYS = 93
@@ -53,22 +55,39 @@ def employee_row(e):
 
 
 def figures_block(f):
-    """Total time, approved permission inside it, and actual working hours (total − permission)."""
-    return {"total_duration": duration_label(f["total"]), "permission_duration": duration_label(f["permission"]),
-            "working_duration": duration_label(f["working"])}
+    """Scheduled hours, total time, approved permission deducted, and actual working hours (total − permission)."""
+    return {"scheduled_duration": duration_label(f["scheduled"]), "total_duration": duration_label(f["total"]),
+            "permission_duration": duration_label(f["permission"]), "working_duration": duration_label(f["working"])}
 
 
-def record_row(r, w, permissions=()):
+def holiday_block(sched, day):
+    """{"type", "label", "name", "description"} when the day is an office or the weekly holiday, else None."""
+    kind = sched.holiday(day)
+    if not kind:
+        return None
+    h = sched.holidays.get(day) if kind == OFFICE_HOLIDAY else None
+    return {"type": kind, "label": DAY_LABELS[kind], "name": h.name if h else dict(WEEKDAYS)[day.weekday()],
+            "description": (h.description or None) if h else None}
+
+
+def record_row(r, w, sched, permissions=()):
     return {"id": r.id, "attendance_date": r.attendance_date, "employee": employee_brief(r.employee),
             "check_in_at": iso(r.check_in_at), "check_out_at": iso(r.check_out_at),
-            **figures_block(figures(r, permissions)), "status": record_status(r, w)}
+            **figures_block(figures(r, permissions, sched)), "holiday": holiday_block(sched, r.attendance_date),
+            "status": record_status(r, w)}
 
 
 def record_rows(records, w):
-    """Rows for a page of records, with their approved permissions fetched in one query."""
+    """Rows for a page of records, with their approved permissions and office holidays fetched in one query each."""
     records = list(records)
     found = approved_permissions(records)
-    return [record_row(r, w, found.get((r.employee_id, r.attendance_date), [])) for r in records]
+    sched = schedule_for(r.attendance_date for r in records)
+    return [record_row(r, w, sched, found.get((r.employee_id, r.attendance_date), [])) for r in records]
+
+
+def permission_times(leaves):
+    return [f"{window.clock(lr.from_time)} – {window.clock(lr.to_time)}" for lr in leaves
+            if lr.type == LeaveRequest.Type.PERMISSION and lr.from_time and lr.to_time]
 
 
 def leave_row(lr, user):
@@ -85,10 +104,11 @@ def leave_row(lr, user):
 
 
 def window_block(w, s):
-    return {"is_open": w.is_open, "checkin_date": w.checkin_date, "checkout_date": w.checkout_date,
+    return {"is_open": w.is_open, "checkin_date": w.checkin_date,
             "opens_at": iso(w.opens_at), "closes_at": iso(w.closes_at),
             "open_time": s.open_time.strftime("%H:%M"), "close_time": s.close_time.strftime("%H:%M"),
             "work_start": s.work_start.strftime("%H:%M"), "work_end": s.work_end.strftime("%H:%M"),
+            "weekly_holiday": dict(WEEKDAYS)[s.weekly_holiday],
             "message": None if w.is_open else window.closed_message(w)}
 
 
@@ -98,26 +118,31 @@ def status_payload(user):
     s = AttendanceSettings.load()
     w = window.state(settings=s)
     emp = employee_of(user)
-    today = window.now().date()
-    wanted = {today} | ({w.checkin_date, w.checkout_date} if w.is_open else set())
-    recs = ({r.attendance_date: r for r in AttendanceRecord.objects.select_related("employee").filter(employee=emp, attendance_date__in=wanted)}
-            if emp else {})
-    to_close = recs.get(w.checkout_date) if w.is_open else None
+    today = w.at.date()
     flags = perms.flags(user)
-    can_out = bool(flags["check_out"] and to_close and to_close.check_out_at is None)
-    can_in = bool(flags["check_in"] and w.is_open and emp and w.checkin_date not in recs)
-    # The work day to show: the one still to be checked out, otherwise today
-    record = to_close if can_out else recs.get(today)
+    to_close = services.open_record(emp, w) if emp else None
+    taken = bool(emp and w.is_open and AttendanceRecord.objects.filter(employee=emp, attendance_date=w.checkin_date).exists())
+    can_in = bool(flags["check_in"] and w.is_open and emp and not taken)
+    can_out = bool(flags["check_out"] and to_close)
+    # The work day to show: the one still open, otherwise today's
+    record = to_close or (AttendanceRecord.objects.filter(employee=emp, attendance_date=today).first() if emp else None)
+    work_date = record.attendance_date if record else today
+    sched = schedule_for([work_date], s)
+    office_start, office_end = sched.office_hours(work_date)
     return {
-        "server_time": iso(window.now()),
+        "server_time": iso(w.at),
         "timezone": "Asia/Kolkata (IST)",
         "window": window_block(w, s),
         "employee": employee_brief(emp) if emp else None,
-        "work_date": record.attendance_date if record else today,
+        "work_date": work_date,
+        "office_hours": f"{window.clock(office_start)} – {window.clock(office_end)}",
+        "scheduled_duration": duration_label(sched.scheduled(work_date)),
+        "holiday": holiday_block(sched, work_date),
         "record": record_rows([record], w)[0] if record else None,
         "can_check_in": can_in,
         "check_in_for": w.checkin_date if w.is_open else None,
         "can_check_out": can_out,
+        "checkout_until": iso(w.checkout_deadline(to_close.attendance_date)) if to_close else None,
         "permissions": flags,
     }
 
@@ -177,11 +202,12 @@ class OptionsView(AttendanceView):
             "employee_statuses": [{"value": v, "label": l} for v, l in Employee.Status.choices],
             "day_statuses": [{"value": v, "label": l} for v, l in DAY_LABELS.items()],
             "report_types": [{"value": v, "label": l} for v, l in reports.TYPES.items()],
+        "weekdays": [{"value": v, "label": l} for v, l in WEEKDAYS],
             "departments": sorted({d for d in current_employees().exclude(department="").values_list("department", flat=True)}),
             "employees": [],
             "users": [],
         }
-        if any(flags[c] for c in ("employee_manage", "leave_view", "calendar_view", "report_view")):
+        if any(flags[c] for c in ("view_all", "employee_view", "employee_manage", "leave_view", "calendar_view", "report_view")):
             data["employees"] = [employee_brief(e) for e in current_employees()]
         if flags["employee_manage"]:
             linked = current_employees().exclude(user=None).values_list("user_id", flat=True)
@@ -228,7 +254,7 @@ def employees_qs():
 
 class EmployeesView(AttendanceView):
     def get(self, request):
-        perms.require(request.user, "employee_manage", "You don't have permission to manage employees.")
+        perms.require_any(request.user, ("employee_view", "employee_manage"), "You don't have permission to view employees.")
         qs = employees_qs()
         q = self.param("search")
         if q:
@@ -251,7 +277,7 @@ class EmployeesView(AttendanceView):
 
 class EmployeeDetailView(AttendanceView):
     def get(self, request, pk):
-        perms.require(request.user, "employee_manage", "You don't have permission to manage employees.")
+        perms.require_any(request.user, ("employee_view", "employee_manage"), "You don't have permission to view employees.")
         return Response(employee_row(get_object_or_404(employees_qs(), pk=pk)))
 
     def patch(self, request, pk):
@@ -416,18 +442,27 @@ class CalendarView(AttendanceView):
         else:
             emp = own
         if emp is None:
-            return Response({"month": raw, "employee": None, "days": []})
-        pic, w = services.picture([emp], start, end)
+            pic, sched = {}, services.schedule_between(start, end)
+        else:
+            found, _w, sched = services.picture([emp], start, end)
+            pic = found[emp.id]
         out = []
-        for d, day in sorted(pic[emp.id].items()):
+        for d in services.days(start, end):
+            day = pic.get(d)
+            if day is None:  # days still to come (or before joining) show only their holiday
+                if not sched.holiday(d):
+                    continue
+                day = {"statuses": [sched.holiday(d)], "record": None, "leaves": [], "figures": figures(None, [], sched, d)}
             rec = day["record"]
             out.append({"date": d, "statuses": day["statuses"], "labels": [DAY_LABELS[s] for s in day["statuses"]],
+                        "holiday": holiday_block(sched, d),
                         "check_in_at": iso(rec.check_in_at) if rec else None, "check_out_at": iso(rec.check_out_at) if rec else None,
                         **figures_block(day["figures"]),
                         "leaves": [{"type": lr.get_type_display(), "from_time": lr.from_time.strftime("%H:%M") if lr.from_time else None,
                                     "to_time": lr.to_time.strftime("%H:%M") if lr.to_time else None, "reason": lr.reason}
                                    for lr in day["leaves"]]})
-        return Response({"month": raw, "employee": employee_brief(emp), "days": out})
+        return Response({"month": raw, "employee": employee_brief(emp) if emp else None, "days": out,
+                         "holidays": [holiday_row(h) for h in sorted(sched.holidays.values(), key=lambda h: h.date)]})
 
 
 # --- Reports ------------------------------------------------------------------------------------
@@ -465,6 +500,7 @@ class ReportView(AttendanceView):
             return Response(data)
         if fmt not in MIME:
             raise ValidationError({"format": ["Use json, pdf, xlsx or csv."]})
+        perms.require(request.user, "report_export", "You don't have permission to export attendance reports.")
         content, mime = export(data, fmt)
         response = HttpResponse(content, content_type=mime)
         response["Content-Disposition"] = f'attachment; filename="hipa-attendance-{kind}-{start:%Y%m%d}-{end:%Y%m%d}.{fmt}"'
@@ -479,12 +515,16 @@ SETTING_TIMES = {"open_time": "open time", "close_time": "close time", "work_sta
 
 
 def settings_payload(s):
+    start, end = (datetime.combine(date.min, t) for t in (s.work_start, s.work_end))
     return {**{name: getattr(s, name).strftime("%H:%M") for name in SETTING_TIMES},
+            "weekly_holiday": s.weekly_holiday, "weekly_holiday_label": dict(WEEKDAYS)[s.weekly_holiday],
+            "scheduled_duration": duration_label(end - start),
             "timezone": "Asia/Kolkata (IST)", "updated_at": iso(s.updated_at)}
 
 
 class SettingsView(AttendanceView):
     def get(self, request):
+        perms.require_any(request.user, ("settings_view", "settings_manage"), "You don't have permission to view attendance settings.")
         return Response(settings_payload(AttendanceSettings.load()))
 
     def patch(self, request):
@@ -495,6 +535,9 @@ class SettingsView(AttendanceView):
             values[name] = read_time(request.data, name, errors) if name in request.data else getattr(s, name)
             if values[name] is None and name not in errors:
                 errors[name] = [f"Enter the {label}."]
+        weekly = str(request.data.get("weekly_holiday", s.weekly_holiday)).strip()
+        if weekly not in {str(v) for v, _l in WEEKDAYS}:
+            errors["weekly_holiday"] = ["Choose a day of the week."]
         if not errors:
             if values["open_time"] == values["close_time"]:
                 errors["close_time"] = ["The close time must differ from the open time."]
@@ -504,7 +547,139 @@ class SettingsView(AttendanceView):
             raise ValidationError(errors)
         for name, value in values.items():
             setattr(s, name, value)
+        s.weekly_holiday = int(weekly)
         s.save()
         audit.record(request, "Changed attendance settings",
-                     f"open {s.open_time:%H:%M}, close {s.close_time:%H:%M}, working hours {s.work_start:%H:%M}–{s.work_end:%H:%M}")
+                     f"open {s.open_time:%H:%M}, close {s.close_time:%H:%M}, working hours {s.work_start:%H:%M}–{s.work_end:%H:%M}, "
+                     f"weekly holiday {dict(WEEKDAYS)[s.weekly_holiday]}")
         return Response(settings_payload(s))
+
+
+# --- Office holidays ----------------------------------------------------------------------------
+
+def holiday_row(h):
+    return {"id": h.id, "name": h.name, "date": h.date, "description": h.description or None,
+            "weekday": dict(WEEKDAYS)[h.date.weekday()], "updated_at": iso(h.updated_at)}
+
+
+def read_holiday(d, current=None):
+    errors = {}
+    name = parsing.text(d, "name", 120, required=True, errors=errors, label="holiday name")
+    day = parsing.date(d, "date", errors)
+    if day and OfficeHoliday.objects.filter(date=day).exclude(pk=current.pk if current else None).exists():
+        errors["date"] = [f"{day:%d %b %Y} is already an office holiday."]
+    if errors:
+        raise ValidationError(errors)
+    return {"name": name, "date": day, "description": parsing.text(d, "description", 2000)}
+
+
+def save_holiday(h):
+    try:
+        with transaction.atomic():
+            h.save()
+    except IntegrityError:  # two people saving the same date at once
+        raise ValidationError({"date": ["This date is already an office holiday."]})
+
+
+class HolidaysView(AttendanceView):
+    """Office holidays, shown to everyone. ?year=YYYY or ?date_from=&date_to=. Adding needs holiday_manage."""
+
+    def get(self, request):
+        qs = OfficeHoliday.objects.all()
+        year = self.int_param("year")
+        if year:
+            qs = qs.filter(date__year=year)
+        start, end = optional_date(self.param("date_from"), "date_from"), optional_date(self.param("date_to"), "date_to")
+        if start:
+            qs = qs.filter(date__gte=start)
+        if end:
+            qs = qs.filter(date__lte=end)
+        return self.paginated(qs, holiday_row)
+
+    def post(self, request):
+        perms.require(request.user, "holiday_manage", "You don't have permission to add office holidays.")
+        h = OfficeHoliday(created_by=request.user, **read_holiday(request.data))
+        save_holiday(h)
+        audit.record(request, "Added office holiday", f"{h.name} {h.date:%d %b %Y}")
+        return Response(holiday_row(h), status=status.HTTP_201_CREATED)
+
+
+class HolidayDetailView(AttendanceView):
+    def patch(self, request, pk):
+        perms.require(request.user, "holiday_manage", "You don't have permission to edit office holidays.")
+        h = get_object_or_404(OfficeHoliday, pk=pk)
+        current = {"name": h.name, "date": h.date.isoformat(), "description": h.description}
+        for k, v in read_holiday({**current, **{k: request.data.get(k) for k in current if k in request.data}}, current=h).items():
+            setattr(h, k, v)
+        save_holiday(h)
+        audit.record(request, "Edited office holiday", f"{h.name} {h.date:%d %b %Y}")
+        return Response(holiday_row(h))
+
+    def delete(self, request, pk):
+        perms.require(request.user, "holiday_manage", "You don't have permission to delete office holidays.")
+        h = get_object_or_404(OfficeHoliday, pk=pk)
+        audit.record(request, "Deleted office holiday", f"{h.name} {h.date:%d %b %Y}")
+        h.delete()
+        return Response(status=status.HTTP_204_NO_CONTENT)
+
+
+# --- Dashboard ----------------------------------------------------------------------------------
+
+def on_permission_at(leaves, at):
+    """Whether an approved permission covers this moment."""
+    return any(lr.type == LeaveRequest.Type.PERMISSION and lr.from_time and lr.to_time
+               and datetime.combine(lr.date, lr.from_time, tzinfo=window.IST) <= at < datetime.combine(lr.date, lr.to_time, tzinfo=window.IST)
+               for lr in leaves)
+
+
+class DashboardView(AttendanceView):
+    """
+    Everyone's attendance on one day (needs view_all): summary counts over the active employees matching
+    ?employee=&department=&search=, and a table of them narrowed by ?status=, with ?page=. ?date= defaults to today.
+    """
+
+    def get(self, request):
+        perms.require(request.user, "view_all", "You don't have permission to view everyone's attendance.")
+        day = optional_date(self.param("date"), "date") or window.now().date()
+        st = self.param("status") or None
+        if st and st not in DAY_LABELS:
+            raise ValidationError({"status": ["Unknown status."]})
+        employees = current_employees().filter(status=Employee.Status.ACTIVE)
+        emp_id = self.int_param("employee")
+        if emp_id:
+            employees = employees.filter(pk=emp_id)
+        if self.param("department"):
+            employees = employees.filter(department__iexact=self.param("department"))
+        q = self.param("search")
+        if q:
+            employees = employees.filter(Q(name__icontains=q) | Q(employee_code__icontains=q) | Q(department__icontains=q))
+        employees = list(employees.order_by("employee_code", "id"))
+        pic, w, sched = services.picture(employees, day, day)
+        is_today = day == w.at.date()
+        summary = {"total_active": len(employees), "present": 0, "absent": 0, "on_leave": 0, "on_permission": 0,
+                   "not_checked_out": 0}
+        rows = []
+        for emp in employees:
+            entry = pic[emp.id].get(day)
+            if entry is None:  # a day still to come, or before the employee joined
+                holiday = sched.holiday(day)
+                entry = {"statuses": [holiday] if holiday else [], "record": None, "leaves": [],
+                         "figures": figures(None, [], sched, day)}
+            rec, statuses, leaves = entry["record"], entry["statuses"], entry["leaves"]
+            summary["present"] += rec is not None
+            summary["absent"] += ABSENT in statuses
+            summary["on_leave"] += LEAVE in statuses
+            summary["not_checked_out"] += bool(rec and rec.check_out_at is None)
+            summary["on_permission"] += (on_permission_at(leaves, w.at) if is_today
+                                         else any(lr.type == LeaveRequest.Type.PERMISSION for lr in leaves))
+            if st and st not in statuses:
+                continue
+            rows.append({"employee": employee_brief(emp), "date": day, "record_id": rec.id if rec else None,
+                         "check_in_at": iso(rec.check_in_at) if rec else None, "check_out_at": iso(rec.check_out_at) if rec else None,
+                         **figures_block(entry["figures"]), "permission_times": permission_times(leaves),
+                         "statuses": statuses, "labels": [DAY_LABELS[s] for s in statuses],
+                         "record_status": record_status(rec, w) if rec else None})
+        response = self.get_paginated_response(self.paginate_queryset(rows))
+        response.data.update(summary=summary, date=day, holiday=holiday_block(sched, day),
+                             permission_label="Currently On Approved Permission" if is_today else "On Approved Permission")
+        return response

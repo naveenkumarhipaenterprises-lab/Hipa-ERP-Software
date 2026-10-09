@@ -18,13 +18,14 @@ function cell(value, format) {
   return format === 'date' ? day(String(value)) : value
 }
 
-/** Daily, Monthly, Employee and Leave / Permission reports from real records, with PDF / Excel / CSV export. */
+/** Daily, Monthly, Employee and Leave / Permission reports from real records; PDF / Excel / CSV export needs the export permission. */
 export default function ReportsPanel({ options }) {
   const toast = useToast()
   const o = options.data ?? {}
   const [f, setF] = useState({ type: 'daily', date_from: '', date_to: '', employee: '', department: '', status: '' })
   const [downloading, setDownloading] = useState(null)
   const allowed = Boolean(o.permissions?.report_view)
+  const canExport = Boolean(o.permissions?.report_export)
   const needsEmployee = f.type === 'employee' && !f.employee
   const report = useApi(() => (allowed && !needsEmployee ? attendanceApi.getReport(f) : Promise.resolve(null)), [allowed, JSON.stringify(f)])
 
@@ -48,14 +49,14 @@ export default function ReportsPanel({ options }) {
     <Card
       title={report.data?.title ?? 'Reports'}
       bodyClassName="card__body--flush"
-      action={
+      action={canExport ? (
         <span className="row-actions">
           {FORMATS.map(([fmt, label]) => (
             <Button key={fmt} size="sm" variant="outline" icon={Download} loading={downloading === fmt}
                     disabled={needsEmployee || !table?.rows?.length} onClick={() => download(fmt)}>{label}</Button>
           ))}
         </span>
-      }
+      ) : undefined}
     >
       <div className="toolbar">
         <Select className="field--inline" aria-label="Report" value={f.type} onChange={set('type')} options={list(o.report_types)} />

@@ -469,6 +469,7 @@ code {
 .badge--red { background: var(--red-50); color: var(--red-600); }
 .badge--purple { background: var(--purple-50); color: var(--purple-600); }
 .badge--gray { background: var(--hover); color: var(--text-2); }
+.badge--teal { background: var(--teal-50); color: var(--teal-600); }
 
 /* Page grids shared by all modules. Module-specific layouts live with their module. */
 .kpi-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: var(--gap); }
@@ -1158,12 +1159,17 @@ code {
 .attendance-chip--leave { background: var(--blue-600); }
 .attendance-chip--permission { background: var(--purple-600); }
 .attendance-chip--not_checked_out { background: var(--amber-600); }
+.attendance-chip--office_holiday { background: var(--teal-600); }
+.attendance-chip--weekly_holiday { background: var(--muted); }
+.attendance-holidays { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
+.attendance-holidays li { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; }
 .attendance-calendar { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 6px; }
 .attendance-calendar__head { text-align: center; font-size: 0.8em; color: var(--muted); font-weight: 600; padding: 4px 0; }
 .attendance-calendar__cell { min-height: 64px; border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--surface);
   padding: 6px; display: flex; flex-direction: column; justify-content: space-between; align-items: flex-start; cursor: pointer; font: inherit; color: inherit; }
 .attendance-calendar__cell:hover { background: var(--hover); }
 .attendance-calendar__cell--blank { border: none; background: none; cursor: default; }
+.attendance-calendar__cell--holiday { background: var(--hover); }
 .attendance-calendar__cell--selected { border-color: var(--blue-600); box-shadow: 0 0 0 2px var(--blue-50); }
 .attendance-calendar__num { font-weight: 600; font-size: 0.9em; }
 .attendance-calendar__chips { display: flex; gap: 3px; flex-wrap: wrap; }

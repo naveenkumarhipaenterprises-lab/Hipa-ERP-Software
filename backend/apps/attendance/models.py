@@ -10,27 +10,36 @@ from apps.system.models import SingletonModel
 PERMISSIONS = [
     ("check_in", "Check in"),
     ("check_out", "Check out / logout"),
+    ("view_all", "View everyone's attendance (dashboard)"),
     ("leave_apply", "Apply for leave / permission"),
     ("leave_view", "View every employee's leave / permission requests"),
     ("leave_approve", "Approve leave / permission"),
     ("leave_reject", "Reject leave / permission"),
-    ("employee_manage", "Manage employees"),
+    ("employee_view", "View employees"),
+    ("employee_manage", "Add / edit / delete employees"),
     ("calendar_view", "View every employee's calendar"),
     ("report_view", "View attendance reports"),
+    ("report_export", "Export attendance reports (PDF / Excel / CSV)"),
+    ("settings_view", "View attendance settings"),
     ("settings_manage", "Change attendance settings"),
+    ("holiday_manage", "Add / edit / delete office holidays"),
 ]
+
+WEEKDAYS = [(0, "Monday"), (1, "Tuesday"), (2, "Wednesday"), (3, "Thursday"), (4, "Friday"), (5, "Saturday"), (6, "Sunday")]
 
 
 class AttendanceSettings(SingletonModel):
     """
-    The daily attendance window: open from open_time (check-out for the day) to close_time the next morning (latest
-    check-in), frozen in between. work_start / work_end are the working hours, shown for information.
+    The daily attendance window: check-in is open from open_time to close_time the next morning and frozen in
+    between. work_start / work_end are the office working hours (scheduled hours; permission is deducted only inside
+    them). weekly_holiday is the weekly day off (Sunday by default).
     """
 
     open_time = models.TimeField(default=time(17, 0))
     close_time = models.TimeField(default=time(9, 20))
     work_start = models.TimeField(default=time(9, 0))
     work_end = models.TimeField(default=time(17, 30))
+    weekly_holiday = models.PositiveSmallIntegerField(choices=WEEKDAYS, default=6)
     updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:
@@ -134,3 +143,21 @@ class LeaveRequest(models.Model):
 
     def __str__(self):
         return f"{self.get_type_display()} {self.employee} {self.date}"
+
+
+class OfficeHoliday(models.Model):
+    """A company holiday: nobody is absent that day and it isn't a scheduled working day."""
+
+    name = models.CharField(max_length=120)
+    date = models.DateField(unique=True)
+    description = models.TextField(blank=True)
+    created_by = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.SET_NULL, related_name="+")
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["date"]
+        default_permissions = ()
+
+    def __str__(self):
+        return f"{self.date} {self.name}"

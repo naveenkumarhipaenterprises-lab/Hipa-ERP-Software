@@ -5,7 +5,8 @@ from datetime import timedelta
 from apps.reports.builders import col
 
 from .models import LeaveRequest
-from .services import ABSENT, DAY_LABELS, LEAVE, NOT_CHECKED_OUT, PERMISSION, PRESENT, days, duration_label, picture
+from .services import (ABSENT, DAY_LABELS, LEAVE, NOT_CHECKED_OUT, OFFICE_HOLIDAY, PERMISSION, PRESENT, WEEKLY_HOLIDAY, days,
+                       duration_label, picture)
 from .window import IST
 
 TYPES = {"daily": "Daily Attendance", "monthly": "Monthly Attendance", "employee": "Employee Attendance",
@@ -27,7 +28,7 @@ def title(kind, start, end):
 def build(kind, start, end, employees, status=None):
     if kind == "leave":
         return leave_report(start, end, employees, status)
-    pic, _w = picture(employees, start, end)
+    pic, _w, sched = picture(employees, start, end)
     if kind == "monthly":
         return monthly(start, end, employees, pic, status)
     rows = []
@@ -37,14 +38,17 @@ def build(kind, start, end, employees, status=None):
             if not day or not day["statuses"] or (status and status not in day["statuses"]):
                 continue
             rec, f = day["record"], day["figures"]
+            office = sched.holidays.get(d)
             rows.append({"date": d, "employee_code": emp.employee_code, "employee": emp.name, "department": emp.department or None,
                          "check_in": clock(rec.check_in_at) if rec else None, "check_out": clock(rec.check_out_at) if rec else None,
-                         "total": duration_label(f["total"]), "permission": duration_label(f["permission"]),
-                         "working": duration_label(f["working"]), "status": ", ".join(DAY_LABELS[s] for s in day["statuses"])})
+                         "scheduled": duration_label(f["scheduled"]), "total": duration_label(f["total"]), "permission": duration_label(f["permission"]),
+                         "working": duration_label(f["working"]),
+                         "status": ", ".join(DAY_LABELS[s] + (f" ({office.name})" if s == OFFICE_HOLIDAY and office else "")
+                                             for s in day["statuses"])})
     return {"title": title(kind, start, end), "table": {
         "columns": [col("date", "Date", "date"), col("employee_code", "Employee ID"), col("employee", "Employee"),
                     col("department", "Department"), col("check_in", "Check-In"), col("check_out", "Check-Out"),
-                    col("total", "Total Duration"), col("permission", "Approved Permission"), col("working", "Working Hours"),
+                    col("scheduled", "Scheduled Hours"), col("total", "Total Duration"), col("permission", "Approved Permission"), col("working", "Working Hours"),
                     col("status", "Status")],
         "rows": rows}}
 
@@ -52,9 +56,10 @@ def build(kind, start, end, employees, status=None):
 def monthly(start, end, employees, pic, status):
     rows = []
     for emp in employees:
-        counts, working, permission = Counter(), timedelta(), timedelta()
+        counts, working, permission, scheduled = Counter(), timedelta(), timedelta(), timedelta()
         for day in pic[emp.id].values():
             counts.update(day["statuses"])
+            scheduled += day["figures"]["scheduled"]
             if day["figures"]["working"] is not None:
                 working += day["figures"]["working"]
                 permission += day["figures"]["permission"]
@@ -63,14 +68,18 @@ def monthly(start, end, employees, pic, status):
         if not pic[emp.id]:
             continue
         rows.append({"employee_code": emp.employee_code, "employee": emp.name, "department": emp.department or None,
+                     "working_days": len(pic[emp.id]) - counts[OFFICE_HOLIDAY] - counts[WEEKLY_HOLIDAY],
                      "present": counts[PRESENT], "not_checked_out": counts[NOT_CHECKED_OUT], "absent": counts[ABSENT],
-                     "leave": counts[LEAVE], "permission": counts[PERMISSION],
+                     "leave": counts[LEAVE], "permission": counts[PERMISSION], "office_holidays": counts[OFFICE_HOLIDAY],
+                     "weekly_holidays": counts[WEEKLY_HOLIDAY], "scheduled_hours": duration_label(scheduled),
                      "permission_hours": duration_label(permission), "hours": duration_label(working)})
     return {"title": title("monthly", start, end), "table": {
         "columns": [col("employee_code", "Employee ID"), col("employee", "Employee"), col("department", "Department"),
-                    col("present", "Present", align="right"), col("not_checked_out", "Not Checked Out", align="right"),
-                    col("absent", "Absent", align="right"), col("leave", "Leave", align="right"),
-                    col("permission", "Permission", align="right"), col("permission_hours", "Approved Permission Hours", align="right"),
+                    col("working_days", "Working Days", align="right"), col("present", "Present", align="right"), col("not_checked_out", "Not Checked Out", align="right"),
+                    col("absent", "Absent", align="right"), col("leave", "On Leave", align="right"),
+                    col("permission", "Permission", align="right"), col("office_holidays", "Office Holidays", align="right"),
+                    col("weekly_holidays", "Weekly Holidays", align="right"), col("scheduled_hours", "Scheduled Hours", align="right"),
+                    col("permission_hours", "Approved Permission Hours", align="right"),
                     col("hours", "Working Hours", align="right")],
         "rows": rows}}
 

@@ -35,7 +35,10 @@ function fields(o, editing) {
   ]
 }
 
-/** Employees (Attendance → Employees). Deleting removes the employee from the list; their attendance history is kept. */
+/**
+ * Employees (Attendance → Employees). Viewing needs View Employees; adding / editing / deleting needs Manage Employees.
+ * Deleting removes the employee from the list; their attendance history is kept.
+ */
 export default function EmployeesPanel({ options, refreshKey, onChanged }) {
   const toast = useToast()
   const o = options.data ?? {}
@@ -44,7 +47,8 @@ export default function EmployeesPanel({ options, refreshKey, onChanged }) {
   const [deleting, setDeleting] = useState(null)
   const l = usePagedList(attendanceApi.listEmployees, { status: '', department: '' }, refreshKey)
 
-  if (options.data && !o.permissions?.employee_manage) return <NoPermission what="Manage employees" />
+  const canManage = Boolean(o.permissions?.employee_manage)
+  if (options.data && !canManage && !o.permissions?.employee_view) return <NoPermission what="View employees" />
 
   const save = async (values) => {
     const body = { ...values, user_id: values.user_id || null }
@@ -61,7 +65,7 @@ export default function EmployeesPanel({ options, refreshKey, onChanged }) {
   const editing = form?.employee
   return (
     <Card title="Employees" subtitle="Employee list" bodyClassName="card__body--flush"
-          action={<Button size="sm" icon={Plus} onClick={() => setForm({})}>Add Employee</Button>}>
+          action={canManage ? <Button size="sm" icon={Plus} onClick={() => setForm({})}>Add Employee</Button> : undefined}>
       <ListToolbar
         search={l.search} onSearch={l.setSearch} searchLabel="Search name, employee ID, department or email" onFilter={l.setFilter}
         filters={[
@@ -79,7 +83,7 @@ export default function EmployeesPanel({ options, refreshKey, onChanged }) {
           data={l.rows}
           emptyIcon={Users}
           emptyTitle={l.filtered ? 'No employees match' : 'No employees found.'}
-          emptyMessage={l.filtered ? 'Try another search or filter.' : 'Add your first employee to start keeping attendance.'}
+          emptyMessage={l.filtered ? 'Try another search or filter.' : canManage ? 'Add your first employee to start keeping attendance.' : undefined}
           pagination={{ page: l.page, pageSize: l.pageSize, total: l.total, onPageChange: l.setPage }}
           columns={[
             { key: 'employee_code', header: 'Employee ID', render: (e) => <strong className="nowrap">{e.employee_code}</strong> },
@@ -93,8 +97,8 @@ export default function EmployeesPanel({ options, refreshKey, onChanged }) {
               render: (e) => (
                 <span className="row-actions">
                   <Button size="sm" variant="ghost" icon={Eye} onClick={() => setViewing(e)} aria-label={`View ${e.name}`} />
-                  <Button size="sm" variant="ghost" icon={Pencil} onClick={() => setForm({ employee: e })} aria-label={`Edit ${e.name}`} />
-                  <Button size="sm" variant="ghost" icon={Trash2} className="btn--tone-red" onClick={() => setDeleting(e)} aria-label={`Delete ${e.name}`} />
+                  {canManage && <Button size="sm" variant="ghost" icon={Pencil} onClick={() => setForm({ employee: e })} aria-label={`Edit ${e.name}`} />}
+                  {canManage && <Button size="sm" variant="ghost" icon={Trash2} className="btn--tone-red" onClick={() => setDeleting(e)} aria-label={`Delete ${e.name}`} />}
                 </span>
               ),
             },
