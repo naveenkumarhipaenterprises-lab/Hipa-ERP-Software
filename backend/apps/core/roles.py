@@ -19,20 +19,22 @@ class Role(models.TextChoices):
 
 ALL = [r.value for r in Role]
 
-# Who may open (read) each module
+# Who may open (read) each module. A team role opens only the modules where it does its own work (where it may
+# change data, see MODULE_WRITE), plus Attendance. Super Admin and Management see everything.
+# Someone working in several areas gets extra roles (Settings -> Users -> Roles), e.g. Purchase + Inventory.
 MODULE_READ = {
-    "dashboard": ALL,
-    "sales": ["admin", "management", "sales", "marketing", "finance"],
-    "inventory": ["admin", "management", "inventory", "purchase", "supply_chain"],
-    "purchase": ["admin", "management", "purchase", "inventory", "finance", "supply_chain"],
+    "dashboard": ["admin", "management"],
+    "sales": ["admin", "management", "sales", "finance"],  # Accounts records customer payments
+    "inventory": ["admin", "management", "inventory"],
+    "purchase": ["admin", "management", "purchase", "inventory", "finance"],  # Inventory: raw-material stock; Accounts: supplier payments
     "marketing": ["admin", "management", "marketing"],
-    "customers": ["admin", "management", "sales", "marketing"],
-    "supply_chain": ["admin", "management", "inventory", "quality", "purchase", "supply_chain"],
-    "quality": ["admin", "management", "quality", "purchase"],
+    "customers": ["admin", "management", "sales", "marketing"],  # Marketing sends customer offers
+    "supply_chain": ["admin", "management", "inventory", "supply_chain"],
+    "quality": ["admin", "management", "quality"],
     # Every user opens Attendance; each action checks its own per-user permission (apps/attendance/permissions.py)
     "attendance": ALL,
-    "ai_assistant": ALL,
-    "reports": ALL,
+    "ai_assistant": ["admin", "management"],
+    "reports": ["admin", "management"],
     "settings": ["admin", "management"],
 }
 
@@ -50,8 +52,8 @@ MODULE_WRITE = {
     "supply_chain": ["admin", "management", "inventory", "supply_chain"],
     "quality": ["admin", "management", "quality"],
     "attendance": ALL,
-    "reports": ALL,
-    "ai_assistant": ALL,
+    "reports": ["admin", "management"],
+    "ai_assistant": ["admin", "management"],
     "settings": ["admin", "management"],
 }
 

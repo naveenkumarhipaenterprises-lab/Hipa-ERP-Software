@@ -51,18 +51,22 @@ class RolePermissionTests(TestCase):
         # Marketing may send offers (here it fails validation instead of permission)
         self.assertEqual(client_for(make_user("marketing")).post(f"{API}/customers/offers/", {}, format="json").status_code, 400)
 
-    def test_report_types_follow_module_access(self):
-        api = client_for(make_user("sales"))
+    def test_reports_are_for_managers(self):
+        api = client_for(make_user("management"))
         self.assertEqual(api.get(f"{API}/reports/preview/?type=sales").status_code, 200)
-        self.assertEqual(api.get(f"{API}/reports/preview/?type=quality").status_code, 403)
-        self.assertEqual(api.get(f"{API}/reports/export/?type=quality&format=csv").status_code, 403)
         self.assertEqual(api.get(f"{API}/reports/preview/?type=finance").status_code, 400)  # Accounts report retired
+        sales = client_for(make_user("sales"))
+        self.assertEqual(sales.get(f"{API}/reports/preview/?type=sales").status_code, 403)
+        self.assertEqual(sales.get(f"{API}/reports/export/?type=sales&format=csv").status_code, 403)
 
-    def test_dashboard_hides_sections_by_role(self):
-        data = client_for(make_user("quality")).get(f"{API}/dashboard/summary/").data
-        self.assertNotIn("total_sales", data["kpis"])
-        self.assertNotIn("recent_orders", data)
-        self.assertEqual(client_for(make_user("quality", username="q2")).get(f"{API}/dashboard/sales-trend/").data, [])
+    def test_team_roles_see_only_their_own_work_and_attendance(self):
+        """e.g. Marketing: Marketing, Customers (to send offers) and Attendance; no Dashboard, Sales, Reports or AI."""
+        api = client_for(make_user("marketing"))
+        for path in ("/dashboard/summary/", "/dashboard/sales-trend/", "/sales/overview/", "/reports/", "/ai/status/",
+                     "/inventory/overview/", "/purchase/purchases/"):
+            self.assertEqual(api.get(API + path).status_code, 403, path)
+        for path in ("/marketing/overview/", "/customers/", "/attendance/status/"):
+            self.assertEqual(api.get(API + path).status_code, 200, path)
 
     def test_only_admin_manages_admins(self):
         admin = make_user("admin")

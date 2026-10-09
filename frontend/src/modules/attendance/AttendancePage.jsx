@@ -5,7 +5,7 @@ import { attendanceApi } from '../../api/attendanceApi'
 import ErrorMessage from '../../components/common/ErrorMessage'
 import PageHeader from '../../components/common/PageHeader'
 import { useApi } from '../../hooks/useApi'
-import { NAV_ITEMS } from '../../utils/constants'
+import { hasPerm, NAV_ITEMS } from '../../utils/constants'
 import AttendanceOverview from './components/AttendanceOverview'
 import CalendarPanel from './components/CalendarPanel'
 import EmployeesPanel from './components/EmployeesPanel'
@@ -21,8 +21,10 @@ const TABS = NAV_ITEMS.find((n) => n.key === 'attendance').children
 export default function AttendancePage() {
   const [params, setParams] = useSearchParams()
   const [refreshKey, setRefreshKey] = useState(0)
-  const tab = TABS.some((t) => t.tab === params.get('tab')) ? params.get('tab') : TABS[0].tab
   const options = useApi(() => attendanceApi.getOptions(), [refreshKey])
+  // Until the permissions arrive only the first tab shows, so nobody briefly sees tabs they can't use
+  const tabs = TABS.filter((t) => hasPerm(t, options.data?.permissions))
+  const tab = tabs.some((t) => t.tab === params.get('tab')) ? params.get('tab') : TABS[0].tab
   const refresh = () => setRefreshKey((k) => k + 1)
   const selectTab = (key) => setParams(key === TABS[0].tab ? {} : { tab: key }, { replace: true })
   const props = { options, refreshKey, onChanged: refresh }
@@ -33,7 +35,7 @@ export default function AttendancePage() {
       <PageHeader icon={CalendarCheck} title="Attendance" subtitle="Check in and out, employees, leave and permission" />
 
       <div className="tabs" role="tablist" aria-label="Attendance sections">
-        {TABS.map((t) => (
+        {tabs.map((t) => (
           <button
             key={t.tab}
             type="button"
@@ -46,8 +48,8 @@ export default function AttendancePage() {
             onClick={() => selectTab(t.tab)}
             onKeyDown={(e) => {
               if (e.key !== 'ArrowRight' && e.key !== 'ArrowLeft') return
-              const i = TABS.findIndex((x) => x.tab === tab)
-              const next = TABS[(i + (e.key === 'ArrowRight' ? 1 : TABS.length - 1)) % TABS.length].tab
+              const i = tabs.findIndex((x) => x.tab === tab)
+              const next = tabs[(i + (e.key === 'ArrowRight' ? 1 : tabs.length - 1)) % tabs.length].tab
               selectTab(next)
               document.getElementById(`attendance-tab-${next}`)?.focus()
             }}

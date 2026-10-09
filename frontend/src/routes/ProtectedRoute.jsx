@@ -2,6 +2,7 @@ import { Lock } from 'lucide-react'
 import { Link, Navigate, Outlet, useLocation } from 'react-router-dom'
 import EmptyState from '../components/common/EmptyState'
 import { useAuth } from '../hooks/useAuth'
+import { NAV_ITEMS } from '../utils/constants'
 
 /** Requires login; with `module`, also requires the user's role to include that module. */
 export default function ProtectedRoute({ module, children }) {
@@ -11,6 +12,12 @@ export default function ProtectedRoute({ module, children }) {
   if (!isAuthenticated) {
     const from = location.pathname + location.search
     return <Navigate to="/login" replace state={{ from, expired: sessionExpired }} />
+  }
+
+  // The dashboard is the default landing page; team roles without it start in their own first module instead
+  if (module === 'dashboard' && !can(module)) {
+    const home = NAV_ITEMS.find((n) => n.key !== 'dashboard' && can(n.key))
+    if (home) return <Navigate to={home.path} replace />
   }
 
   if (module && !can(module)) {

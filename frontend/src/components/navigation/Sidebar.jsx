@@ -3,7 +3,7 @@ import { useRef } from 'react'
 import { Link, NavLink, useLocation, useSearchParams } from 'react-router-dom'
 import { useAuth } from '../../hooks/useAuth'
 import { useFocusTrap } from '../../hooks/useFocusTrap'
-import { NAV_ITEMS } from '../../utils/constants'
+import { hasPerm, NAV_ITEMS } from '../../utils/constants'
 import Logo from '../common/Logo'
 import SpiceArt from '../common/SpiceArt'
 
@@ -12,7 +12,7 @@ import SpiceArt from '../common/SpiceArt'
  * (tablet and below) it slides in over the page, traps focus, and closes on Escape.
  */
 export default function Sidebar({ id, drawer = false, open = false, onClose }) {
-  const { can } = useAuth()
+  const { can, user } = useAuth()
   const { pathname } = useLocation()
   const [params] = useSearchParams()
   const ref = useRef(null)
@@ -49,7 +49,9 @@ export default function Sidebar({ id, drawer = false, open = false, onClose }) {
         {items.map(({ key, label, path, icon: Icon, children }) => {
           const open = Array.isArray(children) && pathname.startsWith(path)
           const activeTab = params.get('tab') || children?.[0]?.tab
-          const subItems = (children ?? []).filter((c) => !c.module || can(c.module))
+          // Attendance sub-menu follows the user's Attendance permissions (older sessions without them show every tab)
+          const granted = user?.attendance_permissions
+          const subItems = (children ?? []).filter((c) => (!c.module || can(c.module)) && (!granted || hasPerm(c, granted)))
           return (
             <div key={key}>
               <NavLink to={path} className="sidebar__link" onClick={drawer ? onClose : undefined}>

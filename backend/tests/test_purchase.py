@@ -219,8 +219,9 @@ class PurchaseWorkflowTests(TestCase):
 class PurchasePermissionTests(TestCase):
     def test_roles(self):
         self.assertEqual(client_for(make_user("sales")).get(f"{API}/purchase/overview/").status_code, 403)
-        for role in ("admin", "management", "purchase", "inventory", "finance", "supply_chain"):
+        for role in ("admin", "management", "purchase", "inventory", "finance"):
             self.assertEqual(client_for(make_user(role)).get(f"{API}/purchase/purchases/").status_code, 200, role)
+        self.assertEqual(client_for(make_user("supply_chain")).get(f"{API}/purchase/purchases/").status_code, 403)
         finance = client_for(make_user("finance", username="fin2"))
         self.assertEqual(finance.post(f"{API}/purchase/purchases/", {}, format="json").status_code, 403)
         self.assertEqual(finance.post(f"{API}/purchase/payments/", {}, format="json").status_code, 400)  # may pay suppliers

@@ -122,9 +122,9 @@ class PurchaseRecommendationTests(TestCase):
         self.assertEqual(dash["purchase_recommendations"][0]["title"], insight.title)
         report = self.api.get(f"{API}/reports/preview/?type=ai_business&range=this_month").data
         self.assertEqual(report["table"]["rows"][0]["title"], insight.title)
-        # Sales users can open the AI report but not purchase findings
-        sales = client_for(make_user("sales")).get(f"{API}/reports/preview/?type=ai_business&range=this_month").data
-        self.assertEqual(sales["table"]["rows"], [])
+        # Team roles don't open Reports at all (Super Admin and Management only)
+        res = client_for(make_user("sales")).get(f"{API}/reports/preview/?type=ai_business&range=this_month")
+        self.assertEqual(res.status_code, 403)
 
 
 class DueAlertTests(TestCase):
@@ -167,7 +167,7 @@ class DashboardAndReportTests(TestCase):
         self.assertEqual(d["purchase_overview"]["pending"], 1)
         self.assertEqual(d["low_stock_materials"][0]["material"], "TEST Pepper")
         self.assertTrue(d["purchase_trend"])
-        self.assertNotIn("purchase_value", client_for(make_user("sales")).get(f"{API}/dashboard/summary/").data["kpis"])
+        self.assertEqual(client_for(make_user("sales")).get(f"{API}/dashboard/summary/").status_code, 403)
 
     def test_quotation_report_and_sales_summary(self):
         p = Product.objects.create(name="TEST Product", price_per_kg=Decimal("100"))
