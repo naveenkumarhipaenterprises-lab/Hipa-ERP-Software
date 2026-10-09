@@ -1,6 +1,6 @@
 from rest_framework.permissions import SAFE_METHODS, BasePermission
 
-from .roles import can_read, can_write
+from .roles import can_read, can_write, has_any_role
 
 
 class ModulePermission(BasePermission):
@@ -18,6 +18,10 @@ class ModulePermission(BasePermission):
             return False
         if request.method in SAFE_METHODS:
             return can_read(user, module)
+        # Deleting a record (any module) is for Super Admins only; mistakes are corrected by them
+        if request.method == "DELETE" and not has_any_role(user, ["admin"]):
+            self.message = "Only a Super Admin can delete records."
+            return False
         if not can_write(user, getattr(view, "write_module", None) or module):
             self.message = (
                 "Your role can view this module but not change it." if can_read(user, module) else self.message

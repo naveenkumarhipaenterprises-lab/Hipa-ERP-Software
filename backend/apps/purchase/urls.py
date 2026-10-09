@@ -13,6 +13,7 @@ urlpatterns = [
     path("raw-materials/", views.MaterialsView.as_view()),
     path("raw-materials/<int:pk>/", views.MaterialDetailView.as_view()),
     path("material-movements/", views.MaterialMovementsView.as_view()),
+    path("material-movements/<int:pk>/", views.MaterialMovementDetailView.as_view()),
     path("purchases/", views.PurchasesView.as_view()),
     path("purchases/<int:pk>/", views.PurchaseDetailView.as_view()),
     path("purchases/<int:pk>/cancel/", views.CancelPurchaseView.as_view()),

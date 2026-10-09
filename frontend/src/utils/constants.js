@@ -100,6 +100,8 @@ export const NAV_ITEMS = [
       { tab: 'calendar', label: 'Calendar', perms: ['calendar_view'] },
       { tab: 'reports', label: 'Reports', perms: ['report_view', 'report_export'] },
       { tab: 'settings', label: 'Settings', perms: ['settings_view', 'settings_manage', 'holiday_manage'] },
+      // Enter or correct someone's attendance (forgot to check in / out, late): Super Admin and Management only
+      { tab: 'entries', label: 'Manual Entries', roles: MANAGERS },
     ],
   },
   { key: 'reports', label: 'Reports', path: '/reports', icon: FileText, roles: MANAGERS },
@@ -111,6 +113,9 @@ export const NAV_ITEMS = [
 /** Every role the user holds: the main role plus any extra roles (e.g. Purchase + Inventory). */
 export const userRoles = (user) =>
   Array.isArray(user?.roles) && user.roles.length ? user.roles : user?.role ? [user.role] : []
+
+/** Deleting any record is for Super Admins only (the server enforces it too). */
+export const isSuperAdmin = (user) => userRoles(user).includes('admin')
 
 /** True when any of the user's roles is in `roles`. The server enforces the same rule. */
 export const hasAnyRole = (user, roles) => userRoles(user).some((r) => roles.includes(r))

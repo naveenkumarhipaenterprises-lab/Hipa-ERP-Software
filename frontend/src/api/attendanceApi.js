@@ -32,6 +32,10 @@ export const attendanceApi = {
   checkOut: () => api.post('/attendance/check-out/'),
   listHistory: (params) => api.get('/attendance/history/', clean(params)),
   getOptions: () => api.get('/attendance/options/'),
+  // Super Admin / Management: enter or correct someone's attendance { employee_id, date, check_in, check_out?, note }
+  listRecords: (params) => api.get('/attendance/records/', clean(params)),
+  saveRecord: (body) => api.post('/attendance/records/', body),
+  deleteRecord: (id) => api.delete(`/attendance/records/${id}/`),  // Super Admin only
   getDashboard: (params) => api.get('/attendance/dashboard/', clean(params)),
 
   listEmployees: (params) => api.get('/attendance/employees/', clean(params)),

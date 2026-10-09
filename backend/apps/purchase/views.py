@@ -63,7 +63,7 @@ def material_row(m):
 def movement_row(mv):
     return {"id": mv.id, "material": mv.material.name, "type": mv.type, "source": mv.get_source_display(),
             "quantity": num(mv.quantity), "unit": mv.material.unit, "date": mv.date, "reference": mv.reference or None,
-            "note": mv.note or None}
+            "note": mv.note or None, "can_delete": mv.source in services.UNDOABLE_MATERIAL}
 
 
 def purchase_row(p, editable=True):
@@ -596,6 +596,19 @@ class MaterialMovementsView(PurchaseView):
                                     note=parsing.text(d, "note", 255), user=request.user)
         audit.record(request, f"Recorded material {mv.get_source_display().lower()}", material.name)
         return Response(movement_row(mv), status=status.HTTP_201_CREATED)
+
+
+class MaterialMovementDetailView(PurchaseView):
+    """A Super Admin deletes a wrong hand-entered raw-material movement; the stock is put back."""
+
+    write_module = "material_stock"
+
+    def delete(self, request, pk):
+        mv = get_object_or_404(MaterialMovement.objects.select_related("material"), pk=pk)
+        label = f"{mv.material.name} {mv.get_type_display()} {num(mv.quantity)} {mv.material.unit}"
+        services.undo_material_movement(mv)
+        audit.record(request, "Deleted material movement", label)
+        return Response(status=status.HTTP_204_NO_CONTENT)
 
 
 # --- Purchase transactions --------------------------------------------------------------------

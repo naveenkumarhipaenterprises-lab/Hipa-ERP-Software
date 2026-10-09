@@ -61,6 +61,8 @@ export const purchaseApi = {
   updateMaterial: (id, body) => api.patch(`/purchase/raw-materials/${id}/`, body),
   deleteMaterial: (id) => api.delete(`/purchase/raw-materials/${id}/`),
   recordMaterialMovement: (body) => api.post('/purchase/material-movements/', body),
+  // Super Admin only: deletes a wrong hand-entered movement and puts the stock back
+  deleteMaterialMovement: (id) => api.delete(`/purchase/material-movements/${id}/`),
 
   listPurchases: (params) => api.get('/purchase/purchases/', clean(params)),
   getPurchase: (id) => api.get(`/purchase/purchases/${id}/`),

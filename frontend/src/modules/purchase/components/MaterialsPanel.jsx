@@ -16,6 +16,8 @@ import { useToast } from '../../../hooks/useToast'
 import { todayISO } from '../../../utils/formatters'
 import { choiceOptions, dash, date, idOptions, list, money, optionalNumber, optionalText, qty, withAll } from '../shared'
 import ListToolbar from '../../../components/common/ListToolbar'
+import { useAuth } from '../../../hooks/useAuth'
+import { isSuperAdmin } from '../../../utils/constants'
 
 const STOCK_FILTERS = [
   { value: '', label: 'All stock levels' },
@@ -35,6 +37,7 @@ export default function MaterialsPanel({ options, canManage, canRecordUsage, ref
   const [using, setUsing] = useState(null)
   const [viewing, setViewing] = useState(null)
   const [removing, setRemoving] = useState(null)
+  const canDelete = isSuperAdmin(useAuth().user) // deleting is for Super Admins only
   const l = usePagedList(purchaseApi.listMaterials, { category: '', status: '', stock_status: '' }, refreshKey)
 
   const save = async (v) => {
@@ -96,7 +99,7 @@ export default function MaterialsPanel({ options, canManage, canRecordUsage, ref
             <Button size="sm" variant="ghost" icon={MinusCircle} onClick={() => setUsing(r)} aria-label={`Record usage of ${r.name}`} />
           )}
           {canManage && <Button size="sm" variant="ghost" icon={Pencil} onClick={() => setEditing(r)} aria-label={`Edit ${r.name}`} />}
-          {canManage && <Button size="sm" variant="ghost" icon={Trash2} onClick={() => setRemoving(r)} aria-label={`Delete ${r.name}`} />}
+          {canManage && canDelete && <Button size="sm" variant="ghost" icon={Trash2} onClick={() => setRemoving(r)} aria-label={`Delete ${r.name}`} />}
         </span>
       ),
     },
@@ -152,7 +155,7 @@ export default function MaterialsPanel({ options, canManage, canRecordUsage, ref
         ]}
         onSubmit={recordUsage}
       />
-      <MaterialDetail material={viewing} onClose={() => setViewing(null)} />
+      <MaterialDetail material={viewing} onClose={() => setViewing(null)} onChanged={onChanged} />
       <ConfirmDialog open={Boolean(removing)} onClose={() => setRemoving(null)} onConfirm={remove} danger title="Delete raw material?"
                      message={`${removing?.name ?? ''} will be deleted. Materials with stock movements or purchases can't be deleted — set them to Inactive instead.`}
                      confirmLabel="Delete" />
@@ -160,9 +163,18 @@ export default function MaterialsPanel({ options, canManage, canRecordUsage, ref
   )
 }
 
-function MaterialDetail({ material, onClose }) {
+function MaterialDetail({ material, onClose, onChanged }) {
   const detail = useApi(() => (material ? purchaseApi.getMaterial(material.id) : Promise.resolve(null)), [material?.id])
+  const canDelete = isSuperAdmin(useAuth().user)
+  const toast = useToast()
+  const [deletingMove, setDeletingMove] = useState(null)
   if (!material) return null
+  const deleteMove = async () => {
+    await purchaseApi.deleteMaterialMovement(deletingMove.id)
+    toast.success('Stock movement deleted and stock put back')
+    detail.reload()
+    onChanged?.()
+  }
   const m = detail.data
   return (
     <Modal open onClose={onClose} title={material.name} subtitle={material.material_code} size="lg">
@@ -187,7 +199,13 @@ function MaterialDetail({ material, onClose }) {
           <Table compact caption="Stock movements" data={list(m.movements)} emptyTitle="No stock movements" emptyMessage="Receipts, returns and usage will be listed here."
                  columns={[{ key: 'date', header: 'Date', render: (r) => date(r.date) }, { key: 'source', header: 'Type' },
                            { key: 'quantity', header: 'Quantity', align: 'right', render: (r) => `${r.type === 'out' ? '−' : '+'}${qty(r.quantity, r.unit)}` },
-                           { key: 'reference', header: 'Reference', render: (r) => dash(r.reference) }, { key: 'note', header: 'Note', render: (r) => dash(r.note) }]} />
+                           { key: 'reference', header: 'Reference', render: (r) => dash(r.reference) }, { key: 'note', header: 'Note', render: (r) => dash(r.note) },
+                           ...(canDelete ? [{ key: 'delete', header: <span className="sr-only">Delete</span>, align: 'right',
+                             render: (r) => r.can_delete && <Button size="sm" variant="ghost" icon={Trash2} className="btn--tone-red" onClick={() => setDeletingMove(r)}
+                                                                    aria-label={`Delete ${r.source} ${r.date}`} /> }] : [])]} />
+          <ConfirmDialog open={Boolean(deletingMove)} onClose={() => setDeletingMove(null)} onConfirm={deleteMove} danger
+                         title="Delete this stock movement?" confirmLabel="Delete"
+                         message={deletingMove && `${deletingMove.source} of ${qty(deletingMove.quantity, deletingMove.unit)} will be removed and the stock put back.`} />
         </div>
       )}
     </Modal>

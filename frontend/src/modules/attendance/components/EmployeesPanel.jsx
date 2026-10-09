@@ -14,6 +14,8 @@ import { usePagedList } from '../../../hooks/usePagedList'
 import { useToast } from '../../../hooks/useToast'
 import NoPermission from '../NoPermission'
 import { day, list } from '../shared'
+import { useAuth } from '../../../hooks/useAuth'
+import { isSuperAdmin } from '../../../utils/constants'
 
 const dash = (v) => v || '—'
 
@@ -48,6 +50,7 @@ export default function EmployeesPanel({ options, refreshKey, onChanged }) {
   const l = usePagedList(attendanceApi.listEmployees, { status: '', department: '' }, refreshKey)
 
   const canManage = Boolean(o.permissions?.employee_manage)
+  const canDelete = isSuperAdmin(useAuth().user) // deleting is for Super Admins only
   if (options.data && !canManage && !o.permissions?.employee_view) return <NoPermission what="View employees" />
 
   const save = async (values) => {
@@ -98,7 +101,7 @@ export default function EmployeesPanel({ options, refreshKey, onChanged }) {
                 <span className="row-actions">
                   <Button size="sm" variant="ghost" icon={Eye} onClick={() => setViewing(e)} aria-label={`View ${e.name}`} />
                   {canManage && <Button size="sm" variant="ghost" icon={Pencil} onClick={() => setForm({ employee: e })} aria-label={`Edit ${e.name}`} />}
-                  {canManage && <Button size="sm" variant="ghost" icon={Trash2} className="btn--tone-red" onClick={() => setDeleting(e)} aria-label={`Delete ${e.name}`} />}
+                  {canManage && canDelete && <Button size="sm" variant="ghost" icon={Trash2} className="btn--tone-red" onClick={() => setDeleting(e)} aria-label={`Delete ${e.name}`} />}
                 </span>
               ),
             },

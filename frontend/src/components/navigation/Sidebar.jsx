@@ -3,7 +3,7 @@ import { useRef } from 'react'
 import { Link, NavLink, useLocation, useSearchParams } from 'react-router-dom'
 import { useAuth } from '../../hooks/useAuth'
 import { useFocusTrap } from '../../hooks/useFocusTrap'
-import { hasPerm, NAV_ITEMS } from '../../utils/constants'
+import { hasAnyRole, hasPerm, NAV_ITEMS } from '../../utils/constants'
 import Logo from '../common/Logo'
 import SpiceArt from '../common/SpiceArt'
 
@@ -51,7 +51,8 @@ export default function Sidebar({ id, drawer = false, open = false, onClose }) {
           const activeTab = params.get('tab') || children?.[0]?.tab
           // Attendance sub-menu follows the user's Attendance permissions (older sessions without them show every tab)
           const granted = user?.attendance_permissions
-          const subItems = (children ?? []).filter((c) => (!c.module || can(c.module)) && (!granted || hasPerm(c, granted)))
+          const subItems = (children ?? []).filter((c) => (!c.module || can(c.module)) && (!granted || hasPerm(c, granted))
+            && (!c.roles || hasAnyRole(user, c.roles)))
           return (
             <div key={key}>
               <NavLink to={path} className="sidebar__link" onClick={drawer ? onClose : undefined}>

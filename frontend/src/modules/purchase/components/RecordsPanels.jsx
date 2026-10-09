@@ -11,6 +11,8 @@ import { usePagedList } from '../../../hooks/usePagedList'
 import { useToast } from '../../../hooks/useToast'
 import { choiceOptions, dash, date, idOptions, money, qty, withAll } from '../shared'
 import ListToolbar from '../../../components/common/ListToolbar'
+import { useAuth } from '../../../hooks/useAuth'
+import { isSuperAdmin } from '../../../utils/constants'
 
 function ListBody({ l, caption, columns, icon, emptyTitle, emptyMessage }) {
   if (l.result.error && !l.result.loading)
@@ -141,6 +143,7 @@ const confirmMessage = ({ row, kind }) => ({
 })[kind]
 
 export function PaymentsPanel({ options, canPay, refreshKey, onNew, onChanged }) {
+  const canDelete = isSuperAdmin(useAuth().user) // deleting is for Super Admins only
   const toast = useToast()
   const o = options.data ?? {}
   const [confirm, setConfirm] = useState(null) // { row, kind: 'pay' | 'delete' | 'cancel' }
@@ -179,7 +182,7 @@ export function PaymentsPanel({ options, canPay, refreshKey, onNew, onChanged })
             render: (r) => canPay && (r.can_mark_paid || r.can_cancel) && (
               <span className="row-actions">
                 {r.can_mark_paid && <Button size="sm" variant="ghost" icon={CircleCheck} onClick={() => setConfirm({ row: r, kind: 'pay' })} aria-label={`Mark ${r.payment_number} paid`} />}
-                {r.can_mark_paid && <Button size="sm" variant="ghost" icon={Trash2} onClick={() => setConfirm({ row: r, kind: 'delete' })} aria-label={`Delete ${r.payment_number}`} />}
+                {r.can_mark_paid && canDelete && <Button size="sm" variant="ghost" icon={Trash2} onClick={() => setConfirm({ row: r, kind: 'delete' })} aria-label={`Delete ${r.payment_number}`} />}
                 {r.can_cancel && <Button size="sm" variant="ghost" icon={XCircle} className="btn--tone-red" onClick={() => setConfirm({ row: r, kind: 'cancel' })} aria-label={`Cancel ${r.payment_number}`} />}
               </span>
             ),

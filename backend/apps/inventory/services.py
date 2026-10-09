@@ -37,3 +37,26 @@ def move_stock(product, type, quantity_kg, *, source=StockMovement.Source.MANUAL
             link="/inventory",
         ))
     return movement
+
+
+# Movements entered by hand; ones from sales / purchase documents are corrected in those documents
+UNDOABLE = (StockMovement.Source.MANUAL, StockMovement.Source.OPENING)
+
+
+@transaction.atomic
+def undo_movement(movement):
+    """Deletes a hand-entered stock movement and puts the product's stock back (Super Admin corrections)."""
+    if movement.source not in UNDOABLE:
+        raise ValidationError({"detail": f"This movement came from {movement.get_source_display().lower()} "
+                                         f"{movement.reference}; correct it there instead.".replace("  ", " ")})
+    locked = Product.objects.select_for_update(of=("self",)).get(pk=movement.product_id)
+    if movement.type == StockMovement.Type.IN:
+        if movement.quantity_kg > locked.stock_kg:
+            raise ValidationError({"detail": f"Only {locked.stock_kg.normalize():f} kg of {locked.name} is left, so this "
+                                             f"{movement.quantity_kg.normalize():f} kg stock-in can't be taken back."})
+        locked.stock_kg -= movement.quantity_kg
+    else:
+        locked.stock_kg += movement.quantity_kg
+    locked.save(update_fields=["stock_kg", "updated_at"])
+    movement.delete()
+    return locked

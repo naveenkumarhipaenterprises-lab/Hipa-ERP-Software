@@ -20,9 +20,12 @@ import ListToolbar from '../../../components/common/ListToolbar'
 import { choiceOptions, dash, date, list, money, withAll } from '../../../utils/display'
 import DocumentEditor from './DocumentEditor'
 import { ITEM_COLUMNS } from './documentColumns'
+import { useAuth } from '../../../hooks/useAuth'
+import { isSuperAdmin } from '../../../utils/constants'
 
 /** Sales quotations: list, create / edit, status changes, PDF preview / print / download and conversions. */
 export default function QuotationsPanel({ options, canManage, refreshKey, onChanged }) {
+  const canDelete = isSuperAdmin(useAuth().user) // deleting is for Super Admins only
   const toast = useToast()
   const o = options.data ?? {}
   const [editing, setEditing] = useState(null) // detail | {} for new
@@ -124,7 +127,7 @@ function QuotationDetail({ quotation, canManage, statuses, refreshKey, onClose, 
               {canManage && statusOptions.length > 0 && <Button size="sm" variant="outline" icon={ArrowRightLeft} onClick={() => setStatusOpen(true)}>Change Status</Button>}
               {canManage && q.can_convert_to_order && <Button size="sm" icon={FileCheck2} onClick={() => setConfirm('order')}>Convert to Sales Order</Button>}
               {canManage && q.can_convert_to_invoice && <Button size="sm" icon={ReceiptText} onClick={() => setConfirm('invoice')}>Convert to Sales Invoice</Button>}
-              {canManage && q.can_delete && <Button size="sm" variant="ghost" icon={Trash2} onClick={() => setConfirm('delete')}>Delete</Button>}
+              {canManage && canDelete && q.can_delete && <Button size="sm" variant="ghost" icon={Trash2} onClick={() => setConfirm('delete')}>Delete</Button>}
             </div>
             {canManage && !q.customer_id && ['Draft', 'Sent', 'Accepted'].includes(q.status) && (
               <p className="muted">Link this quotation to a customer (Edit → Existing customer) before converting it.</p>

@@ -97,6 +97,10 @@ class AttendanceRecord(models.Model):
     check_in_at = models.DateTimeField()
     check_out_at = models.DateTimeField(null=True, blank=True)
     status = models.CharField(max_length=12, choices=Status.choices, default=Status.CHECKED_IN)
+    # Set when a Super Admin or Management entered or corrected the times by hand (forgot to check in / out, late)
+    entered_by = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.SET_NULL,
+                                   related_name="+")
+    note = models.CharField(max_length=200, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 

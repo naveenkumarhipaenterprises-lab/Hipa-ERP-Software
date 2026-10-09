@@ -16,12 +16,15 @@ import { useToast } from '../../../hooks/useToast'
 import { choiceOptions, dash, date, idOptions, list, money, qty, withAll } from '../shared'
 import ListToolbar from '../../../components/common/ListToolbar'
 import { PURCHASE_COLUMNS } from './purchaseColumns'
+import { useAuth } from '../../../hooks/useAuth'
+import { isSuperAdmin } from '../../../utils/constants'
 
 /**
  * Purchase transactions: list with search, status / payment / supplier filters and a date range,
  * plus view, edit, receive, pay, return, cancel and delete actions (each only where the backend allows it).
  */
 export default function PurchasesPanel({ options, canManage, canPay, refreshKey, onChanged, onNew, onEdit, onReceive, onPay, onReturn }) {
+  const canDelete = isSuperAdmin(useAuth().user) // deleting is for Super Admins only
   const toast = useToast()
   const [viewing, setViewing] = useState(null)
   const [confirm, setConfirm] = useState(null) // { kind: 'cancel' | 'delete', row }
@@ -47,7 +50,7 @@ export default function PurchasesPanel({ options, canManage, canPay, refreshKey,
         <Button size="sm" variant="ghost" icon={IndianRupee} onClick={() => onPay(r)} aria-label={`Record payment for ${r.purchase_number}`} />
       )}
       {canManage && r.can_cancel && <Button size="sm" variant="ghost" icon={Ban} onClick={() => setConfirm({ kind: 'cancel', row: r })} aria-label={`Cancel ${r.purchase_number}`} />}
-      {canManage && r.can_delete && <Button size="sm" variant="ghost" icon={Trash2} onClick={() => setConfirm({ kind: 'delete', row: r })} aria-label={`Delete ${r.purchase_number}`} />}
+      {canManage && canDelete && r.can_delete && <Button size="sm" variant="ghost" icon={Trash2} onClick={() => setConfirm({ kind: 'delete', row: r })} aria-label={`Delete ${r.purchase_number}`} />}
     </span>
   )
 

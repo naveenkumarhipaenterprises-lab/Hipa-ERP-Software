@@ -8,6 +8,7 @@ urlpatterns = [
     path("check-out/", views.CheckOutView.as_view()),
     path("history/", views.HistoryView.as_view()),
     path("records/", views.RecordsView.as_view()),
+    path("records/<int:pk>/", views.RecordDetailView.as_view()),
     path("options/", views.OptionsView.as_view()),
     path("employees/", views.EmployeesView.as_view()),
     path("employees/<int:pk>/", views.EmployeeDetailView.as_view()),

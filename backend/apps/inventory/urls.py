@@ -9,4 +9,5 @@ urlpatterns = [
     path("items/export/", views.ItemsExportView.as_view()),
     path("items/<int:pk>/", views.ItemDetailView.as_view()),
     path("movements/", views.MovementsView.as_view()),
+    path("movements/<int:pk>/", views.MovementDetailView.as_view()),
 ]

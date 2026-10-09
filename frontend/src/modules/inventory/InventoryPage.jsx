@@ -16,11 +16,12 @@ import StatCard from '../../components/dashboard/StatCard'
 import { useApi } from '../../hooks/useApi'
 import { useAuth } from '../../hooks/useAuth'
 import { useToast } from '../../hooks/useToast'
-import { CHART_COLORS, DATE_RANGES, hasAnyRole } from '../../utils/constants'
+import { CHART_COLORS, DATE_RANGES, hasAnyRole, isSuperAdmin } from '../../utils/constants'
 import { formatCompact, formatINR, formatKg, formatNumber } from '../../utils/formatters'
 import InventoryItemsTable from './components/InventoryItemsTable'
 import LowStockAlerts from './components/LowStockAlerts'
 import MovementList from './components/MovementList'
+import ConfirmDialog from '../../components/common/ConfirmDialog'
 import StockMovementModal from './components/StockMovementModal'
 
 // Roles that may add products or record stock (the backend enforces the same rule)
@@ -57,6 +58,12 @@ export default function InventoryPage() {
   const [downloading, setDownloading] = useState(false)
 
   const canManage = hasAnyRole(user, STOCK_MANAGERS)
+  const [deletingMove, setDeletingMove] = useState(null) // a wrong hand-entered movement a Super Admin is deleting
+  const deleteMove = async () => {
+    await inventoryApi.deleteMovement(deletingMove.id)
+    toast.success('Stock movement deleted and stock put back')
+    setRefreshKey((k) => k + 1)
+  }
   const overview = useApi(() => inventoryApi.getOverview({ range }), [range, refreshKey])
   const options = useApi(() => inventoryApi.getOptions(), [refreshKey])
 
@@ -201,7 +208,7 @@ export default function InventoryPage() {
               {loading ? <div className="skeleton skeleton--list" aria-label="Loading" /> : <LowStockAlerts items={data?.low_stock} />}
             </Card>
             <Card title="Recent Inventory Movements">
-              {loading ? <div className="skeleton skeleton--list" aria-label="Loading" /> : <MovementList items={data?.movements} />}
+              {loading ? <div className="skeleton skeleton--list" aria-label="Loading" /> : <MovementList items={data?.movements} onDelete={isSuperAdmin(user) ? setDeletingMove : undefined} />}
             </Card>
           </div>
         </div>
@@ -233,6 +240,9 @@ export default function InventoryPage() {
         options={options}
         onSubmit={recordMovement}
       />
+      <ConfirmDialog open={Boolean(deletingMove)} onClose={() => setDeletingMove(null)} onConfirm={deleteMove} danger
+                     title="Delete this stock movement?" confirmLabel="Delete"
+                     message={deletingMove && `Stock ${deletingMove.type === 'in' ? 'in' : 'out'} of ${deletingMove.quantity_kg} kg${deletingMove.product ? ` (${deletingMove.product})` : ''} will be removed and the stock put back.`} />
     </div>
   )
 }

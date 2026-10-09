@@ -5,7 +5,9 @@ import { attendanceApi } from '../../api/attendanceApi'
 import ErrorMessage from '../../components/common/ErrorMessage'
 import PageHeader from '../../components/common/PageHeader'
 import { useApi } from '../../hooks/useApi'
-import { hasPerm, NAV_ITEMS } from '../../utils/constants'
+import { hasAnyRole, hasPerm, NAV_ITEMS } from '../../utils/constants'
+import { useAuth } from '../../hooks/useAuth'
+import EntriesPanel from './components/EntriesPanel'
 import AttendanceOverview from './components/AttendanceOverview'
 import CalendarPanel from './components/CalendarPanel'
 import EmployeesPanel from './components/EmployeesPanel'
@@ -23,7 +25,8 @@ export default function AttendancePage() {
   const [refreshKey, setRefreshKey] = useState(0)
   const options = useApi(() => attendanceApi.getOptions(), [refreshKey])
   // Until the permissions arrive only the first tab shows, so nobody briefly sees tabs they can't use
-  const tabs = TABS.filter((t) => hasPerm(t, options.data?.permissions))
+  const { user } = useAuth()
+  const tabs = TABS.filter((t) => hasPerm(t, options.data?.permissions) && (!t.roles || hasAnyRole(user, t.roles)))
   const tab = tabs.some((t) => t.tab === params.get('tab')) ? params.get('tab') : TABS[0].tab
   const refresh = () => setRefreshKey((k) => k + 1)
   const selectTab = (key) => setParams(key === TABS[0].tab ? {} : { tab: key }, { replace: true })
@@ -68,6 +71,7 @@ export default function AttendancePage() {
         {tab === 'calendar' && <CalendarPanel {...props} />}
         {tab === 'reports' && <ReportsPanel {...props} />}
         {tab === 'settings' && <SettingsPanel {...props} />}
+        {tab === 'entries' && <EntriesPanel {...props} />}
       </div>
     </div>
   )

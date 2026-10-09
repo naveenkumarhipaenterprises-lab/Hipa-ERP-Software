@@ -20,6 +20,7 @@ from rest_framework.response import Response
 
 from apps.accounts.models import User
 from apps.core import parsing
+from apps.core.roles import ATTENDANCE_MANAGERS, has_any_role
 from apps.core.views import ModuleAPIView
 from services import audit
 from services.exporters import MIME, export
@@ -73,6 +74,7 @@ def holiday_block(sched, day):
 def record_row(r, w, sched, permissions=()):
     return {"id": r.id, "attendance_date": r.attendance_date, "employee": employee_brief(r.employee),
             "check_in_at": iso(r.check_in_at), "check_out_at": iso(r.check_out_at),
+            "entered_by": (r.entered_by.name or r.entered_by.username) if r.entered_by_id else None, "note": r.note or None,
             **figures_block(figures(r, permissions, sched)), "holiday": holiday_block(sched, r.attendance_date),
             "status": record_status(r, w)}
 
@@ -173,12 +175,37 @@ class HistoryView(AttendanceView):
         return self.get_paginated_response(record_rows(self.paginate_queryset(qs), window.state()))
 
 
+def is_attendance_manager(user):
+    return has_any_role(user, ATTENDANCE_MANAGERS)
+
+
+def require_attendance_manager(user):
+    if not is_attendance_manager(user):
+        raise PermissionDenied("Only a Super Admin or Management can enter attendance for someone else.")
+
+
+def read_clock(d, name, errors, label, required=True):
+    raw = str(d.get(name) or "").strip()
+    if not raw:
+        if required:
+            errors[name] = [f"Enter the {label} time."]
+        return None
+    try:
+        return datetime.strptime(raw, "%H:%M").time()
+    except ValueError:
+        errors[name] = [f"Enter the {label} time as HH:MM (24-hour)."]
+        return None
+
+
 class RecordsView(AttendanceView):
-    """Everyone's attendance records (needs the reports permission)."""
+    """Everyone's attendance records (reports permission, or Super Admin / Management).
+    POST: a Super Admin or Management enters or corrects one employee's attendance for a work day (forgot to check in
+    or out, came late). An existing record for that day is corrected; every entry is marked with who made it."""
 
     def get(self, request):
-        perms.require(request.user, "report_view", "You don't have permission to view everyone's attendance.")
-        qs = AttendanceRecord.objects.select_related("employee")
+        if not is_attendance_manager(request.user):
+            perms.require(request.user, "report_view", "You don't have permission to view everyone's attendance.")
+        qs = AttendanceRecord.objects.select_related("employee", "entered_by")
         start, end = optional_date(self.param("date_from"), "date_from"), optional_date(self.param("date_to"), "date_to")
         if start:
             qs = qs.filter(attendance_date__gte=start)
@@ -189,7 +216,59 @@ class RecordsView(AttendanceView):
             qs = qs.filter(employee_id=emp)
         if self.param("department"):
             qs = qs.filter(employee__department__iexact=self.param("department"))
+        if self.param("search"):
+            q = self.param("search")
+            qs = qs.filter(Q(employee__name__icontains=q) | Q(employee__employee_code__icontains=q))
         return self.get_paginated_response(record_rows(self.paginate_queryset(qs), window.state()))
+
+    def post(self, request):
+        require_attendance_manager(request.user)
+        d, errors = request.data, {}
+        emp = parsing.record(d, "employee_id", current_employees(), errors, message="Choose an employee.")
+        day = parsing.date(d, "date", errors, label="work date")
+        t_in = read_clock(d, "check_in", errors, "check-in")
+        t_out = read_clock(d, "check_out", errors, "check-out", required=False)
+        note = parsing.text(d, "note", 200, required=True, errors=errors, label="reason")
+        now = window.now()
+        if day and day > now.date():
+            errors["date"] = ["The work date can't be in the future."]
+        if errors:
+            raise ValidationError(errors)
+        check_in_at = datetime.combine(day, t_in, tzinfo=window.IST)
+        check_out_at = None
+        if t_out:
+            check_out_at = datetime.combine(day, t_out, tzinfo=window.IST)
+            if check_out_at <= check_in_at:  # e.g. a night shift: check-out the next morning
+                check_out_at += window.DAY
+        if check_in_at > now or (check_out_at and check_out_at > now):
+            raise ValidationError({"detail": "Times can't be in the future."})
+        with transaction.atomic():
+            record = AttendanceRecord.objects.select_for_update().filter(employee=emp, attendance_date=day).first()
+            created = record is None
+            record = record or AttendanceRecord(employee=emp, attendance_date=day)
+            before = None if created else (record.check_in_at, record.check_out_at)
+            record.check_in_at, record.check_out_at = check_in_at, check_out_at
+            record.status = AttendanceRecord.Status.COMPLETED if check_out_at else AttendanceRecord.Status.CHECKED_IN
+            record.entered_by, record.note = request.user, note
+            record.save()
+        times = f"{window.clock(check_in_at)}" + (f" – {window.clock(check_out_at)}" if check_out_at else "")
+        audit.record(request, f"{'Entered' if created else 'Corrected'} attendance {day:%d %b %Y} ({times})"[:200],
+                     f"{emp.employee_code} {emp.name}" + ("" if created else f" (was {window.clock(before[0])}"
+                     + (f" – {window.clock(before[1])})" if before[1] else ")")))
+        record = AttendanceRecord.objects.select_related("employee", "entered_by").get(pk=record.pk)
+        return Response(record_rows([record], window.state())[0], status=status.HTTP_201_CREATED if created else status.HTTP_200_OK)
+
+
+class RecordDetailView(AttendanceView):
+    """A Super Admin deletes a wrong attendance record (the route-level rule: deleting is for Super Admins)."""
+
+    def delete(self, request, pk):
+        record = get_object_or_404(AttendanceRecord.objects.select_related("employee"), pk=pk)
+        label = f"{record.employee.employee_code} {record.employee.name}"
+        day = record.attendance_date
+        record.delete()
+        audit.record(request, f"Deleted attendance record {day:%d %b %Y}", label)
+        return Response(status=status.HTTP_204_NO_CONTENT)
 
 
 class OptionsView(AttendanceView):
@@ -207,7 +286,10 @@ class OptionsView(AttendanceView):
             "employees": [],
             "users": [],
         }
-        if any(flags[c] for c in ("view_all", "employee_view", "employee_manage", "leave_view", "calendar_view", "report_view")):
+        data["can_enter_attendance"] = is_attendance_manager(user)
+        data["can_delete"] = has_any_role(user, ["admin"])
+        if data["can_enter_attendance"] or any(flags[c] for c in ("view_all", "employee_view", "employee_manage", "leave_view",
+                                                                    "calendar_view", "report_view")):
             data["employees"] = [employee_brief(e) for e in current_employees()]
         if flags["employee_manage"]:
             linked = current_employees().exclude(user=None).values_list("user_id", flat=True)

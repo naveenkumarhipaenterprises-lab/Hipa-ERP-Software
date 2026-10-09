@@ -58,6 +58,10 @@ MODULE_WRITE = {
 }
 
 
+# Who may enter or correct attendance for another person (forgot to check in / out, came late)
+ATTENDANCE_MANAGERS = ["admin", "management"]
+
+
 def role_of(user):
     if not user or not user.is_authenticated:
         return None

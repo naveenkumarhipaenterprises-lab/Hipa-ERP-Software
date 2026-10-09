@@ -17,6 +17,8 @@ import { isGstin } from '../../../utils/validation'
 import { choiceOptions, dash, date, list, money, optionalNumber, withAll } from '../shared'
 import ListToolbar from '../../../components/common/ListToolbar'
 import { PURCHASE_COLUMNS } from './purchaseColumns'
+import { useAuth } from '../../../hooks/useAuth'
+import { isSuperAdmin } from '../../../utils/constants'
 
 const SORTS = [
   { value: 'name', label: 'Name A–Z' },
@@ -53,6 +55,7 @@ export default function SuppliersPanel({ options, canManage, refreshKey, onChang
   const [editing, setEditing] = useState(null) // supplier row | {} for new
   const [viewing, setViewing] = useState(null)
   const [removing, setRemoving] = useState(null)
+  const canDelete = isSuperAdmin(useAuth().user) // deleting is for Super Admins only
   const l = usePagedList(purchaseApi.listSuppliers, { status: '', state: '', ordering: 'name' }, refreshKey)
   const statuses = choiceOptions(options.data?.supplier_statuses)
 
@@ -88,7 +91,7 @@ export default function SuppliersPanel({ options, canManage, refreshKey, onChang
         <span className="row-actions">
           <Button size="sm" variant="ghost" icon={Eye} onClick={() => setViewing(r)} aria-label={`View ${r.name}`} />
           {canManage && <Button size="sm" variant="ghost" icon={Pencil} onClick={() => setEditing(r)} aria-label={`Edit ${r.name}`} />}
-          {canManage && <Button size="sm" variant="ghost" icon={Trash2} onClick={() => setRemoving(r)} aria-label={`Delete ${r.name}`} />}
+          {canManage && canDelete && <Button size="sm" variant="ghost" icon={Trash2} onClick={() => setRemoving(r)} aria-label={`Delete ${r.name}`} />}
         </span>
       ),
     },

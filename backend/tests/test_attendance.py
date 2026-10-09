@@ -495,7 +495,9 @@ class HolidayTests(AttendanceBase):
         _m, manager = self.worker("holiday_manage", username="manager")
         res = manager.patch(f"{API}/attendance/holidays/{hid}/", {"name": "TEST Deepavali"}, format="json")
         self.assertEqual((res.data["name"], res.data["date"]), ("TEST Deepavali", date(2026, 11, 9)))
-        self.assertEqual(manager.delete(f"{API}/attendance/holidays/{hid}/").status_code, 204)
+        # Deleting is for Super Admins only, even with the holiday permission
+        self.assertEqual(manager.delete(f"{API}/attendance/holidays/{hid}/").status_code, 403)
+        self.assertEqual(self.admin_api.delete(f"{API}/attendance/holidays/{hid}/").status_code, 204)
         self.assertFalse(OfficeHoliday.objects.exists())
 
     def test_holidays_are_never_absent_and_count_once(self):

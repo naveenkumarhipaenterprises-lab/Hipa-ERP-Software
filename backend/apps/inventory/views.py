@@ -15,7 +15,7 @@ from apps.core.views import ModuleAPIView
 from services import audit
 
 from .models import Product, StockMovement
-from .services import move_stock
+from .services import UNDOABLE, move_stock, undo_movement
 
 S = Product.StockStatus
 STATUS_FILTERS = {
@@ -45,7 +45,7 @@ def item_row(p):
 def movement_row(m):
     note = m.note or (f"{m.get_source_display()} {m.reference}".strip() if m.source != StockMovement.Source.MANUAL else "")
     return {"id": m.id, "type": m.type, "product": m.product.name, "quantity_kg": num(m.quantity_kg),
-            "created_at": m.created_at, "note": note or None}
+            "created_at": m.created_at, "note": note or None, "can_delete": m.source in UNDOABLE}
 
 
 def stock_on(day, products):
@@ -219,6 +219,17 @@ class MovementsView(InventoryView):
         movement = move_stock(product, type_, qty, note=note, user=request.user)
         audit.record(request, f"Recorded stock {'in' if type_ == 'in' else 'out'}", f"{product.name} {qty} kg")
         return Response(movement_row(movement), status=status.HTTP_201_CREATED)
+
+
+class MovementDetailView(InventoryView):
+    """A Super Admin deletes a wrong hand-entered stock movement; the stock is put back."""
+
+    def delete(self, request, pk):
+        m = get_object_or_404(StockMovement.objects.select_related("product"), pk=pk)
+        label = f"{m.product.name} {m.get_type_display()} {m.quantity_kg.normalize():f} kg"
+        undo_movement(m)
+        audit.record(request, "Deleted stock movement", label)
+        return Response(status=status.HTTP_204_NO_CONTENT)
 
 
 class ItemDetailView(InventoryView):

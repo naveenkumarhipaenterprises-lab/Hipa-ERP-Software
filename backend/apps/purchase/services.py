@@ -50,6 +50,28 @@ def move_material(material, type, quantity, *, source=MaterialMovement.Source.AD
     return movement
 
 
+# Raw-material movements entered by hand; receipts and returns are corrected in their own documents
+UNDOABLE_MATERIAL = (MaterialMovement.Source.USAGE, MaterialMovement.Source.ADJUSTMENT, MaterialMovement.Source.OPENING)
+
+
+@transaction.atomic
+def undo_material_movement(movement):
+    """Deletes a hand-entered raw-material movement and puts the stock back (Super Admin corrections)."""
+    if movement.source not in UNDOABLE_MATERIAL:
+        raise ValidationError({"detail": f"This movement came from a {movement.get_source_display().lower()}; correct it there instead."})
+    locked = RawMaterial.objects.select_for_update(of=("self",)).get(pk=movement.material_id)
+    if movement.type == MaterialMovement.Type.IN:
+        if movement.quantity > locked.current_stock:
+            raise ValidationError({"detail": f"Only {qty_text(locked.current_stock, locked.unit)} of {locked.name} is left, "
+                                             "so this stock-in can't be taken back."})
+        locked.current_stock -= movement.quantity
+    else:
+        locked.current_stock += movement.quantity
+    locked.save(update_fields=["current_stock", "updated_at"])
+    movement.delete()
+    return locked
+
+
 def move_item(material, product, type, quantity, *, reference, note="", date=None, user=None, material_source, product_source):
     """Stock movement for whichever item a purchase is for."""
     if material:

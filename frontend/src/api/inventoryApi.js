@@ -33,5 +33,7 @@ export const inventoryApi = {
   createItem: (item) => api.post('/inventory/items/', item),
   updateItem: (id, changes) => api.patch(`/inventory/items/${id}/`, changes),
   recordMovement: (movement) => api.post('/inventory/movements/', movement),
+  // Super Admin only: deletes a wrong hand-entered movement and puts the stock back
+  deleteMovement: (id) => api.delete(`/inventory/movements/${id}/`),
   exportItems: () => api.download('/inventory/items/export/', {}, 'hipa-inventory-report.csv'),
 }

@@ -11,6 +11,8 @@ import Loader from '../../../components/common/Loader'
 import { useApi } from '../../../hooks/useApi'
 import { useToast } from '../../../hooks/useToast'
 import { clock, day, list } from '../shared'
+import { useAuth } from '../../../hooks/useAuth'
+import { isSuperAdmin } from '../../../utils/constants'
 
 const WEEKDAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
 const MONTH_NAMES = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December']
@@ -44,6 +46,7 @@ export default function CalendarPanel({ options, refreshKey, onChanged }) {
   const data = cal.data
   const shown = data?.month ?? month
   const canManage = Boolean(o.permissions?.holiday_manage)
+  const canDelete = isSuperAdmin(useAuth().user) // deleting is for Super Admins only
 
   const byDate = Object.fromEntries(list(data?.days).map((d) => [d.date, d]))
   let cells = []
@@ -151,7 +154,7 @@ export default function CalendarPanel({ options, refreshKey, onChanged }) {
                     {canManage && (
                       <span className="row-actions">
                         <Button size="sm" variant="ghost" icon={Pencil} onClick={() => setHolidayForm({ holiday: h })} aria-label={`Edit ${h.name}`} />
-                        <Button size="sm" variant="ghost" icon={Trash2} className="btn--tone-red" onClick={() => setDeleting(h)} aria-label={`Delete ${h.name}`} />
+                        {canDelete && <Button size="sm" variant="ghost" icon={Trash2} className="btn--tone-red" onClick={() => setDeleting(h)} aria-label={`Delete ${h.name}`} />}
                       </span>
                     )}
                   </li>
