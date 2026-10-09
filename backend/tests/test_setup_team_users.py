@@ -31,7 +31,7 @@ class SetupTeamUsersTests(TestCase):
         )
         admin = User.objects.get(email="test.admin@test.invalid")
         self.assertEqual(admin.role, "admin")
-        self.assertTrue(admin.is_superuser and admin.is_staff)
+        self.assertFalse(admin.is_superuser)  # Super Admin role only; the owner is never granted by the file
         self.assertFalse(admin.has_usable_password())  # sets it from the invitation e-mail
         seller = User.objects.get(email="test.seller@test.invalid")
         self.assertEqual(seller.role, "sales")

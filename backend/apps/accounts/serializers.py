@@ -13,7 +13,7 @@ class UserSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = User
-        fields = ["id", "name", "email", "username", "role", "roles", "attendance_permissions"]
+        fields = ["id", "name", "email", "username", "role", "roles", "attendance_permissions", "is_owner"]
 
     def get_attendance_permissions(self, obj):
         from apps.attendance import permissions as attendance_perms

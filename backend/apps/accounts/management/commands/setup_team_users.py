@@ -20,7 +20,7 @@ CSV columns (header row required):
 
 New users get no password: they receive the usual invitation e-mail with a link to set their own
 (the same e-mail as Settings -> User Management -> Invite). Existing passwords are never touched.
-Super Admins are also made Django superusers, so they can open /admin/ as well.
+The owner (the Django superuser) is never changed here: only the owner may add or change Super Admin accounts.
 """
 import csv
 from datetime import date, datetime
@@ -216,8 +216,6 @@ class Command(BaseCommand):
 
             user = User(username=unique_username(p["email"]), email=p["email"], name=p["name"], role=p["role"],
                         extra_roles=p["extra_roles"])
-            if p["role"] == Role.ADMIN:
-                user.is_superuser = user.is_staff = True
             user.set_unusable_password()
             user.save()
             changes = ["created"]
@@ -235,9 +233,6 @@ class Command(BaseCommand):
                 if p["role"] != Role.ADMIN and sorted(user.all_roles[1:]) != sorted(p["extra_roles"]):
                     changes.append("extra roles: " + (", ".join(Role(r).label for r in p["extra_roles"]) or "none"))
                     user.extra_roles = p["extra_roles"]
-            if p["role"] == Role.ADMIN and not (user.is_superuser and user.is_staff):
-                user.is_superuser = user.is_staff = True
-                changes.append("made superuser")
             if not user.name:
                 user.name = p["name"]
                 changes.append("name")

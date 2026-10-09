@@ -24,7 +24,7 @@ class AuthTests(TestCase):
         self.assertIn("refresh", res.data)
         self.assertEqual(res.data["user"], {"id": self.user.id, "name": "TEST sales", "email": "ravi@test.invalid",
                                             "username": "ravi", "role": "sales", "roles": ["sales"],
-                                            "attendance_permissions": []})
+                                            "attendance_permissions": [], "is_owner": False})
         self.assertTrue(LoginActivity.objects.filter(user=self.user, success=True).exists())
 
     def test_login_with_email_case_insensitive(self):

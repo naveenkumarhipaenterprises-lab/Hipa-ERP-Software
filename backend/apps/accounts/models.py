@@ -30,6 +30,11 @@ class User(AbstractUser):
         return Role.ADMIN if self.is_superuser else self.role
 
     @property
+    def is_owner(self):
+        """The owner (a Django superuser) is the only one who may create or change Super Admin accounts."""
+        return self.is_superuser
+
+    @property
     def all_roles(self):
         """The main role first, then any extra roles (valid, distinct, never Super Admin)."""
         main = self.effective_role

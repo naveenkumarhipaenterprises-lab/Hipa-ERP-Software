@@ -50,6 +50,10 @@ export default function UsersSection({ options }) {
   const roleLabel = (v) => roles.find((r) => r.value === v)?.label ?? ROLE_LABELS[v] ?? v
   const isMe = (u) => me && (u.id === me.id || (u.email && u.email === me.email))
   const iAmSuperAdmin = me?.role === 'admin'
+  // Only the owner may add or change Super Admin accounts (the server enforces it too)
+  const iAmOwner = Boolean(me?.is_owner)
+  const lockedForMe = (u) => u.role === 'admin' && !iAmOwner
+  const roleChoices = iAmOwner ? roles : roles.filter((r) => r.value !== 'admin')
 
   const refresh = () => setRefreshKey((k) => k + 1)
   const attendancePermissions = list(options.data?.attendance_permissions)
@@ -101,12 +105,12 @@ export default function UsersSection({ options }) {
       ? [
           { name: 'name', label: 'Full name', required: true, full: true },
           { name: 'email', label: 'Email', type: 'email', required: true, full: true },
-          { name: 'role', label: 'Role', type: 'select', required: true, options: roles, full: true },
+          { name: 'role', label: 'Role', type: 'select', required: true, options: roleChoices, full: true },
         ]
       : [
           { name: 'name', label: 'Full name', required: true, full: true },
           // Your own role and status are locked so you can't lock yourself out
-          ...(self ? [] : [{ name: 'role', label: 'Role', type: 'select', required: true, options: roles }]),
+          ...(self ? [] : [{ name: 'role', label: 'Role', type: 'select', required: true, options: roleChoices }]),
           ...(self || statuses.length === 0 ? [] : [{ name: 'status', label: 'Status', type: 'select', required: true, options: statuses }]),
         ]
 
@@ -182,7 +186,7 @@ export default function UsersSection({ options }) {
                       Attendance
                     </Button>
                   )}
-                  {iAmSuperAdmin && !isMe(r) && (
+                  {iAmSuperAdmin && !isMe(r) && !lockedForMe(r) && (
                     <Button size="sm" variant="ghost" onClick={() => setPasswordFor(r)} aria-label={`Set password for ${r.name || r.email}`}>
                       Password
                     </Button>
@@ -192,9 +196,11 @@ export default function UsersSection({ options }) {
                       Roles
                     </Button>
                   )}
-                  <Button size="sm" variant="soft" onClick={() => setEditing(r)} aria-label={`Edit ${r.name || r.email}`}>
-                    Edit
-                  </Button>
+                  {!lockedForMe(r) && (
+                    <Button size="sm" variant="soft" onClick={() => setEditing(r)} aria-label={`Edit ${r.name || r.email}`}>
+                      Edit
+                    </Button>
+                  )}
                 </span>
               ),
             },

@@ -124,8 +124,8 @@ class UsersView(ModuleMixin, generics.GenericAPIView):
         data = s.InviteUserSerializer(data=request.data)
         data.is_valid(raise_exception=True)
         v = data.validated_data
-        if v["role"] == Role.ADMIN and request.user.effective_role != Role.ADMIN:
-            raise PermissionDenied("Only a Super Admin can invite another Super Admin.")
+        if v["role"] == Role.ADMIN and not request.user.is_owner:
+            raise PermissionDenied("Only the owner can add or change Super Admin accounts.")
         with transaction.atomic():
             user = User(username=unique_username(v["email"]), email=v["email"], name=v["name"].strip(), role=v["role"],
                         extra_roles=v.get("extra_roles", []))
@@ -146,12 +146,12 @@ class UserDetailView(SettingsView):
         data.is_valid(raise_exception=True)
         v = data.validated_data
         me = request.user
-        is_admin = me.effective_role == Role.ADMIN
         if user.pk == me.pk and (("role" in v and v["role"] != me.effective_role) or v.get("status") == "inactive"
                                  or ("extra_roles" in v and sorted(set(v["extra_roles"]) - {me.effective_role}) != sorted(me.all_roles[1:]))):
             raise ValidationError({"detail": "You can't change your own role or deactivate yourself."})
-        if not is_admin and (user.effective_role == Role.ADMIN or v.get("role") == Role.ADMIN):
-            raise PermissionDenied("Only a Super Admin can change Super Admin accounts.")
+        # Super Admin accounts (and making someone a Super Admin) belong to the owner alone
+        if not me.is_owner and (user.effective_role == Role.ADMIN or v.get("role") == Role.ADMIN):
+            raise PermissionDenied("Only the owner can add or change Super Admin accounts.")
         if user.is_superuser and "role" in v and v["role"] != Role.ADMIN:
             raise ValidationError({"role": ["This account is a Django superuser; change it in the admin site."]})
 
@@ -191,6 +191,8 @@ class UserPasswordView(SettingsView):
         user = get_object_or_404(User, pk=pk)
         if user.pk == request.user.pk:
             raise ValidationError({"detail": "Change your own password in Settings → Security."})
+        if user.effective_role == Role.ADMIN and not request.user.is_owner:
+            raise PermissionDenied("Only the owner can add or change Super Admin accounts.")
         data = s.SetPasswordSerializer(data=request.data)
         data.is_valid(raise_exception=True)
         password = data.validated_data["password"]
