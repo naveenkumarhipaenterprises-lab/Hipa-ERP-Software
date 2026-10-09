@@ -30,6 +30,9 @@ class Report(models.Model):
     range_label = models.CharField(max_length=60)
     format = models.CharField(max_length=4, choices=Format.choices)
     status = models.CharField(max_length=10, choices=Status.choices, default=Status.PROCESSING)
+    # The generated file is kept in the database: Vercel's servers have no lasting disk. `file` holds only reports
+    # generated before this change (saved on the server's disk then).
+    content = models.BinaryField(null=True, blank=True, editable=False)
     file = models.FileField(upload_to="reports/%Y/%m/", blank=True)
     error = models.CharField(max_length=500, blank=True)
     created_by = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, on_delete=models.SET_NULL, related_name="reports")

@@ -357,8 +357,12 @@ class WorkflowTests(TestCase):
             res = self.api.get(f"{API}/reports/{report['id']}/download/")
             self.assertEqual(res.status_code, 200)
             self.assertIn(f".{fmt}", res["Content-Disposition"])
-            b"".join(res.streaming_content)
+            self.assertTrue(res.content)
         self.assertEqual(self.api.get(f"{API}/reports/").data["count"], 3)
+        # Kept in the database, not on the server's disk (Vercel has no lasting disk)
+        from apps.reports.models import Report
+        self.assertTrue(all(r.content and not r.file for r in Report.objects.all()))
+        self.assertTrue(all(row["download_available"] for row in self.api.get(f"{API}/reports/").data["results"]))
 
     @override_settings(EMAIL_BACKEND="django.core.mail.backends.locmem.EmailBackend")
     def test_invite_and_update_user(self):
