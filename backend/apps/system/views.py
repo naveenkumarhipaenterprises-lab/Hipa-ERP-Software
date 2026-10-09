@@ -1,8 +1,9 @@
 import re
 
 from django.conf import settings
-from django.contrib.auth import get_user_model
+from django.contrib.auth import get_user_model, password_validation
 from django.contrib.auth.tokens import default_token_generator
+from django.core.exceptions import ValidationError as DjangoValidationError
 from django.core.mail import send_mail
 from django.db import transaction
 from django.db.models import Q
@@ -179,6 +180,29 @@ class UserDetailView(SettingsView):
         if changes:
             audit.record(request, f"Updated user ({', '.join(changes)})"[:200], user.email)
         return Response(s.UserRowSerializer(user).data)
+
+
+class UserPasswordView(SettingsView):
+    """A Super Admin sets another person's password. That person is signed out everywhere."""
+
+    def post(self, request, pk):
+        if request.user.effective_role != Role.ADMIN:
+            raise PermissionDenied("Only a Super Admin can set another person's password.")
+        user = get_object_or_404(User, pk=pk)
+        if user.pk == request.user.pk:
+            raise ValidationError({"detail": "Change your own password in Settings → Security."})
+        data = s.SetPasswordSerializer(data=request.data)
+        data.is_valid(raise_exception=True)
+        password = data.validated_data["password"]
+        try:
+            password_validation.validate_password(password, user)
+        except DjangoValidationError as exc:
+            raise ValidationError({"password": list(exc.messages)})
+        user.set_password(password)
+        user.save(update_fields=["password", "updated_at"])
+        user.revoke_tokens()  # signed out on every device; they sign in again with the new password
+        audit.record(request, "Set user password", user.email)
+        return Response({"detail": f"Password set for {user.name or user.email}."})
 
 
 class NotificationPreferencesView(SettingsView):

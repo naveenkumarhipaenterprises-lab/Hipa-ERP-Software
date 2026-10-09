@@ -129,6 +129,10 @@ class InviteUserSerializer(serializers.Serializer):
         return value
 
 
+class SetPasswordSerializer(serializers.Serializer):
+    password = serializers.CharField(trim_whitespace=False, max_length=128)
+
+
 class UpdateUserSerializer(serializers.Serializer):
     name = serializers.CharField(max_length=150, required=False)
     role = serializers.ChoiceField(choices=Role.choices, required=False)

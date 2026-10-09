@@ -32,6 +32,7 @@ import { api, cleanParams as clean, tokenStorage } from './client'
  * GET   /settings/security/                       ->  { two_factor_enabled }
  * PATCH /settings/security/                       { two_factor_enabled }
  * GET   /settings/security/login-activity/?page=  ->  { count, results: [{ id, user, device?, ip?, location?, time, success }] }
+ * POST  /settings/users/<id>/password/           { password }  (Super Admin only)
  * POST  /auth/password/change/                    { current_password, new_password }  ->  { detail, access, refresh }
  *
  * GET /settings/audit-logs/?page=&page_size=&search=   ->  { count, results: [{ id, time, user, action, target? }] }
@@ -48,6 +49,8 @@ export const settingsApi = {
   listUsers: (params) => api.get('/settings/users/', clean(params)),
   inviteUser: (user) => api.post('/settings/users/', user),
   updateUser: (id, changes) => api.patch(`/settings/users/${id}/`, changes),
+  // Super Admin only: sets another person's password and signs them out everywhere
+  setUserPassword: (id, password) => api.post(`/settings/users/${id}/password/`, { password }),
 
   getNotifications: () => api.get('/settings/notifications/'),
   setNotification: (key, enabled) => api.patch('/settings/notifications/', { key, enabled }),

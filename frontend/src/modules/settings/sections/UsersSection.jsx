@@ -9,6 +9,7 @@ import ErrorMessage from '../../../components/common/ErrorMessage'
 import FormModal from '../../../components/common/FormModal'
 import AttendancePermissionsModal from './AttendancePermissionsModal'
 import ExtraRolesModal from './ExtraRolesModal'
+import SetPasswordModal from './SetPasswordModal'
 import Table from '../../../components/common/Table'
 import { useApi } from '../../../hooks/useApi'
 import { useAuth } from '../../../hooks/useAuth'
@@ -34,6 +35,7 @@ export default function UsersSection({ options }) {
   const [confirming, setConfirming] = useState(null) // { user, changes }
   const [permsFor, setPermsFor] = useState(null) // user whose Attendance permissions are open
   const [rolesFor, setRolesFor] = useState(null) // user whose extra roles are open
+  const [passwordFor, setPasswordFor] = useState(null) // user whose password a Super Admin is setting
   const [refreshKey, setRefreshKey] = useState(0)
   const query = useDebouncedValue(search.trim())
   const [page, setPage] = usePageReset(query)
@@ -47,6 +49,7 @@ export default function UsersSection({ options }) {
   const statuses = list(options.data?.user_statuses)
   const roleLabel = (v) => roles.find((r) => r.value === v)?.label ?? ROLE_LABELS[v] ?? v
   const isMe = (u) => me && (u.id === me.id || (u.email && u.email === me.email))
+  const iAmSuperAdmin = me?.role === 'admin'
 
   const refresh = () => setRefreshKey((k) => k + 1)
   const attendancePermissions = list(options.data?.attendance_permissions)
@@ -59,6 +62,12 @@ export default function UsersSection({ options }) {
   const saveExtraRoles = async (extraRoles) => {
     await settingsApi.updateUser(rolesFor.id, { extra_roles: extraRoles })
     toast.success(`Roles saved for ${rolesFor.name || rolesFor.email}`)
+    refresh()
+  }
+
+  const savePassword = async (password) => {
+    await settingsApi.setUserPassword(passwordFor.id, password)
+    toast.success(`Password set for ${passwordFor.name || passwordFor.email}`)
     refresh()
   }
 
@@ -173,6 +182,11 @@ export default function UsersSection({ options }) {
                       Attendance
                     </Button>
                   )}
+                  {iAmSuperAdmin && !isMe(r) && (
+                    <Button size="sm" variant="ghost" onClick={() => setPasswordFor(r)} aria-label={`Set password for ${r.name || r.email}`}>
+                      Password
+                    </Button>
+                  )}
                   {!isMe(r) && r.role !== 'admin' && (
                     <Button size="sm" variant="ghost" onClick={() => setRolesFor(r)} aria-label={`Extra roles for ${r.name || r.email}`}>
                       Roles
@@ -198,6 +212,7 @@ export default function UsersSection({ options }) {
         fields={fields}
         onSubmit={saveUser}
       />
+      <SetPasswordModal key={`pw-${passwordFor?.id}`} user={passwordFor} onClose={() => setPasswordFor(null)} onSave={savePassword} />
       <ExtraRolesModal key={`roles-${rolesFor?.id}`} user={rolesFor} roles={roles} onClose={() => setRolesFor(null)} onSave={saveExtraRoles} />
       <AttendancePermissionsModal key={permsFor?.id} user={permsFor} permissions={attendancePermissions}
                                   onClose={() => setPermsFor(null)} onSave={saveAttendancePermissions} />
