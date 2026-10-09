@@ -16,7 +16,7 @@ import StatCard from '../../components/dashboard/StatCard'
 import { useApi } from '../../hooks/useApi'
 import { useAuth } from '../../hooks/useAuth'
 import { useToast } from '../../hooks/useToast'
-import { CHART_COLORS, DATE_RANGES } from '../../utils/constants'
+import { CHART_COLORS, DATE_RANGES, hasAnyRole } from '../../utils/constants'
 import { formatCompact, formatINR, formatNumber, formatPercent } from '../../utils/formatters'
 import CampaignFormModal from './components/CampaignFormModal'
 import CampaignsTable from './components/CampaignsTable'
@@ -54,7 +54,7 @@ export default function MarketingPage() {
   const [modal, setModal] = useState(null) // 'post' | 'calendar'
   const [refreshKey, setRefreshKey] = useState(0)
 
-  const canManage = MARKETING_MANAGERS.includes(user?.role)
+  const canManage = hasAnyRole(user, MARKETING_MANAGERS)
   // ?new=campaign (from the dashboard's Quick Actions) opens the campaign form
   const creatingCampaign = canManage && params.get('new') === 'campaign'
 

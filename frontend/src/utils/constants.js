@@ -105,8 +105,18 @@ export const NAV_ITEMS = [
   { key: 'settings', label: 'Settings', path: '/settings', icon: Settings, roles: ['admin', 'management'] },
 ]
 
-export const canAccess = (role, moduleKey) =>
-  NAV_ITEMS.find((n) => n.key === moduleKey)?.roles.includes(role) ?? false
+/** Every role the user holds: the main role plus any extra roles (e.g. Purchase + Inventory). */
+export const userRoles = (user) =>
+  Array.isArray(user?.roles) && user.roles.length ? user.roles : user?.role ? [user.role] : []
+
+/** True when any of the user's roles is in `roles`. The server enforces the same rule. */
+export const hasAnyRole = (user, roles) => userRoles(user).some((r) => roles.includes(r))
+
+/** `roles` may be one role or a list of roles. */
+export const canAccess = (roles, moduleKey) => {
+  const allowed = NAV_ITEMS.find((n) => n.key === moduleKey)?.roles ?? []
+  return (Array.isArray(roles) ? roles : [roles]).some((r) => allowed.includes(r))
+}
 
 /** Chart series colours (styling only; no business meaning). */
 export const CHART_COLORS =['#1f7a3d', '#2f6fde', '#f59e0b', '#e5484d', '#8b5cf6', '#0ea5a4', '#a0522d', '#64748b']

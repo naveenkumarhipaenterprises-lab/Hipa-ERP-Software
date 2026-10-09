@@ -14,7 +14,7 @@ import StatCard from '../../components/dashboard/StatCard'
 import { useApi } from '../../hooks/useApi'
 import { useAuth } from '../../hooks/useAuth'
 import { useToast } from '../../hooks/useToast'
-import { CHART_COLORS, DATE_RANGES } from '../../utils/constants'
+import { CHART_COLORS, DATE_RANGES, hasAnyRole } from '../../utils/constants'
 import { formatDate, formatNumber, formatPercent } from '../../utils/formatters'
 import AuditModal from './components/AuditModal'
 import AuditsTable from './components/AuditsTable'
@@ -51,7 +51,7 @@ export default function QualityPage() {
   const [refreshKey, setRefreshKey] = useState(0)
   const [downloading, setDownloading] = useState(false)
 
-  const canManage = QUALITY_MANAGERS.includes(user?.role)
+  const canManage = hasAnyRole(user, QUALITY_MANAGERS)
   const overview = useApi(() => qualityApi.getOverview({ range }), [range, refreshKey])
   const trend = useApi(() => qualityApi.getTrend({ range, granularity }), [range, granularity, refreshKey])
   const options = useApi(() => qualityApi.getOptions(), [refreshKey])

@@ -17,7 +17,7 @@ import StatCard from '../../components/dashboard/StatCard'
 import { useApi } from '../../hooks/useApi'
 import { useAuth } from '../../hooks/useAuth'
 import { useToast } from '../../hooks/useToast'
-import { CHART_COLORS, DATE_RANGES } from '../../utils/constants'
+import { CHART_COLORS, DATE_RANGES, hasAnyRole } from '../../utils/constants'
 import { formatNumber, formatPercent } from '../../utils/formatters'
 import CustomerDetailsModal from './components/CustomerDetailsModal'
 import CustomerFormModal from './components/CustomerFormModal'
@@ -51,8 +51,8 @@ export default function CustomersPage() {
   const [viewing, setViewing] = useState(null)
   const [refreshKey, setRefreshKey] = useState(0)
 
-  const canEdit = CUSTOMER_EDITORS.includes(user?.role)
-  const canOffer = OFFER_SENDERS.includes(user?.role)
+  const canEdit = hasAnyRole(user, CUSTOMER_EDITORS)
+  const canOffer = hasAnyRole(user, OFFER_SENDERS)
   // ?new=customer (from the dashboard or the New Order form) opens the add form
   const adding = canEdit && params.get('new') === 'customer'
 

@@ -264,10 +264,9 @@ def quotations(p):
 def ai_business(p, user=None):
     """Stored analytics insights (from run_analytics) the user's role may see, plus the latest run's status."""
     from apps.ai_assistant.models import AnalyticsRun, Insight
-    from apps.core.roles import MODULE_READ, role_of
+    from apps.core.roles import MODULE_READ, modules_readable
 
-    role = role_of(user) if user else None
-    modules = [m for m, roles in MODULE_READ.items() if role in roles] if user else list(MODULE_READ)
+    modules = modules_readable(user) if user else list(MODULE_READ)
     found = list(Insight.objects.filter(module__in=modules))
     run = AnalyticsRun.objects.exclude(finished_at=None).first()
     title = "AI Business Report"

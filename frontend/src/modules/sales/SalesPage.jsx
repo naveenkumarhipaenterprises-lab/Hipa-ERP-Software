@@ -9,7 +9,7 @@ import PageHeader from '../../components/common/PageHeader'
 import { useApi } from '../../hooks/useApi'
 import { useAuth } from '../../hooks/useAuth'
 import { useToast } from '../../hooks/useToast'
-import { DATE_RANGES, NAV_ITEMS } from '../../utils/constants'
+import { DATE_RANGES, hasAnyRole, NAV_ITEMS } from '../../utils/constants'
 import InvoicesPanel from './components/InvoicesPanel'
 import NewOrderModal from './components/NewOrderModal'
 import OrdersPanel from './components/OrdersPanel'
@@ -35,8 +35,8 @@ export default function SalesPage() {
   const [record, setRecord] = useState(null) // { kind: 'payment' | 'return', invoice? }
   const justCreated = useRef(false)
 
-  const canManage = SALES_MANAGERS.includes(user?.role)
-  const canReceive = PAYMENT_RECORDERS.includes(user?.role)
+  const canManage = hasAnyRole(user, SALES_MANAGERS)
+  const canReceive = hasAnyRole(user, PAYMENT_RECORDERS)
   const tab = TABS.some((t) => t.tab === params.get('tab')) ? params.get('tab') : TABS[0].tab
   // ?new=order (e.g. from the dashboard's Quick Actions) opens the form
   const newOrderOpen = canManage && params.get('new') === 'order'

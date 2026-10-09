@@ -10,6 +10,9 @@ class User(AbstractUser):
     email = models.EmailField("email address", unique=True)
     name = models.CharField("full name", max_length=150)
     role = models.CharField(max_length=20, choices=Role.choices, default=Role.SALES, db_index=True)
+    # More team roles on top of `role`, for people who work in several areas (e.g. Purchase + Inventory).
+    # Access is the union of all their roles. Super Admin is only ever the main role.
+    extra_roles = models.JSONField(default=list, blank=True)
     updated_at = models.DateTimeField(auto_now=True)
     # Sign-in tokens carry this number; raising it cancels every token issued before (logout, password change/reset)
     token_version = models.PositiveIntegerField(default=0, editable=False)
@@ -26,7 +29,15 @@ class User(AbstractUser):
     def effective_role(self):
         return Role.ADMIN if self.is_superuser else self.role
 
+    @property
+    def all_roles(self):
+        """The main role first, then any extra roles (valid, distinct, never Super Admin)."""
+        main = self.effective_role
+        extras = [r for r in (self.extra_roles or []) if r in Role.values and r not in (Role.ADMIN, main)]
+        return [main, *dict.fromkeys(extras)]
+
     def save(self, *args, **kwargs):
+        self.extra_roles = [r for r in dict.fromkeys(self.extra_roles or []) if r in Role.values and r not in (Role.ADMIN, self.role)]
         if self.is_superuser:  # superusers act as admins; store that too, so the database doesn't say otherwise
             self.role = Role.ADMIN
         super().save(*args, **kwargs)

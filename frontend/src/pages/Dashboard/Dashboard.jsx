@@ -34,7 +34,7 @@ import BrandBanner from '../../modules/dashboard/components/BrandBanner'
 import OrderStatusList from '../../modules/dashboard/components/OrderStatusList'
 import PurchaseSection from '../../modules/dashboard/components/PurchaseSection'
 import UpcomingActivities from '../../modules/dashboard/components/UpcomingActivities'
-import { DATE_RANGES } from '../../utils/constants'
+import { DATE_RANGES, hasAnyRole } from '../../utils/constants'
 import { formatINR, formatINRShort, formatKg, formatNumber, formatPercent } from '../../utils/formatters'
 
 const TREND_PERIODS = [
@@ -86,7 +86,7 @@ export default function Dashboard() {
   const rangeLabel = DATE_RANGES.find((r) => r.value === range)?.label ?? ''
   const kpis = KPIS.filter((k) => can(k.module))
   const firstName = (user?.name || user?.username || '').split(' ')[0]
-  const actions = QUICK_ACTIONS.filter((a) => can(a.module) && (!a.roles || a.roles.includes(user?.role))).map((a) => ({ ...a, onClick: () => navigate(a.to) }))
+  const actions = QUICK_ACTIONS.filter((a) => can(a.module) && (!a.roles || hasAnyRole(user, a.roles))).map((a) => ({ ...a, onClick: () => navigate(a.to) }))
 
   const contribution = list(data?.product_contribution).map((p) => ({ name: p.name, value: Number(p.value) || 0 }))
   const contributionTotal = contribution.reduce((s, p) => s + p.value, 0)

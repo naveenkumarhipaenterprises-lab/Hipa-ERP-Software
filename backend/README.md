@@ -67,6 +67,19 @@ To regenerate `supabase/schema.sql` after adding migrations: `python scripts/exp
 
 A Django superuser always has the **Super Admin** role in the portal. Other users are invited from **Settings → User Management** (they receive an e-mail to set their password), or added in the Django admin.
 
+### Load the whole team at once
+
+`team_users.csv` (kept out of Git: it holds staff e-mails) lists each person with their employee ID, joining date and portal role. Load it into the database the backend is connected to (Supabase):
+
+```powershell
+.\.venv\Scripts\python.exe manage.py setup_team_users team_users.csv --dry-run   # preview, writes nothing
+.\.venv\Scripts\python.exe manage.py setup_team_users team_users.csv             # apply
+```
+
+- `role`: `admin` (Super Admin), `management`, `sales`, `purchase`, `inventory`, `marketing`, `finance` (Accounts), `quality` or `supply_chain`. A blank role skips the person's login until one is chosen (their Attendance employee record is still added).
+- New users get the invitation e-mail to set their own password. If e-mail isn't configured, the command prints each set-password link instead (valid 3 days). Existing passwords are never changed.
+- Super Admins also become Django superusers. Running it again only changes what differs; every change is written to **Settings → Audit Logs**.
+
 ### Run
 
 ```powershell

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { authService } from '../services/authService'
-import { canAccess } from '../utils/constants'
+import { canAccess, userRoles } from '../utils/constants'
 import { AuthContext } from './contexts'
 
 export function AuthProvider({ children }) {
@@ -41,7 +41,7 @@ export function AuthProvider({ children }) {
       sessionExpired,
       login,
       logout,
-      can: (moduleKey) => (user ? canAccess(user.role, moduleKey) : false),
+      can: (moduleKey) => (user ? canAccess(userRoles(user), moduleKey) : false),
     }),
     [user, sessionExpired, login, logout],
   )

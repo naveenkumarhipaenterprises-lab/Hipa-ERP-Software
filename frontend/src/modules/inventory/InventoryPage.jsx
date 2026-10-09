@@ -16,7 +16,7 @@ import StatCard from '../../components/dashboard/StatCard'
 import { useApi } from '../../hooks/useApi'
 import { useAuth } from '../../hooks/useAuth'
 import { useToast } from '../../hooks/useToast'
-import { CHART_COLORS, DATE_RANGES } from '../../utils/constants'
+import { CHART_COLORS, DATE_RANGES, hasAnyRole } from '../../utils/constants'
 import { formatCompact, formatINR, formatKg, formatNumber } from '../../utils/formatters'
 import InventoryItemsTable from './components/InventoryItemsTable'
 import LowStockAlerts from './components/LowStockAlerts'
@@ -56,7 +56,7 @@ export default function InventoryPage() {
   const [refreshKey, setRefreshKey] = useState(0)
   const [downloading, setDownloading] = useState(false)
 
-  const canManage = STOCK_MANAGERS.includes(user?.role)
+  const canManage = hasAnyRole(user, STOCK_MANAGERS)
   const overview = useApi(() => inventoryApi.getOverview({ range }), [range, refreshKey])
   const options = useApi(() => inventoryApi.getOptions(), [refreshKey])
 

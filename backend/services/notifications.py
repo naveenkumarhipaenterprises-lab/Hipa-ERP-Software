@@ -58,7 +58,7 @@ def notify(key, title, message="", type="info", link="", users=None):
     try:
         if users is None:
             roles = MODULE_READ.get(CATALOGUE[key][2], [])
-            users = [u for u in get_user_model().objects.filter(is_active=True) if u.effective_role in roles]
+            users = [u for u in get_user_model().objects.filter(is_active=True) if any(r in roles for r in u.all_roles)]
         Notification.objects.bulk_create(
             [Notification(user=u, key=key, title=title[:200], message=message, type=type, link=link[:200]) for u in users]
         )

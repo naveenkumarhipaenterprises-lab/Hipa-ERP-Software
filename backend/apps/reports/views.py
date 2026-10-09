@@ -9,7 +9,7 @@ from rest_framework.response import Response
 
 from apps.core import periods
 from apps.core.metrics import kpi
-from apps.core.roles import can_read, role_of
+from apps.core.roles import can_read, has_any_role
 from apps.core.views import ModuleAPIView
 from apps.customers.models import Customer
 from apps.sales import selectors
@@ -96,7 +96,7 @@ class ReportListView(ReportsView):
         qs = (Report.objects.select_related("created_by").defer("content").filter(type__in=visible_types(request.user))
               .annotate(stored=ExpressionWrapper(Q(content__isnull=False), output_field=BooleanField())))
         # Everyone sees their own reports; admins and management see all
-        if role_of(request.user) not in ("admin", "management"):
+        if not has_any_role(request.user, ("admin", "management")):
             qs = qs.filter(created_by=request.user)
         t = self.param("type")
         if t:
@@ -131,7 +131,7 @@ class DownloadView(ReportsView):
     def get(self, request, pk):
         report = get_object_or_404(Report, pk=pk)
         check_type(request.user, report.type)
-        if role_of(request.user) not in ("admin", "management") and report.created_by_id != request.user.id:
+        if not has_any_role(request.user, ("admin", "management")) and report.created_by_id != request.user.id:
             raise NotFound("Report not found.")
         if report.status != Report.Status.READY or (report.content is None and not report.file):
             raise NotFound("This report file is not available.")

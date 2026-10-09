@@ -8,6 +8,7 @@ import ConfirmDialog from '../../../components/common/ConfirmDialog'
 import ErrorMessage from '../../../components/common/ErrorMessage'
 import FormModal from '../../../components/common/FormModal'
 import AttendancePermissionsModal from './AttendancePermissionsModal'
+import ExtraRolesModal from './ExtraRolesModal'
 import Table from '../../../components/common/Table'
 import { useApi } from '../../../hooks/useApi'
 import { useAuth } from '../../../hooks/useAuth'
@@ -22,7 +23,7 @@ const list = (v) => (Array.isArray(v) ? v : [])
 const INACTIVE = /^(inactive|disabled|suspended)$/i
 
 /**
- * Team members: invite, change role or status, and set each person's Attendance permissions.
+ * Team members: invite, change role or status, extra roles, and set each person's Attendance permissions.
  * You can't change your own role or deactivate yourself.
  */
 export default function UsersSection({ options }) {
@@ -32,6 +33,7 @@ export default function UsersSection({ options }) {
   const [editing, setEditing] = useState(null) // 'new' | user
   const [confirming, setConfirming] = useState(null) // { user, changes }
   const [permsFor, setPermsFor] = useState(null) // user whose Attendance permissions are open
+  const [rolesFor, setRolesFor] = useState(null) // user whose extra roles are open
   const [refreshKey, setRefreshKey] = useState(0)
   const query = useDebouncedValue(search.trim())
   const [page, setPage] = usePageReset(query)
@@ -51,6 +53,12 @@ export default function UsersSection({ options }) {
   const saveAttendancePermissions = async (codes) => {
     await settingsApi.updateUser(permsFor.id, { attendance_permissions: codes })
     toast.success(`Attendance permissions saved for ${permsFor.name || permsFor.email}`)
+    refresh()
+  }
+
+  const saveExtraRoles = async (extraRoles) => {
+    await settingsApi.updateUser(rolesFor.id, { extra_roles: extraRoles })
+    toast.success(`Roles saved for ${rolesFor.name || rolesFor.email}`)
     refresh()
   }
 
@@ -136,7 +144,21 @@ export default function UsersSection({ options }) {
               ),
             },
             { key: 'email', header: 'Email', render: (r) => r.email || '—' },
-            { key: 'role', header: 'Role', render: (r) => (r.role ? <Badge tone="blue">{roleLabel(r.role)}</Badge> : '—') },
+            {
+              key: 'role',
+              header: 'Role',
+              render: (r) =>
+                r.role ? (
+                  <span className="row-actions">
+                    <Badge tone="blue">{roleLabel(r.role)}</Badge>
+                    {list(r.extra_roles).map((x) => (
+                      <Badge key={x}>{`+ ${roleLabel(x)}`}</Badge>
+                    ))}
+                  </span>
+                ) : (
+                  '—'
+                ),
+            },
             { key: 'status', header: 'Status', render: (r) => (r.status ? <Badge>{r.status}</Badge> : '—') },
             { key: 'last_login', header: 'Last Login', render: (r) => <span className="nowrap">{r.last_login ? formatDate(r.last_login) : 'Never'}</span> },
             {
@@ -149,6 +171,11 @@ export default function UsersSection({ options }) {
                   {attendancePermissions.length > 0 && (
                     <Button size="sm" variant="ghost" onClick={() => setPermsFor(r)} aria-label={`Attendance permissions for ${r.name || r.email}`}>
                       Attendance
+                    </Button>
+                  )}
+                  {!isMe(r) && r.role !== 'admin' && (
+                    <Button size="sm" variant="ghost" onClick={() => setRolesFor(r)} aria-label={`Extra roles for ${r.name || r.email}`}>
+                      Roles
                     </Button>
                   )}
                   <Button size="sm" variant="soft" onClick={() => setEditing(r)} aria-label={`Edit ${r.name || r.email}`}>
@@ -171,6 +198,7 @@ export default function UsersSection({ options }) {
         fields={fields}
         onSubmit={saveUser}
       />
+      <ExtraRolesModal key={`roles-${rolesFor?.id}`} user={rolesFor} roles={roles} onClose={() => setRolesFor(null)} onSave={saveExtraRoles} />
       <AttendancePermissionsModal key={permsFor?.id} user={permsFor} permissions={attendancePermissions}
                                   onClose={() => setPermsFor(null)} onSave={saveAttendancePermissions} />
       <ConfirmDialog

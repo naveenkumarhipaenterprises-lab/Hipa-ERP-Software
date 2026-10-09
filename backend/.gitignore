@@ -13,3 +13,6 @@ __pycache__/
 .pytest_cache/
 .coverage
 htmlcov/
+
+# Team list with real staff e-mails (load with: python manage.py setup_team_users team_users.csv)
+team_users.csv

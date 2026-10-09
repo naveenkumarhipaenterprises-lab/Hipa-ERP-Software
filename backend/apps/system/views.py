@@ -126,7 +126,8 @@ class UsersView(ModuleMixin, generics.GenericAPIView):
         if v["role"] == Role.ADMIN and request.user.effective_role != Role.ADMIN:
             raise PermissionDenied("Only a Super Admin can invite another Super Admin.")
         with transaction.atomic():
-            user = User(username=unique_username(v["email"]), email=v["email"], name=v["name"].strip(), role=v["role"])
+            user = User(username=unique_username(v["email"]), email=v["email"], name=v["name"].strip(), role=v["role"],
+                        extra_roles=v.get("extra_roles", []))
             user.set_unusable_password()
             user.save()
             try:
@@ -145,7 +146,8 @@ class UserDetailView(SettingsView):
         v = data.validated_data
         me = request.user
         is_admin = me.effective_role == Role.ADMIN
-        if user.pk == me.pk and (("role" in v and v["role"] != me.effective_role) or v.get("status") == "inactive"):
+        if user.pk == me.pk and (("role" in v and v["role"] != me.effective_role) or v.get("status") == "inactive"
+                                 or ("extra_roles" in v and sorted(set(v["extra_roles"]) - {me.effective_role}) != sorted(me.all_roles[1:]))):
             raise ValidationError({"detail": "You can't change your own role or deactivate yourself."})
         if not is_admin and (user.effective_role == Role.ADMIN or v.get("role") == Role.ADMIN):
             raise PermissionDenied("Only a Super Admin can change Super Admin accounts.")
@@ -159,6 +161,12 @@ class UserDetailView(SettingsView):
         if "role" in v and v["role"] != user.role and not user.is_superuser:
             user.role = v["role"]
             changes.append(f"role → {Role(v['role']).label}")
+        if "extra_roles" in v and user.effective_role != Role.ADMIN:  # a Super Admin already has everything
+            before = user.all_roles[1:]
+            user.extra_roles = v["extra_roles"]
+            after = [r for r in dict.fromkeys(v["extra_roles"]) if r not in (Role.ADMIN, user.role)]
+            if sorted(after) != sorted(before):
+                changes.append("extra roles: " + (", ".join(Role(r).label for r in after) or "none"))
         if "status" in v and (v["status"] == "active") != user.is_active:
             user.is_active = v["status"] == "active"
             changes.append("activated" if user.is_active else "deactivated")

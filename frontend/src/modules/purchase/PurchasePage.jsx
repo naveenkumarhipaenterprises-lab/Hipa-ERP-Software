@@ -7,7 +7,7 @@ import PageHeader from '../../components/common/PageHeader'
 import { useApi } from '../../hooks/useApi'
 import { useAuth } from '../../hooks/useAuth'
 import { useToast } from '../../hooks/useToast'
-import { DATE_RANGES, NAV_ITEMS } from '../../utils/constants'
+import { DATE_RANGES, hasAnyRole, NAV_ITEMS } from '../../utils/constants'
 import MaterialsPanel from './components/MaterialsPanel'
 import PurchaseFormModal from './components/PurchaseFormModal'
 import PurchaseOverview from './components/PurchaseOverview'
@@ -29,9 +29,9 @@ export default function PurchasePage() {
   const [refreshKey, setRefreshKey] = useState(0)
   const [modal, setModal] = useState(null) // { kind: 'purchase'|'receipt'|'return'|'payment', purchase?, prefill? }
 
-  const canManage = PURCHASE_MANAGERS.includes(user?.role)
-  const canPay = PAYMENT_MANAGERS.includes(user?.role)
-  const canRecordUsage = STOCK_RECORDERS.includes(user?.role)
+  const canManage = hasAnyRole(user, PURCHASE_MANAGERS)
+  const canPay = hasAnyRole(user, PAYMENT_MANAGERS)
+  const canRecordUsage = hasAnyRole(user, STOCK_RECORDERS)
   const tab = TABS.some((t) => t.tab === params.get('tab')) ? params.get('tab') : TABS[0].tab
   const options = useApi(() => purchaseApi.getOptions(), [refreshKey])
   const rangeLabel = DATE_RANGES.find((r) => r.value === range)?.label ?? ''

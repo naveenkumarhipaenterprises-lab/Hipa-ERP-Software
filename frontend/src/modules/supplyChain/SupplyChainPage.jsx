@@ -17,7 +17,7 @@ import StatCard from '../../components/dashboard/StatCard'
 import { useApi } from '../../hooks/useApi'
 import { useAuth } from '../../hooks/useAuth'
 import { useToast } from '../../hooks/useToast'
-import { CHART_COLORS, DATE_RANGES } from '../../utils/constants'
+import { CHART_COLORS, DATE_RANGES, hasAnyRole } from '../../utils/constants'
 import { formatINR, formatNumber, formatPercent } from '../../utils/formatters'
 import AlertFeed from './components/AlertFeed'
 import { SHIPMENT_COLUMNS } from './components/shipmentColumns'
@@ -63,7 +63,7 @@ export default function SupplyChainPage() {
 
   // Suppliers, raw materials and purchases are managed in the Purchase module
   const canOpenPurchase = can('purchase')
-  const canManage = SHIPMENT_MANAGERS.includes(user?.role)
+  const canManage = hasAnyRole(user, SHIPMENT_MANAGERS)
   const overview = useApi(() => supplyChainApi.getOverview({ range }), [range, refreshKey])
   const performance = useApi(() => supplyChainApi.getSupplierPerformance({ months }), [months, refreshKey])
   const options = useApi(() => supplyChainApi.getOptions(), [refreshKey])

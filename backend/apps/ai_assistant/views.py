@@ -8,7 +8,7 @@ from rest_framework.response import Response
 from rest_framework.throttling import ScopedRateThrottle
 
 from apps.core.exceptions import NotConfigured
-from apps.core.roles import MODULE_READ, can_read, role_of
+from apps.core.roles import can_read, modules_readable
 from apps.core.views import ModuleAPIView
 from services import ai_client
 
@@ -53,8 +53,7 @@ class StatusView(AIView):
 
 
 def visible_insights(user):
-    role = role_of(user)
-    modules = [m for m, roles in MODULE_READ.items() if role in roles]
+    modules = modules_readable(user)
     return Insight.objects.filter(module__in=modules)
 
 

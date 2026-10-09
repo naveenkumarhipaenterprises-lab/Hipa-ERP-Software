@@ -6,10 +6,12 @@ from .models import User
 
 class UserSerializer(serializers.ModelSerializer):
     role = serializers.CharField(source="effective_role", read_only=True)
+    # Main role plus extra roles; the web app shows menus and buttons for all of them
+    roles = serializers.ListField(source="all_roles", child=serializers.CharField(), read_only=True)
 
     class Meta:
         model = User
-        fields = ["id", "name", "email", "username", "role"]
+        fields = ["id", "name", "email", "username", "role", "roles"]
 
 
 class LoginSerializer(serializers.Serializer):

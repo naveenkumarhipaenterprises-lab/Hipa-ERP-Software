@@ -92,12 +92,16 @@ class BillingSettingsSerializer(serializers.ModelSerializer):
 
 class UserRowSerializer(serializers.ModelSerializer):
     role = serializers.CharField(source="effective_role")
+    extra_roles = serializers.SerializerMethodField()
     status = serializers.SerializerMethodField()
     attendance_permissions = serializers.SerializerMethodField()
 
     class Meta:
         model = User
-        fields = ["id", "name", "email", "role", "status", "last_login", "attendance_permissions"]
+        fields = ["id", "name", "email", "role", "extra_roles", "status", "last_login", "attendance_permissions"]
+
+    def get_extra_roles(self, obj):
+        return obj.all_roles[1:]
 
     def get_status(self, obj):
         return obj.status.capitalize()
@@ -111,6 +115,12 @@ class InviteUserSerializer(serializers.Serializer):
     name = serializers.CharField(max_length=150)
     email = serializers.EmailField()
     role = serializers.ChoiceField(choices=Role.choices)
+    extra_roles = serializers.ListField(child=serializers.ChoiceField(choices=Role.choices), required=False, allow_empty=True)
+
+    def validate_extra_roles(self, value):
+        if Role.ADMIN in value:
+            raise serializers.ValidationError("Super Admin can only be the main role.")
+        return value
 
     def validate_email(self, value):
         value = value.strip().lower()
@@ -122,9 +132,15 @@ class InviteUserSerializer(serializers.Serializer):
 class UpdateUserSerializer(serializers.Serializer):
     name = serializers.CharField(max_length=150, required=False)
     role = serializers.ChoiceField(choices=Role.choices, required=False)
+    extra_roles = serializers.ListField(child=serializers.ChoiceField(choices=Role.choices), required=False, allow_empty=True)
     status = serializers.CharField(required=False)
     attendance_permissions = serializers.ListField(child=serializers.ChoiceField(choices=attendance_perms.CODES),
                                                    required=False, allow_empty=True)
+
+    def validate_extra_roles(self, value):
+        if Role.ADMIN in value:
+            raise serializers.ValidationError("Super Admin can only be the main role.")
+        return value
 
     def validate_status(self, value):
         value = value.strip().lower()

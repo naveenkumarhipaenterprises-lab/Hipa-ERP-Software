@@ -2,7 +2,7 @@ import { ChevronDown, LogOut, Settings, User } from 'lucide-react'
 import { useId, useRef, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { useAuth } from '../../hooks/useAuth'
-import { ROLE_LABELS } from '../../utils/constants'
+import { ROLE_LABELS, userRoles } from '../../utils/constants'
 import { initials } from '../../utils/formatters'
 import { useDismiss } from '../../hooks/useDismiss'
 
@@ -18,7 +18,7 @@ export default function UserMenu({ open, onToggle, onClose }) {
   useDismiss(wrapRef, open, onClose, buttonRef)
 
   const displayName = user?.name || user?.username || user?.email || 'Signed in'
-  const roleLabel = ROLE_LABELS[user?.role] ?? user?.role ?? ''
+  const roleLabel = userRoles(user).map((r) => ROLE_LABELS[r] ?? r).join(' + ')
 
   const handleLogout = async () => {
     if (signingOut) return

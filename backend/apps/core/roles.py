@@ -63,9 +63,27 @@ def role_of(user):
     return "admin" if user.is_superuser else getattr(user, "role", None)
 
 
+def roles_of(user):
+    """Every role the user holds: the main role plus any extra roles (Settings -> Users)."""
+    if not user or not user.is_authenticated:
+        return []
+    if user.is_superuser:
+        return ["admin"]
+    all_roles = getattr(user, "all_roles", None)
+    return list(all_roles) if all_roles is not None else [getattr(user, "role", None)]
+
+
+def has_any_role(user, roles):
+    return any(r in roles for r in roles_of(user))
+
+
+def modules_readable(user):
+    return [m for m, roles in MODULE_READ.items() if has_any_role(user, roles)]
+
+
 def can_read(user, module):
-    return role_of(user) in MODULE_READ.get(module, [])
+    return has_any_role(user, MODULE_READ.get(module, []))
 
 
 def can_write(user, module):
-    return role_of(user) in MODULE_WRITE.get(module, [])
+    return has_any_role(user, MODULE_WRITE.get(module, []))
