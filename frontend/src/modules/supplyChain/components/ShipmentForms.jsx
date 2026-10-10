@@ -1,6 +1,11 @@
+import { ShoppingCart } from 'lucide-react'
+import { supplyChainApi } from '../../../api/supplyChainApi'
 import ConfirmDialog from '../../../components/common/ConfirmDialog'
+import EmptyState from '../../../components/common/EmptyState'
 import FormModal from '../../../components/common/FormModal'
+import Modal from '../../../components/common/Modal'
 import OptionsGate from '../../../components/common/OptionsGate'
+import { useApi } from '../../../hooks/useApi'
 import { todayISO } from '../../../utils/formatters'
 
 const list = (v) => (Array.isArray(v) ? v : [])
@@ -52,6 +57,49 @@ function NewShipmentForm({ o, onClose, onSubmit }) {
       submitLabel="Create Shipment"
       onSubmit={onSubmit}
     />
+  )
+}
+
+/**
+ * Links a shipment saved without a purchase to an open purchase (Pending / Partially Received) from the same
+ * supplier for the same item and unit. Only the link changes; stock is still added by the goods receipt.
+ */
+export function LinkPurchaseModal({ shipment, onClose, onSubmit }) {
+  if (!shipment) return null
+  return <LinkPurchase shipment={shipment} onClose={onClose} onSubmit={onSubmit} />
+}
+
+function LinkPurchase({ shipment, onClose, onSubmit }) {
+  const purchases = useApi(() => supplyChainApi.getLinkablePurchases(shipment.id), [shipment.id])
+  const title = `Link ${shipment.shipment_number} to a purchase`
+  return (
+    <OptionsGate options={purchases} title={title} onClose={onClose} loadingLabel="Loading purchases…">
+      {(rows) =>
+        list(rows).length === 0 ? (
+          <Modal open onClose={onClose} title={title} size="sm">
+            <EmptyState
+              compact
+              icon={ShoppingCart}
+              title="No open purchase to link"
+              message={`There is no Pending or Partially Received purchase from ${shipment.supplier} for ${shipment.item} (${shipment.unit}). Record it in Purchase first, then link it here.`}
+            />
+          </Modal>
+        ) : (
+          <FormModal
+            open
+            onClose={onClose}
+            title={title}
+            subtitle={`${shipment.supplier} · ${shipment.item} · ${shipment.quantity} ${shipment.unit}. Only the link is saved; stock is added by the goods receipt in Purchase.`}
+            fields={[{
+              name: 'purchase_id', label: 'Purchase', type: 'select', required: true, full: true, placeholder: 'Select purchase',
+              options: list(rows).map((p) => ({ value: String(p.id), label: `${p.purchase_number} · ${p.supplier} · ${p.item} (${p.quantity} ${p.unit} to receive)` })),
+            }]}
+            submitLabel="Link Purchase"
+            onSubmit={(values) => onSubmit(values.purchase_id)}
+          />
+        )
+      }
+    </OptionsGate>
   )
 }
 

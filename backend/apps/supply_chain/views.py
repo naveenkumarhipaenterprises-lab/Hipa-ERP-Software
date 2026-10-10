@@ -29,7 +29,7 @@ def shipment_row(s):
             "purchase_number": s.purchase.purchase_number if s.purchase else None, "item": s.item.name,
             "quantity": num(s.quantity), "unit": s.unit, "destination": s.destination, "eta": s.eta,
             "dispatched_on": s.dispatched_on, "delivered_on": s.delivered_on, "status": s.get_status_display(),
-            "quality_passed": s.quality_passed, "can_update": s.status != Sh.DELIVERED}
+            "quality_passed": s.quality_passed, "can_update": s.status != Sh.DELIVERED, "can_link_purchase": s.purchase_id is None}
 
 
 def supplier_scores(supplier_ids=None, since=None):
@@ -224,6 +224,41 @@ class ShipmentsView(SupplyView):
                                     unit=unit, destination=destination, dispatched_on=dispatched_on, eta=eta)
         audit.record(request, "Created shipment", f"{s.shipment_number} from {supplier.name}")
         return Response(shipment_row(s), status=status.HTTP_201_CREATED)
+
+
+def linkable_purchases(s):
+    """Open purchases (Pending / Partially Received) from the shipment's supplier for the same item and unit."""
+    qs = Purchase.objects.select_related("supplier", "material", "product").filter(
+        status__in=Purchase.OPEN, supplier_id=s.supplier_id, unit=s.unit)
+    return qs.filter(material_id=s.material_id) if s.material_id else qs.filter(product_id=s.product_id)
+
+
+class ShipmentPurchaseView(SupplyView):
+    """
+    GET: the purchases a shipment saved without one can be linked to. POST {purchase_id}: links it.
+    Only the link changes: supplier, item, quantity, dates, status and stock stay as they are.
+    """
+
+    def get(self, request, pk):
+        s = get_object_or_404(Shipment, pk=pk)
+        return Response([{"id": p.id, "purchase_number": p.purchase_number, "supplier": p.supplier.name, "item": p.item_name,
+                          "quantity": num(p.quantity - p.received_quantity), "unit": p.unit, "purchase_date": p.purchase_date}
+                         for p in linkable_purchases(s).order_by("-purchase_date", "-id")])
+
+    def post(self, request, pk):
+        errors = {}
+        with transaction.atomic():
+            s = get_object_or_404(Shipment.objects.select_for_update(of=("self",)).select_related("supplier", "material", "product"), pk=pk)
+            if s.purchase_id:
+                raise ValidationError({"purchase_id": [f"{s.shipment_number} is already linked to a purchase."]})
+            purchase = parsing.record(request.data, "purchase_id", linkable_purchases(s), errors,
+                                      message=f"Choose an open purchase from {s.supplier.name} for {s.item.name} ({s.unit}).")
+            if errors:
+                raise ValidationError(errors)
+            s.purchase = purchase
+            s.save(update_fields=["purchase"])
+        audit.record(request, "Linked shipment to purchase", f"{s.shipment_number} -> {purchase.purchase_number}")
+        return Response(shipment_row(Shipment.objects.select_related("supplier", "purchase", "material", "product").get(pk=pk)))
 
 
 class ShipmentStatusView(SupplyView):

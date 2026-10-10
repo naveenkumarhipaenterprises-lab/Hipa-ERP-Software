@@ -9,4 +9,5 @@ urlpatterns = [
     path("options/", views.OptionsView.as_view()),
     path("shipments/", views.ShipmentsView.as_view()),
     path("shipments/<int:pk>/status/", views.ShipmentStatusView.as_view()),
+    path("shipments/<int:pk>/purchase/", views.ShipmentPurchaseView.as_view()),
 ]

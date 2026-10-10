@@ -92,6 +92,33 @@ test('a shipment is marked delivered with its quality result', async ({ page }) 
   expect(sent(calls, 'POST /api/supply-chain/shipments/1/status/')).toMatchObject({ status: 'delivered', quality_passed: 'true' })
 })
 
+test('a shipment saved without a purchase is linked to its purchase', async ({ page }) => {
+  await signIn(page, 'supply_chain')
+  const unlinked = { id: 2, shipment_number: 'TEST-SH-2', supplier: 'TEST Farms', item: 'TEST Raw Pepper', quantity: 20, unit: 'kg',
+    purchase_number: null, status: 'Delivered', can_update: false, can_link_purchase: true }
+  const empty = { ...unlinked, id: 3, shipment_number: 'TEST-SH-3', item: 'TEST Raw Clove' }
+  const calls = await mockApi(page, {
+    ...SHELL,
+    ...SUPPLY_SHELL,
+    'GET /api/supply-chain/shipments/': { count: 2, results: [unlinked, empty] },
+    'GET /api/supply-chain/shipments/2/purchase/': [{ id: 9, purchase_number: 'TEST-PUR-9', supplier: 'TEST Farms', item: 'TEST Raw Pepper',
+      quantity: 20, unit: 'kg', purchase_date: '2026-10-10' }],
+    'GET /api/supply-chain/shipments/3/purchase/': [],
+    'POST /api/supply-chain/shipments/2/purchase/': { ...unlinked, purchase_number: 'TEST-PUR-9', can_link_purchase: false },
+  })
+  await page.goto('/supply-chain')
+  await page.getByRole('button', { name: 'Track Shipments' }).click()
+  await page.getByRole('button', { name: 'Link TEST-SH-3 to a purchase' }).click()
+  await expect(page.getByText('No open purchase to link')).toBeVisible() // explained, not an empty list
+  await page.getByRole('dialog', { name: 'Link TEST-SH-3 to a purchase' }).getByRole('button', { name: /close/i }).click()
+  await page.getByRole('button', { name: 'Link TEST-SH-2 to a purchase' }).click()
+  const form = page.getByRole('dialog', { name: 'Link TEST-SH-2 to a purchase' })
+  await form.getByLabel(/Purchase/).selectOption('9')
+  await form.getByRole('button', { name: 'Link Purchase' }).click()
+  await expect(page.getByText('TEST-SH-2 linked to TEST-PUR-9')).toBeVisible()
+  expect(sent(calls, 'POST /api/supply-chain/shipments/2/purchase/')).toEqual({ purchase_id: '9' })
+})
+
 test('a scheduled audit is completed with its findings', async ({ page }) => {
   await signIn(page, 'quality')
   const calls = await mockApi(page, {

@@ -1,4 +1,4 @@
-import { CircleCheck, Clock, Search, Truck } from 'lucide-react'
+import { CircleCheck, Clock, Link2, Search, Truck } from 'lucide-react'
 import { useState } from 'react'
 import { supplyChainApi } from '../../../api/supplyChainApi'
 import Button from '../../../components/common/Button'
@@ -10,12 +10,15 @@ import { useApi } from '../../../hooks/useApi'
 import { useDebouncedValue } from '../../../hooks/useDebouncedValue'
 import { usePageReset } from '../../../hooks/usePageReset'
 import { useToast } from '../../../hooks/useToast'
-import { ShipmentStatusModal } from './ShipmentForms'
+import { LinkPurchaseModal, ShipmentStatusModal } from './ShipmentForms'
 import { SHIPMENT_COLUMNS } from './shipmentColumns'
 
 const PAGE_SIZE = 10
 
-/** All shipments with search, status filter and server pagination; managers can update their status. */
+/**
+ * All shipments with search, status filter and server pagination; managers can update their status and link a
+ * shipment saved without a purchase to its purchase.
+ */
 export default function ShipmentsModal({ open, statuses, canManage, onChanged, onClose }) {
   if (!open) return null
   return <Shipments statuses={statuses} canManage={canManage} onChanged={onChanged} onClose={onClose} />
@@ -24,6 +27,7 @@ export default function ShipmentsModal({ open, statuses, canManage, onChanged, o
 function Shipments({ statuses, canManage, onChanged, onClose }) {
   const toast = useToast()
   const [change, setChange] = useState(null) // { shipment, status }
+  const [linking, setLinking] = useState(null) // shipment
   const [search, setSearch] = useState('')
   const [status, setStatus] = useState('')
   const query = useDebouncedValue(search.trim())
@@ -39,17 +43,29 @@ function Shipments({ statuses, canManage, onChanged, onClose }) {
     onChanged?.()
   }
 
+  const linkPurchase = async (purchaseId) => {
+    const s = await supplyChainApi.linkPurchase(linking.id, purchaseId)
+    toast.success(`${s.shipment_number} linked to ${s.purchase_number}`)
+    shipments.reload()
+    onChanged?.()
+  }
+
   const columns = canManage
     ? [...SHIPMENT_COLUMNS, {
         key: 'actions', sticky: true, align: 'right', header: <span className="sr-only">Actions</span>,
-        render: (r) => r.can_update && (
+        render: (r) => (r.can_update || r.can_link_purchase) && (
           <span className="row-actions">
-            {r.status === 'Delayed' ? (
+            {r.can_link_purchase && (
+              <Button size="sm" variant="ghost" icon={Link2} onClick={() => setLinking(r)} aria-label={`Link ${r.shipment_number} to a purchase`} />
+            )}
+            {r.can_update && (r.status === 'Delayed' ? (
               <Button size="sm" variant="ghost" icon={Truck} onClick={() => setChange({ shipment: r, status: 'in_transit' })} aria-label={`Mark ${r.shipment_number} in transit`} />
             ) : (
               <Button size="sm" variant="ghost" icon={Clock} onClick={() => setChange({ shipment: r, status: 'delayed' })} aria-label={`Mark ${r.shipment_number} delayed`} />
+            ))}
+            {r.can_update && (
+              <Button size="sm" variant="soft" icon={CircleCheck} onClick={() => setChange({ shipment: r, status: 'delivered' })} aria-label={`Mark ${r.shipment_number} delivered`}>Delivered</Button>
             )}
-            <Button size="sm" variant="soft" icon={CircleCheck} onClick={() => setChange({ shipment: r, status: 'delivered' })} aria-label={`Mark ${r.shipment_number} delivered`}>Delivered</Button>
           </span>
         ),
       }]
@@ -86,6 +102,7 @@ function Shipments({ statuses, canManage, onChanged, onClose }) {
         />
       )}
       <ShipmentStatusModal change={change} onClose={() => setChange(null)} onSubmit={updateStatus} />
+      <LinkPurchaseModal shipment={linking} onClose={() => setLinking(null)} onSubmit={linkPurchase} />
     </Modal>
   )
 }

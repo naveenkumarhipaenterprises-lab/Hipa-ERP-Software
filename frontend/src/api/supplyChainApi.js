@@ -24,9 +24,12 @@ import { api, cleanParams as clean } from './client'
  *   purchases: [{ id, purchase_number, supplier, item, quantity, unit }] }   // open purchases; quantity = still to receive
  *
  * GET  /supply-chain/shipments/?page=&page_size=&search=&status=   ->  { count, results: [shipment] }
- *      shipment: { ..., dispatched_on, delivered_on, quality_passed, can_update }
+ *      shipment: { ..., dispatched_on, delivered_on, quality_passed, can_update, can_link_purchase }
  * POST /supply-chain/shipments/   { purchase_id? | supplier_id + material_id + unit, quantity?, destination, dispatched_on?, eta }
  * POST /supply-chain/shipments/<id>/status/   { status: 'in_transit' | 'delayed' | 'delivered', delivered_on?, quality_passed? }
+ * GET  /supply-chain/shipments/<id>/purchase/   ->  [{ id, purchase_number, supplier, item, quantity, unit, purchase_date }]
+ *      open purchases (Pending / Partially Received) from the same supplier for the same item and unit
+ * POST /supply-chain/shipments/<id>/purchase/   { purchase_id }   (a shipment saved without a purchase; only the link changes)
  */
 export const supplyChainApi = {
   getOverview: ({ range }) => api.get('/supply-chain/overview/', clean({ range })),
@@ -35,4 +38,6 @@ export const supplyChainApi = {
   listShipments: (params) => api.get('/supply-chain/shipments/', clean(params)),
   createShipment: (shipment) => api.post('/supply-chain/shipments/', shipment),
   setShipmentStatus: (id, body) => api.post(`/supply-chain/shipments/${id}/status/`, body),
+  getLinkablePurchases: (id) => api.get(`/supply-chain/shipments/${id}/purchase/`),
+  linkPurchase: (id, purchaseId) => api.post(`/supply-chain/shipments/${id}/purchase/`, { purchase_id: purchaseId }),
 }

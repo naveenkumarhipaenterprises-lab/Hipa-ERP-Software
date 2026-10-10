@@ -58,3 +58,53 @@ class ShipmentPurchaseTests(TestCase):
 
     def test_no_purchases_at_all(self):
         self.assertEqual(self.offered(), {})
+
+    # --- Linking a shipment saved without a purchase ------------------------------------------------
+
+    def manual_shipment(self, supplier=None, material=None, unit="kg"):
+        return self.post("/supply-chain/shipments/", {"supplier_id": (supplier or self.supplier)["id"],
+                                                      "material_id": (material or self.material)["id"], "quantity": 20, "unit": unit,
+                                                      "destination": "Warehouse", "eta": (today() + timedelta(days=3)).isoformat()})
+
+    def link(self, shipment, purchase, expected=200):
+        return self.post(f"/supply-chain/shipments/{shipment['id']}/purchase/", {"purchase_id": purchase["id"]}, expected=expected)
+
+    def test_a_shipment_without_a_purchase_can_be_linked_to_a_matching_open_one(self):
+        sh = self.manual_shipment()
+        self.assertTrue(sh["can_link_purchase"])
+        self.assertEqual(self.api.get(f"{API}/supply-chain/shipments/{sh['id']}/purchase/").data, [])  # nothing open yet
+        p = self.purchase()
+        choices = self.api.get(f"{API}/supply-chain/shipments/{sh['id']}/purchase/").data
+        self.assertEqual([(c["purchase_number"], c["quantity"]) for c in choices], [(p["purchase_number"], 100)])
+        stock_before = RawMaterial.objects.get(pk=self.material["id"]).current_stock
+        linked = self.link(sh, p)
+        self.assertEqual((linked["purchase_number"], linked["supplier"], linked["item"], linked["quantity"], linked["status"],
+                          linked["can_link_purchase"]), (p["purchase_number"], "TEST Farms", "TEST Raw Pepper", 20, "In Transit", False))
+        self.assertEqual(RawMaterial.objects.get(pk=self.material["id"]).current_stock, stock_before)  # stock unchanged
+        self.assertEqual(self.api.get(f"{API}/supply-chain/shipments/").data["results"][0]["purchase_number"], p["purchase_number"])
+        again = self.link(sh, self.purchase(), expected=400)
+        self.assertIn("already linked", again["purchase_id"][0])
+
+    def test_unrelated_received_or_cancelled_purchases_cannot_be_linked(self):
+        sh = self.manual_shipment()
+        received, cancelled = self.purchase(), self.purchase()
+        self.receive(received, 100)
+        self.post(f"/purchase/purchases/{cancelled['id']}/cancel/", {}, expected=200)
+        other_supplier = self.post("/purchase/purchases/", {"supplier_id": self.other["id"], "material_id": self.material["id"],
+                                                            "quantity": 5, "unit_price": 500, "purchase_date": today().isoformat()})
+        other_item = self.post("/purchase/purchases/", {"supplier_id": self.supplier["id"], "material_id": self.other_material["id"],
+                                                        "quantity": 5, "unit_price": 500, "purchase_date": today().isoformat()})
+        for p in (received, cancelled, other_supplier, other_item):
+            err = self.link(sh, p, expected=400)
+            self.assertEqual(err["purchase_id"], ["Choose an open purchase from TEST Farms for TEST Raw Pepper (kg)."])
+        self.assertEqual(self.api.get(f"{API}/supply-chain/shipments/{sh['id']}/purchase/").data, [])
+
+    def test_a_delivered_shipment_can_still_be_linked_and_only_managers_may_link(self):
+        sh = self.manual_shipment()
+        self.post(f"/supply-chain/shipments/{sh['id']}/status/", {"status": "delivered"}, expected=200)
+        p = self.purchase()
+        res = client_for(make_user("quality", username="viewer")).post(f"{API}/supply-chain/shipments/{sh['id']}/purchase/",
+                                                                       {"purchase_id": p["id"]}, format="json")
+        self.assertEqual(res.status_code, 403)
+        linked = self.link(sh, p)
+        self.assertEqual((linked["status"], linked["purchase_number"]), ("Delivered", p["purchase_number"]))
