@@ -8,7 +8,7 @@ import Modal from './Modal'
 /**
  * Config-driven form in a modal.
  * fields: [{ name, label, type?: 'text'|'number'|'email'|'tel'|'date'|'select'|'textarea',
- *            options?, required?, placeholder?, min?, full?, visible?(values) }]
+ *            options?, required?, placeholder?, hint?, min?, full?, visible?(values) }]
  *   visible: show the field only when it returns true (hidden fields are neither validated nor sent)
  *   render({ value, error, onChange }): a custom full-width field (e.g. rows of inputs); check it with `validate`
  * summary(values): optional live content under the fields (e.g. totals calculated as the user types)
@@ -99,6 +99,7 @@ function FormModalInner({ onClose, title, subtitle, fields: allFields, initialVa
             value: values[f.name],
             error: errors[f.name],
             placeholder: f.placeholder,
+            hint: f.hint,
             className: f.full || f.type === 'textarea' ? 'form-grid__full' : '',
           }
           if (f.render)

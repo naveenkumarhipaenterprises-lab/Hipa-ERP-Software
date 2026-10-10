@@ -239,7 +239,7 @@ export default function SupplyChainPage() {
       )}
 
       <ShipmentsModal open={modal === 'shipments'} statuses={options.data?.shipment_statuses} canManage={canManage} onChanged={refresh} onClose={() => setModal(null)} />
-      <NewShipmentModal open={modal === 'new-shipment'} options={options.data} onClose={() => setModal(null)} onSubmit={createShipment} />
+      <NewShipmentModal open={modal === 'new-shipment'} options={options} onClose={() => setModal(null)} onSubmit={createShipment} />
     </div>
   )
 }

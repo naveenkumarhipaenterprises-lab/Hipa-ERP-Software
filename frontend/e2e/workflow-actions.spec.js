@@ -52,6 +52,27 @@ test('a shipment is created from a purchase', async ({ page }) => {
   expect(body).toMatchObject({ purchase_id: '9', quantity: '', destination: 'TEST Warehouse', eta: '2099-01-05' })
 })
 
+test('new shipment: no open purchase is explained; an options error is not shown as "no purchases"', async ({ page }) => {
+  await signIn(page, 'supply_chain')
+  let fail = true
+  await mockApi(page, {
+    ...SHELL, ...SUPPLY_SHELL,
+    'GET /api/supply-chain/options/': () => (fail ? { status: 500, body: { detail: 'TEST server error' } }
+      : { ...SUPPLY_SHELL['GET /api/supply-chain/options/'], purchases: [] }),
+  })
+  await page.goto('/supply-chain')
+  await page.getByRole('button', { name: 'New Shipment' }).first().click()
+  const dialog = page.getByRole('dialog', { name: 'New Shipment' })
+  await expect(dialog.getByRole('alert')).toBeVisible() // the error, with Retry
+  await expect(dialog.getByLabel('Purchase')).toHaveCount(0) // no misleading empty list
+  fail = false
+  await dialog.getByRole('button', { name: /Retry/ }).click()
+  await expect(dialog.getByLabel('Purchase')).toBeVisible()
+  await expect(dialog.getByLabel('Purchase').locator('option').first()).toHaveText('No open purchase: choose supplier and material')
+  await expect(dialog.getByText('Every purchase is already fully received or cancelled.', { exact: false })).toBeVisible()
+  await expect(dialog.getByLabel(/Supplier/)).toBeVisible() // a shipment without a purchase still works
+})
+
 test('a shipment is marked delivered with its quality result', async ({ page }) => {
   await signIn(page, 'supply_chain')
   const calls = await mockApi(page, {

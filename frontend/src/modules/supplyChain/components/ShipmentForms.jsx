@@ -1,5 +1,6 @@
 import ConfirmDialog from '../../../components/common/ConfirmDialog'
 import FormModal from '../../../components/common/FormModal'
+import OptionsGate from '../../../components/common/OptionsGate'
 import { todayISO } from '../../../utils/formatters'
 
 const list = (v) => (Array.isArray(v) ? v : [])
@@ -8,13 +9,27 @@ const noPurchase = (v) => !v.purchase_id
 /**
  * New shipment (POST /supply-chain/shipments/). Linked to an open purchase, the supplier, item, unit and
  * remaining quantity come from it; otherwise the supplier and raw material are chosen here.
+ * `options` is the useApi result: loading and errors are shown as such, never as "no purchases".
  */
 export function NewShipmentModal({ open, options, onClose, onSubmit }) {
-  const o = options ?? {}
+  if (!open) return null
+  return (
+    <OptionsGate options={options} title="New Shipment" onClose={onClose} loadingLabel="Loading purchases…">
+      {(o) => <NewShipmentForm o={o} onClose={onClose} onSubmit={onSubmit} />}
+    </OptionsGate>
+  )
+}
+
+function NewShipmentForm({ o, onClose, onSubmit }) {
+  const purchases = list(o.purchases)
   const fields = [
     {
-      name: 'purchase_id', label: 'Purchase', type: 'select', full: true, placeholder: 'No purchase: choose supplier and material',
-      options: list(o.purchases).map((p) => ({ value: String(p.id), label: `${p.purchase_number} · ${p.supplier} · ${p.item} (${p.quantity} ${p.unit} to receive)` })),
+      name: 'purchase_id', label: 'Purchase', type: 'select', full: true,
+      placeholder: purchases.length ? 'No purchase: choose supplier and material' : 'No open purchase: choose supplier and material',
+      // Only purchases still waiting for goods (Pending / Partially Received) can be linked
+      hint: purchases.length ? undefined
+        : 'Every purchase is already fully received or cancelled. A shipment can be linked to a Pending or Partially Received purchase.',
+      options: purchases.map((p) => ({ value: String(p.id), label: `${p.purchase_number} · ${p.supplier} · ${p.item} (${p.quantity} ${p.unit} to receive)` })),
     },
     { name: 'supplier_id', label: 'Supplier', type: 'select', required: true, visible: noPurchase,
       options: list(o.suppliers).map((s) => ({ value: String(s.id), label: s.name })) },
@@ -29,7 +44,7 @@ export function NewShipmentModal({ open, options, onClose, onSubmit }) {
   ]
   return (
     <FormModal
-      open={open}
+      open
       onClose={onClose}
       title="New Shipment"
       subtitle="Track an inbound delivery. Stock is added later by the goods receipt in Purchase."
