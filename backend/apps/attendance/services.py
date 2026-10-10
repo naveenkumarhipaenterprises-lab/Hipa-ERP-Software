@@ -9,7 +9,6 @@ from datetime import datetime, timedelta
 from django.db import IntegrityError, transaction
 from rest_framework.exceptions import ValidationError
 
-from . import permissions as perms
 from . import window
 from .models import AttendanceRecord, AttendanceSettings, Employee, LeaveRequest, OfficeHoliday
 
@@ -167,7 +166,7 @@ def open_record(emp, w, lock=False):
 
 @transaction.atomic
 def check_in(user):
-    perms.require(user, "check_in", "You don't have permission to check in.")
+    """Any signed-in user linked to an active employee, for themselves, while the Check-In window is open."""
     w = window.state()
     if not w.is_open:
         raise ValidationError({"detail": window.closed_message(w)})
@@ -184,8 +183,10 @@ def check_in(user):
 
 @transaction.atomic
 def check_out(user):
-    """Allowed at any time (also while Check-In is closed) for an open record, until 09:20 AM the next morning."""
-    perms.require(user, "check_out", "You don't have permission to check out.")
+    """
+    Any signed-in user linked to an active employee, for their own open record only: at any time (also while
+    Check-In is closed), until 09:20 AM the morning after its work day.
+    """
     w = window.state()
     emp = require_employee(user, lock=True)
     record = open_record(emp, w, lock=True)

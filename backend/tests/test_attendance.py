@@ -8,6 +8,7 @@ from datetime import date, datetime, time
 from unittest import mock
 
 from django.test import TestCase
+from rest_framework.test import APIClient
 
 from apps.attendance import permissions as perms
 from apps.attendance import window
@@ -151,26 +152,69 @@ class CheckInOutTests(AttendanceBase):
         self.assertEqual(api.post(f"{API}/attendance/check-in/").status_code, 201)
         self.assertEqual(AttendanceRecord.objects.get().attendance_date, date(2026, 10, 9))
 
-    def test_separate_permissions(self):
+    def test_every_active_employee_checks_in_and_out_without_permissions(self):
+        """No Check-In / Check-Out permission has to be given: signing in as an active employee is enough."""
+        user, api = self.worker(username="plain")  # no Attendance permissions at all
+        self.assertEqual(perms.granted(user), [])
         self.clock(at(2026, 10, 8, 8, 30))
-        _a, both = self.worker("check_in", "check_out", username="a")
-        _b, in_only = self.worker("check_in", username="b")
-        _c, out_only = self.worker("check_out", username="c")
-        _d, neither = self.worker(username="d")
-        self.assertEqual(both.post(f"{API}/attendance/check-in/").status_code, 201)
-        self.assertEqual(in_only.post(f"{API}/attendance/check-in/").status_code, 201)
-        self.assertEqual(out_only.post(f"{API}/attendance/check-in/").status_code, 403)
-        self.assertEqual(neither.post(f"{API}/attendance/check-in/").status_code, 403)
+        status = api.get(f"{API}/attendance/status/").data
+        self.assertEqual((status["can_check_in"], status["can_check_out"]), (True, False))
+        self.assertEqual(api.post(f"{API}/attendance/check-in/").status_code, 201)
+        self.assertEqual(api.post(f"{API}/attendance/check-in/").status_code, 400)  # duplicate check-in
+        self.assertTrue(api.get(f"{API}/attendance/status/").data["can_check_out"])
+        self.clock(at(2026, 10, 8, 18, 0))  # open window: check out
+        self.assertEqual(api.post(f"{API}/attendance/check-out/").status_code, 200)
+        self.assertEqual(api.post(f"{API}/attendance/check-out/").status_code, 400)  # duplicate check-out
+        self.assertEqual(AttendanceRecord.objects.count(), 1)
+
+    def test_check_out_after_9_20_without_permissions(self):
+        _user, api = self.worker(username="plain")
+        self.clock(at(2026, 10, 8, 9, 12))
+        api.post(f"{API}/attendance/check-in/")
+        self.clock(at(2026, 10, 8, 9, 36))  # Check-In closed; the open record can still be checked out
+        status = api.get(f"{API}/attendance/status/").data
+        self.assertEqual((status["window"]["is_open"], status["can_check_out"]), (False, True))
+        self.assertEqual(api.post(f"{API}/attendance/check-out/").status_code, 200)
+        self.assertEqual(api.post(f"{API}/attendance/check-in/").status_code, 400)  # Check-In stays closed
+
+    def test_no_open_record_means_no_check_out(self):
+        _user, api = self.worker(username="plain")
+        self.clock(at(2026, 10, 8, 12, 0))
+        self.assertFalse(api.get(f"{API}/attendance/status/").data["can_check_out"])
+        res = api.post(f"{API}/attendance/check-out/")
+        self.assertEqual((res.status_code, res.data["detail"]), (400, "You have no open check-in to check out."))
+
+    def test_nobody_can_check_out_another_employees_record(self):
+        _a, api_a = self.worker(username="a")
+        b, _api_b = self.worker(username="b")
+        rec = AttendanceRecord.objects.create(employee=b.employee, attendance_date=date(2026, 10, 8), check_in_at=at(2026, 10, 8, 9, 0))
         self.clock(at(2026, 10, 8, 17, 30))
-        self.assertEqual(both.post(f"{API}/attendance/check-out/").status_code, 200)
-        self.assertEqual(in_only.post(f"{API}/attendance/check-out/").status_code, 403)
-        self.assertEqual(out_only.post(f"{API}/attendance/check-out/").status_code, 400)  # no active record yet
-        AttendanceRecord.objects.create(employee=Employee.objects.get(employee_code="TEST-c"), attendance_date=date(2026, 10, 8),
-                                        check_in_at=at(2026, 10, 8, 9, 5))
-        self.assertEqual(out_only.post(f"{API}/attendance/check-out/").status_code, 200)  # valid active record exists
-        self.assertEqual(neither.post(f"{API}/attendance/check-out/").status_code, 403)
-        flags = neither.get(f"{API}/attendance/status/").data["permissions"]
-        self.assertFalse(flags["check_in"] or flags["check_out"])
+        res = api_a.post(f"{API}/attendance/check-out/", {"record_id": rec.id, "employee_id": b.employee.id}, format="json")
+        self.assertEqual(res.status_code, 400)  # A has no open record; the request body is ignored
+        rec.refresh_from_db()
+        self.assertIsNone(rec.check_out_at)
+
+    def test_anonymous_and_inactive_employees_are_refused(self):
+        self.clock(at(2026, 10, 8, 8, 30))
+        anonymous = APIClient()
+        self.assertEqual(anonymous.post(f"{API}/attendance/check-in/").status_code, 401)
+        self.assertEqual(anonymous.post(f"{API}/attendance/check-out/").status_code, 401)
+        user, api = self.worker(username="left")
+        AttendanceRecord.objects.create(employee=user.employee, attendance_date=date(2026, 10, 8), check_in_at=at(2026, 10, 8, 8, 0))
+        Employee.objects.filter(pk=user.employee.pk).update(status=Employee.Status.INACTIVE)
+        for action in ("check-in", "check-out"):
+            res = api.post(f"{API}/attendance/{action}/")
+            self.assertEqual(res.status_code, 400, action)
+            self.assertIn("isn't linked to an active employee", res.data["detail"])
+        self.assertIsNone(AttendanceRecord.objects.get().check_out_at)
+        status = api.get(f"{API}/attendance/status/").data
+        self.assertEqual((status["can_check_in"], status["can_check_out"]), (False, False))
+
+    def test_other_attendance_permissions_are_still_enforced(self):
+        _user, api = self.worker(username="plain")
+        for url in ("dashboard/", "employees/", "reports/?type=daily", "settings/", "leave/?scope=all"):
+            self.assertEqual(api.get(f"{API}/attendance/{url}").status_code, 403, url)
+        self.assertEqual(api.post(f"{API}/attendance/holidays/", {"name": "TEST", "date": "2026-11-11"}, format="json").status_code, 403)
 
     def test_login_without_an_employee_is_told_so(self):
         user = make_user("sales", username="nolink")
@@ -415,12 +459,15 @@ class CalendarReportSettingsTests(AttendanceBase):
 class SettingsUsersPermissionTests(AttendanceBase):
     def test_permissions_are_set_per_user(self):
         user = make_user("sales", username="priya")
-        res = self.admin_api.patch(f"{API}/settings/users/{user.id}/", {"attendance_permissions": ["check_in", "leave_apply"]}, format="json")
+        res = self.admin_api.patch(f"{API}/settings/users/{user.id}/", {"attendance_permissions": ["calendar_view", "leave_apply"]}, format="json")
         self.assertEqual(res.status_code, 200, res.data)
-        self.assertEqual(res.data["attendance_permissions"], ["check_in", "leave_apply"])
+        self.assertEqual(res.data["attendance_permissions"], ["calendar_view", "leave_apply"])
         user.refresh_from_db()
-        self.assertTrue(perms.has(user, "check_in"))
-        self.assertFalse(perms.has(user, "check_out"))
+        self.assertTrue(perms.has(user, "leave_apply"))
+        self.assertFalse(perms.has(user, "leave_approve"))
+        self.assertNotIn("check_in", perms.CODES)  # check-in / check-out need no permission, so they aren't offered
+        self.assertEqual(self.admin_api.patch(f"{API}/settings/users/{user.id}/", {"attendance_permissions": ["check_in"]},
+                                              format="json").status_code, 400)
         self.assertEqual(self.admin_api.patch(f"{API}/settings/users/{user.id}/", {"attendance_permissions": ["nope"]},
                                               format="json").status_code, 400)
         rows = {r["id"]: r for r in self.admin_api.get(f"{API}/settings/users/").data["results"]}

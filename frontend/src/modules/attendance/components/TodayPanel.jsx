@@ -134,8 +134,8 @@ export default function TodayPanel() {
                 <small className="muted">Check-out available until {whichDay(s.checkout_until, s.server_time).toLowerCase()} {clock(s.checkout_until)}.</small>
               )}
               {!w.is_open && !s.can_check_out && (!r || completed) && <small className="muted">{w.message}</small>}
-              {w.is_open && !r && !s.permissions.check_in && <small className="muted">You don't have the Check-In permission.</small>}
-              {r && !completed && !s.permissions.check_out && <small className="muted">You don't have the Check-Out permission.</small>}
+              {r && !completed && !s.can_check_out && <small className="muted">The check-out time for this work day is over.</small>}
+              {w.is_open && completed && !s.can_check_in && <small className="muted">You have checked in and out for this work day.</small>}
             </div>
           </div>
         )}

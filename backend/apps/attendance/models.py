@@ -7,6 +7,8 @@ from apps.system.models import SingletonModel
 
 # Per-user permissions (Settings → Users), checked on the server for every Attendance action.
 # A Super Admin has all of them. Stored with Django's built-in permission tables as "attendance.<code>".
+# check_in / check_out are no longer assigned: every signed-in active employee checks in and out for themselves
+# (permissions.SELF_SERVICE). They stay listed here only so no migration is needed.
 PERMISSIONS = [
     ("check_in", "Check in"),
     ("check_out", "Check out / logout"),

@@ -108,17 +108,20 @@ test('Check-In closed from 9:20 AM to 5 PM', async ({ page }) => {
   await expect(page.getByText('Check-In is closed. It opens again at 5:00 PM.', { exact: true })).toBeVisible()
 })
 
-test('check-out still works while Check-In is closed', async ({ page }) => {
+test('check-out after 9:20 AM needs no Attendance permission', async ({ page }) => {
   await signIn(page, 'sales')
+  const closed = { server_time: '2026-10-08T09:36:00+05:30', can_check_in: false, check_in_for: null, window: CLOSED, permissions: NO_PERMS }
   await mockApi(page, {
-    ...TODAY(OWN_ONLY, status({ server_time: '2026-10-08T12:00:00+05:30', can_check_in: false, check_in_for: null, window: CLOSED,
-      record: RECORD, can_check_out: true, checkout_until: '2026-10-09T09:20:00+05:30' })),
-    'POST /api/attendance/check-out/': status({ server_time: '2026-10-08T12:00:00+05:30', can_check_in: false, check_in_for: null,
-      window: CLOSED, record: { ...RECORD, check_out_at: '2026-10-08T12:00:00+05:30', status: 'Attendance completed' } }),
+    ...TODAY(NO_PERMS, status({ ...closed, record: { ...RECORD, check_in_at: '2026-10-08T09:12:00+05:30' }, can_check_out: true,
+      checkout_until: '2026-10-09T09:20:00+05:30' })),
+    'POST /api/attendance/check-out/': status({ ...closed, record: { ...RECORD, check_in_at: '2026-10-08T09:12:00+05:30',
+      check_out_at: '2026-10-08T09:36:00+05:30', status: 'Attendance completed' } }),
   })
   await page.goto('/attendance')
+  await expect(page.getByText(/permission\./)).toHaveCount(0) // no "You don't have the Check-Out permission."
   await page.getByRole('button', { name: 'Check Out / Logout' }).click()
-  await expect(page.getByText('Checked out at 12:00 PM')).toBeVisible()
+  await expect(page.getByText('Checked out at 09:36 AM')).toBeVisible()
+  await expect(page.getByText('Check-In is closed. It opens again at 5:00 PM.', { exact: true })).toBeVisible() // Check-In stays closed
 })
 
 test('dashboard: summary and table for users with View All', async ({ page }) => {

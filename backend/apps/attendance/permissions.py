@@ -6,8 +6,10 @@ from apps.core.roles import Role, role_of
 
 from .models import PERMISSIONS
 
-CODES = [code for code, _label in PERMISSIONS]
-LABELS = dict(PERMISSIONS)
+# Every signed-in user linked to an active employee checks in / out for themselves; nobody has to be given these.
+SELF_SERVICE = {"check_in", "check_out"}
+CODES = [code for code, _label in PERMISSIONS if code not in SELF_SERVICE]
+LABELS = {code: label for code, label in PERMISSIONS if code in CODES}
 
 
 def has(user, code):

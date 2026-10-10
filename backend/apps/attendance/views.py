@@ -122,8 +122,8 @@ def status_payload(user):
     flags = perms.flags(user)
     to_close = services.open_record(emp, w) if emp else None
     taken = bool(emp and w.is_open and AttendanceRecord.objects.filter(employee=emp, attendance_date=w.checkin_date).exists())
-    can_in = bool(flags["check_in"] and w.is_open and emp and not taken)
-    can_out = bool(flags["check_out"] and to_close)
+    can_in = bool(w.is_open and emp and not taken)  # no permission needed: own attendance only
+    can_out = bool(to_close)
     # The work day to show: the one still open, otherwise today's
     record = to_close or (AttendanceRecord.objects.filter(employee=emp, attendance_date=today).first() if emp else None)
     work_date = record.attendance_date if record else today
