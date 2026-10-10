@@ -215,11 +215,13 @@ test('employees: View Employees alone can look but not change', async ({ page })
   await expect(page.getByRole('button', { name: 'Delete TEST Meena' })).toHaveCount(0)
 })
 
-test('employees section without permission', async ({ page }) => {
+test('sections without permission are hidden; check-in / check-out stays', async ({ page }) => {
   await signIn(page, 'sales')
-  await mockApi(page, { ...SHELL, 'GET /api/attendance/options/': OPTIONS(NO_PERMS), 'GET /api/attendance/employees/': { status: 403, body: { detail: 'TEST' } } })
+  const calls = await mockApi(page, TODAY(NO_PERMS, status({ permissions: NO_PERMS })))
   await page.goto('/attendance?tab=employees')
-  await expect(page.getByText("You don't have permission for this section")).toBeVisible()
+  await expect(page.getByRole('tab')).toHaveText(['Attendance'])
+  await expect(page.getByRole('button', { name: 'Check In', exact: true })).toBeEnabled()
+  expect(calls.some((c) => c.key === 'GET /api/attendance/employees/')).toBe(false)
 })
 
 test('a permission request is submitted with its times', async ({ page }) => {

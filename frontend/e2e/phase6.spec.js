@@ -2,7 +2,7 @@ import { expect, test } from '@playwright/test'
 import { mockApi, SHELL, signIn } from './helpers'
 
 test('dashboard purchase section explains itself when there is no data', async ({ page }) => {
-  await signIn(page, 'purchase')
+  await signIn(page, 'management') // the Dashboard is for Super Admin and Management
   await mockApi(page, {
     ...SHELL,
     'GET /api/dashboard/summary/': {
@@ -16,7 +16,6 @@ test('dashboard purchase section explains itself when there is no data', async (
   await expect(page.getByText('No purchase recommendations')).toBeVisible()
   await expect(page.getByText('No purchase risks')).toBeVisible()
   await expect(page.getByText('Supplier Payments Due')).toBeVisible()
-  await expect(page.getByText('Total Sales')).toHaveCount(0) // purchase role has no sales figures
 })
 
 test('quality test entry links a test to goods awaiting inspection', async ({ page }) => {

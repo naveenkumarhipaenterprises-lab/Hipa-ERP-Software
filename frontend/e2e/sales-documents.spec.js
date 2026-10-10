@@ -96,10 +96,11 @@ test('sales sub-menu and role rules', async ({ page }) => {
   await mockApi(page, { ...SHELL, 'GET /api/sales/options/': TEST_OPTIONS, 'GET /api/sales/invoices/': EMPTY_LIST, 'GET /api/sales/payments/': EMPTY_LIST })
   await page.goto('/sales?tab=invoices')
   const sub = page.getByLabel('Sales sections')
-  for (const name of ['Overview', 'Quotations', 'Sales Orders', 'Sales Invoices', 'Payments', 'Returns', 'Reports']) {
+  for (const name of ['Overview', 'Quotations', 'Sales Orders', 'Sales Invoices', 'Payments', 'Returns']) {
     await expect(sub.getByRole('link', { name, exact: true })).toBeVisible()
   }
   await expect(sub.getByRole('link', { name: 'Customers' })).toHaveCount(0) // finance can't open Customers
+  await expect(sub.getByRole('link', { name: 'Reports', exact: true })).toHaveCount(0) // nor Reports (managers only)
   await expect(page.getByText('No sales invoices yet')).toBeVisible()
   await expect(page.getByRole('button', { name: 'New Invoice' })).toHaveCount(0) // read-only for finance
   await sub.getByRole('link', { name: 'Payments', exact: true }).click()

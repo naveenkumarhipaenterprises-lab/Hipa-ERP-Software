@@ -5,8 +5,12 @@ test('each role only sees its own modules in the menu', async ({ page }) => {
   await signIn(page, 'sales')
   await mockApi(page, SHELL)
   await page.goto('/dashboard')
+  await expect(page).toHaveURL(/\/sales/) // team roles land on their first module; the Dashboard is for managers
   const menu = page.getByRole('navigation', { name: 'Main' })
-  await expect(menu.getByRole('link')).toHaveText(['Dashboard', 'Sales', 'Customers', 'Attendance', 'Reports', 'AI Assistant'])
+  for (const name of ['Sales', 'Customers', 'Attendance']) await expect(menu.getByRole('link', { name, exact: true }).first()).toBeVisible()
+  for (const name of ['Dashboard', 'Purchase', 'Inventory', 'Quality', 'Marketing', 'Reports', 'AI Assistant', 'Settings']) {
+    await expect(menu.getByRole('link', { name, exact: true })).toHaveCount(0)
+  }
 })
 
 test('a module the role cannot open shows "no access"', async ({ page }) => {
