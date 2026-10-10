@@ -24,6 +24,9 @@ class QualityTest(models.Model):
     batch_number = models.CharField("lot / batch number", max_length=40, blank=True, db_index=True)
     test_date = models.DateField(db_index=True)
     parameters = models.TextField(help_text="What was checked and the readings")
+    # [{"parameter": "Moisture", "value": "8.5"}] as entered (the value is a decimal number kept as text, so nothing is
+    # rounded); `parameters` then holds the same pairs as text for search, exports and reports. Empty for older tests.
+    readings = models.JSONField(default=list, blank=True)
     result = models.CharField(max_length=5, choices=Result.choices, db_index=True)
     notes = models.TextField(blank=True)
     tested_by = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.SET_NULL, related_name="+")

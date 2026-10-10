@@ -1,24 +1,34 @@
-import { FlaskConical, Search } from 'lucide-react'
+import { FlaskConical, Pencil, Search } from 'lucide-react'
 import { useState } from 'react'
 import { qualityApi } from '../../../api/qualityApi'
 import Badge from '../../../components/common/Badge'
+import Button from '../../../components/common/Button'
 import Card from '../../../components/common/Card'
 import ErrorMessage from '../../../components/common/ErrorMessage'
+import FormModal from '../../../components/common/FormModal'
 import { Select } from '../../../components/common/Input'
 import Modal from '../../../components/common/Modal'
 import Table from '../../../components/common/Table'
 import { useApi } from '../../../hooks/useApi'
 import { useDebouncedValue } from '../../../hooks/useDebouncedValue'
 import { usePageReset } from '../../../hooks/usePageReset'
+import { useToast } from '../../../hooks/useToast'
 import { formatDate, formatNumber } from '../../../utils/formatters'
+import { EMPTY_ROW, cleanReadings, readingsError } from '../readings'
+import ParameterRows from './ParameterRows'
 
 const PAGE_SIZE = 10
 
-/** Quality test results: server-side search, result filter and pagination, with a details view. */
-export default function QualityTestsTable({ refreshKey, results }) {
+/**
+ * Quality test results: server-side search, result filter and pagination, with a details view.
+ * Quality managers can edit a test's Parameter + Value rows from the details view (nothing else of the test changes).
+ */
+export default function QualityTestsTable({ refreshKey, results, canManage = false }) {
+  const toast = useToast()
   const [search, setSearch] = useState('')
   const [result, setResult] = useState('')
   const [viewing, setViewing] = useState(null)
+  const [editing, setEditing] = useState(null)
   const query = useDebouncedValue(search.trim())
   const [page, setPage] = usePageReset(JSON.stringify([query, result]))
 
@@ -26,6 +36,13 @@ export default function QualityTestsTable({ refreshKey, results }) {
   const rows = Array.isArray(tests.data?.results) ? tests.data.results : []
   const total = Number(tests.data?.count) || 0
   const filtered = Boolean(query || result)
+
+  const saveReadings = async ({ readings }) => {
+    const updated = await qualityApi.updateTestReadings(editing.id, cleanReadings(readings))
+    toast.success('Parameters saved')
+    setViewing(updated)
+    tests.reload()
+  }
 
   return (
     <Card
@@ -87,7 +104,18 @@ export default function QualityTestsTable({ refreshKey, results }) {
             <dt>Test date</dt>
             <dd>{viewing.test_date ? formatDate(viewing.test_date) : '—'}</dd>
             <dt>Parameters</dt>
-            <dd>{viewing.parameters || '—'}</dd>
+            <dd>
+              {viewing.readings?.length ? (
+                <ul className="plain-list">
+                  {viewing.readings.map((r) => <li key={r.parameter}>{r.parameter}: <strong>{r.value}</strong></li>)}
+                </ul>
+              ) : viewing.parameters || '—'}
+              {canManage && (
+                <div>
+                  <Button size="sm" variant="outline" icon={Pencil} onClick={() => setEditing(viewing)}>Edit Parameters</Button>
+                </div>
+              )}
+            </dd>
             <dt>Result</dt>
             <dd>{viewing.result ? <Badge>{viewing.result}</Badge> : '—'}</dd>
             <dt>Status</dt>
@@ -97,6 +125,17 @@ export default function QualityTestsTable({ refreshKey, results }) {
           </dl>
         )}
       </Modal>
+
+      <FormModal
+        open={Boolean(editing)}
+        onClose={() => setEditing(null)}
+        title="Edit Parameters"
+        subtitle={editing && !editing.readings?.length && editing.parameters ? `Previously recorded: ${editing.parameters}` : editing?.product}
+        initialValues={{ readings: editing?.readings?.length ? editing.readings : [EMPTY_ROW] }}
+        fields={[{ name: 'readings', label: 'Parameters tested', validate: readingsError, render: (field) => <ParameterRows {...field} /> }]}
+        submitLabel="Save Parameters"
+        onSubmit={saveReadings}
+      />
     </Card>
   )
 }

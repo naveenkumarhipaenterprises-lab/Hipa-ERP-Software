@@ -190,7 +190,7 @@ export default function QualityPage() {
 
       {!failed && (
         <div className="grid-main-side">
-          <QualityTestsTable refreshKey={refreshKey} results={options.data?.results} />
+          <QualityTestsTable refreshKey={refreshKey} results={options.data?.results} canManage={canManage} />
           <Card title="Lab Testing Process">
             <LabProcess />
           </Card>

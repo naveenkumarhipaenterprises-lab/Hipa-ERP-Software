@@ -1,3 +1,4 @@
+import re
 from datetime import timedelta
 
 from django.db import transaction
@@ -22,6 +23,8 @@ from .models import Certification, QualityAudit, QualityStandard, QualityTest
 
 R = QualityTest.Result
 ITEM_NAME = Coalesce("product__name", "material__name")
+MAX_READINGS = 50
+NUMBER = re.compile(r"^-?(\d+(\.\d+)?|\.\d+)$")  # 8, 8.5, -2.25, .5
 
 
 def test_row(t):
@@ -29,7 +32,7 @@ def test_row(t):
     return {"id": t.id, "batch_number": t.batch_number or None, "product": t.item.name,
             "item_type": "product" if t.product_id else "material", "goods_receipt_id": t.goods_receipt_id,
             "grn_number": grn.grn_number if grn else None, "test_date": t.test_date, "parameters": t.parameters,
-            "result": t.get_result_display(), "status": t.status, "notes": t.notes or None}
+            "readings": t.readings, "result": t.get_result_display(), "status": t.status, "notes": t.notes or None}
 
 
 def certification_status(c, today):
@@ -52,6 +55,49 @@ def test_stats(qs):
         "failed": qs.filter(result=R.FAIL).count(),
         "avg_hours": round(sum(hours) / len(hours), 1) if hours else None,
     }
+
+
+def read_readings(raw, errors):
+    """
+    [{parameter, value}] -> the cleaned rows. Every row needs a parameter name and a numeric value (decimals allowed);
+    nothing invalid is turned into 0. Problems go in errors["readings"], one message per problem.
+    """
+    if not isinstance(raw, list) or not raw:
+        errors["readings"] = ["Add at least one parameter and its value."]
+        return []
+    if len(raw) > MAX_READINGS:
+        errors["readings"] = [f"Add at most {MAX_READINGS} parameters."]
+        return []
+    rows, seen, problems = [], set(), []
+    for i, row in enumerate(raw, 1):
+        row = row if isinstance(row, dict) else {}
+        name = str(row.get("parameter") or "").strip()
+        value = "" if row.get("value") is None or isinstance(row.get("value"), bool) else str(row.get("value")).strip()
+        if not name:
+            problems.append(f"Row {i}: enter the parameter name.")
+        elif len(name) > 120:
+            problems.append(f"Row {i}: the parameter name can be at most 120 characters.")
+        elif name.lower() in seen:
+            problems.append(f"Row {i}: {name} is listed twice.")
+        if not value:
+            problems.append(f"Row {i}: enter the value.")
+        elif len(value) > 20 or not NUMBER.match(value):
+            problems.append(f"Row {i}: the value must be a number, e.g. 8.5.")
+        seen.add(name.lower())
+        rows.append({"parameter": name, "value": value})
+    if problems:
+        errors["readings"] = problems
+    return rows
+
+
+def readings_text(readings):
+    """The pairs as one line ("Moisture: 8.5; Ash: 3.2"), kept in `parameters` for search, exports and reports."""
+    return "; ".join(f"{r['parameter']}: {r['value']}" for r in readings)
+
+
+def lot_label(test):
+    grn = test.goods_receipt
+    return " ".join(x for x in (test.item.name, test.batch_number, f"({grn.grn_number})" if grn else "") if x)
 
 
 class QualityView(ModuleAPIView):
@@ -168,15 +214,19 @@ class TestsView(QualityView):
                 errors["result"] = ["Choose a result."]
         except ValidationError as exc:
             errors.update(exc.detail)
-        parameters = str(d.get("parameters") or "").strip()
-        if not parameters:
-            errors["parameters"] = ["Describe what was tested."]
+        if "readings" in d:  # Parameter + Value rows
+            readings = read_readings(d.get("readings"), errors)
+            parameters = readings_text(readings)
+        else:  # a single text, as before
+            readings, parameters = [], str(d.get("parameters") or "").strip()
+            if not parameters:
+                errors["parameters"] = ["Describe what was tested."]
         if errors:
             raise ValidationError(errors)
 
         with transaction.atomic():
             test = QualityTest.objects.create(product=product, material=material, goods_receipt=grn, batch_number=batch_number,
-                                              test_date=test_date, result=result, parameters=parameters,
+                                              test_date=test_date, result=result, parameters=parameters, readings=readings,
                                               notes=str(d.get("notes") or "").strip(), tested_by=request.user)
             # The goods receipt's inspection status follows its latest test
             if grn:
@@ -188,6 +238,20 @@ class TestsView(QualityView):
             notifications.notify("quality_failures", f"{lot}: {test.get_result_display()}", parameters[:200], type="error",
                                  link="/quality")
         return Response(test_row(test), status=status.HTTP_201_CREATED)
+
+
+class TestDetailView(QualityView):
+    def patch(self, request, pk):
+        """PATCH {readings}: changes only the Parameter + Value rows; item, lot, dates, result and notes stay as recorded."""
+        errors = {}
+        readings = read_readings(request.data.get("readings"), errors)
+        if errors:
+            raise ValidationError(errors)
+        test = get_object_or_404(QualityTest.objects.select_related("product", "material", "goods_receipt"), pk=pk)
+        test.readings, test.parameters = readings, readings_text(readings)
+        test.save(update_fields=["readings", "parameters"])
+        audit.record(request, "Edited quality test parameters", lot_label(test))
+        return Response(test_row(test))
 
 
 class StandardsView(QualityView):

@@ -10,6 +10,7 @@ import Modal from './Modal'
  * fields: [{ name, label, type?: 'text'|'number'|'email'|'tel'|'date'|'select'|'textarea',
  *            options?, required?, placeholder?, min?, full?, visible?(values) }]
  *   visible: show the field only when it returns true (hidden fields are neither validated nor sent)
+ *   render({ value, error, onChange }): a custom full-width field (e.g. rows of inputs); check it with `validate`
  * summary(values): optional live content under the fields (e.g. totals calculated as the user types)
  * onSubmit(values) may return a promise; the modal closes when it resolves.
  */
@@ -100,6 +101,12 @@ function FormModalInner({ onClose, title, subtitle, fields: allFields, initialVa
             placeholder: f.placeholder,
             className: f.full || f.type === 'textarea' ? 'form-grid__full' : '',
           }
+          if (f.render)
+            return (
+              <div key={f.name} className="form-grid__full">
+                {f.render({ value: values[f.name], error: errors[f.name], onChange: (v) => set(f.name, v) })}
+              </div>
+            )
           if (f.type === 'select')
             return (
               <Select

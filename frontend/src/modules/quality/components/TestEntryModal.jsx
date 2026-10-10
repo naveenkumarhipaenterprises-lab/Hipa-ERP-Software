@@ -4,6 +4,8 @@ import FormModal from '../../../components/common/FormModal'
 import Modal from '../../../components/common/Modal'
 import OptionsGate from '../../../components/common/OptionsGate'
 import { todayISO } from '../../../utils/formatters'
+import { EMPTY_ROW, cleanReadings, readingsError } from '../readings'
+import ParameterRows from './ParameterRows'
 
 const list = (v) => (Array.isArray(v) ? v : [])
 
@@ -64,12 +66,13 @@ export default function TestEntryModal({ open, options, onClose, onSave }) {
               { name: 'test_date', label: 'Test date', type: 'date', required: true,
                 validate: (v) => (v > todayISO() ? 'Test date cannot be in the future' : undefined) },
               { name: 'result', label: 'Result', type: 'select', required: true, options: data.results, placeholder: 'Select result' },
-              { name: 'parameters', label: 'Parameters tested', required: true, full: true, placeholder: 'List the parameters checked' },
+              { name: 'readings', label: 'Parameters tested', defaultValue: [EMPTY_ROW], validate: readingsError,
+                render: (field) => <ParameterRows {...field} /> },
               { name: 'notes', label: 'Notes', type: 'textarea', placeholder: 'Readings, observations or reasons for failure' },
             ]}
             // Only the visible item field is sent (goods_receipt_id, product_id or material_id); `source` is ignored by the API
             onSubmit={(values) =>
-              onSave({ ...values, parameters: values.parameters.trim(), batch_number: values.batch_number?.trim() || undefined,
+              onSave({ ...values, readings: cleanReadings(values.readings), batch_number: values.batch_number?.trim() || undefined,
                        notes: values.notes?.trim() || undefined })
             }
           />

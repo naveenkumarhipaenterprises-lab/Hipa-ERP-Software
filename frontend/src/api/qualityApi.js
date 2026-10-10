@@ -18,8 +18,11 @@ import { api, cleanParams as clean } from './client'
  *   products: [{ id, name }], materials: [{ id, name }], results: [{ value, label }], audit_types: [{ value, label }] }
  *
  * GET  /quality/tests/?page=&page_size=&search=&result=
- *      { count, results: [{ id, batch_number, product, item_type, goods_receipt_id, grn_number, test_date, parameters, result, status, notes? }] }
- * POST /quality/tests/      { goods_receipt_id | product_id | material_id, batch_number?, test_date, result, parameters, notes? }
+ *      { count, results: [{ id, batch_number, product, item_type, goods_receipt_id, grn_number, test_date, parameters, readings, result,
+ *                           status, notes? }] }
+ *      readings: [{ parameter, value }] (value = decimal number as text); parameters = the same pairs as one line
+ * POST  /quality/tests/      { goods_receipt_id | product_id | material_id, batch_number?, test_date, result, readings, notes? }
+ * PATCH /quality/tests/<id>/ { readings }   (changes only the Parameter + Value rows)
  * GET  /quality/standards/  ->  [{ id, parameter, limit, applies_to? }]
  * GET  /quality/audits/?page=&page_size=&status=   ->  { count, results: [{ id, audit_type, date, auditor, status, findings, can_update }] }
  * POST /quality/audits/     { audit_type, date, auditor? }
@@ -32,6 +35,7 @@ export const qualityApi = {
   getOptions: () => api.get('/quality/options/'),
   listTests: (params) => api.get('/quality/tests/', clean(params)),
   createTest: (test) => api.post('/quality/tests/', test),
+  updateTestReadings: (id, readings) => api.patch(`/quality/tests/${id}/`, { readings }),
   getStandards: () => api.get('/quality/standards/'),
   scheduleAudit: (audit) => api.post('/quality/audits/', audit),
   listAudits: (params) => api.get('/quality/audits/', clean(params)),

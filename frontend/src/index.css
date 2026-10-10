@@ -772,6 +772,9 @@ code {
 
 .form-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; }
 .form-grid__full { grid-column: 1 / -1; }
+.parameter-rows { border: 0; margin: 0; padding: 0; min-width: 0; display: grid; gap: 8px; }
+.parameter-rows__row { display: grid; grid-template-columns: minmax(0, 2fr) minmax(0, 1fr) auto; gap: 8px; align-items: center; }
+.plain-list { list-style: none; margin: 0 0 8px; padding: 0; }
 .form-grid__end { grid-column: 1 / -1; display: flex; justify-content: flex-end; margin-top: 4px; }
 
 /* =========================================================
