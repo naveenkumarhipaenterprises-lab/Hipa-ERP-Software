@@ -15,8 +15,9 @@ CSV columns (header row required):
                       Several roles for one person: separate them with "+" or ";" (e.g. purchase+inventory);
                       the first is the main role, the others are extra roles (access is the union).
                       Blank = the person is skipped until a role is chosen.
-    attendance_permissions   Optional, separated by ";" (e.g. check_in;check_out;leave_apply).
+    attendance_permissions   Optional, separated by ";" (e.g. leave_apply;calendar_view).
                       Blank = leave the person's current Attendance permissions as they are.
+                      check_in / check_out are accepted but ignored: every active employee has them.
 
 New users get no password: they receive the usual invitation e-mail with a link to set their own
 (the same e-mail as Settings -> User Management -> Invite). Existing passwords are never touched.
@@ -86,7 +87,8 @@ def parse_permissions(text):
     text = (text or "").strip()
     if not text:
         return None
-    codes = sorted({c.strip() for c in text.replace("|", ";").replace(",", ";").split(";") if c.strip()})
+    codes = {c.strip() for c in text.replace("|", ";").replace(",", ";").split(";") if c.strip()}
+    codes = sorted(codes - attendance_perms.SELF_SERVICE)  # nobody needs these any more
     unknown = [c for c in codes if c not in attendance_perms.CODES]
     if unknown:
         raise ValueError(f"unknown attendance permission(s) {', '.join(unknown)} "

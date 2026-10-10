@@ -36,7 +36,7 @@ class SetupTeamUsersTests(TestCase):
         seller = User.objects.get(email="test.seller@test.invalid")
         self.assertEqual(seller.role, "sales")
         self.assertFalse(seller.is_superuser)
-        self.assertEqual(attendance_perms.granted(seller), ["check_in", "check_out", "leave_apply"])
+        self.assertEqual(attendance_perms.granted(seller), ["leave_apply"])  # check-in / check-out need no permission
         self.assertEqual(sorted(m.to[0] for m in mail.outbox), ["test.admin@test.invalid", "test.seller@test.invalid"])
         emp = Employee.objects.get(employee_code="T02")
         self.assertEqual((emp.user, emp.email, str(emp.joining_date)), (seller, "test.seller@test.invalid", "2026-07-31"))
