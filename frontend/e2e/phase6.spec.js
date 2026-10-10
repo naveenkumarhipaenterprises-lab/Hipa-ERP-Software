@@ -60,6 +60,47 @@ test('quality test entry links a test to goods awaiting inspection', async ({ pa
   expect(sent.product_id).toBeUndefined()
 })
 
+test('a GRN recorded as Passed can be tested; its number shows after reloading', async ({ page }) => {
+  await signIn(page, 'quality')
+  const saved = { id: 9, product: 'TEST Pepper', item_type: 'material', goods_receipt_id: 4, grn_number: 'TEST-GRN-4', batch_number: 'LOT-9',
+    test_date: '2026-10-10', parameters: 'Moisture: 11.5', readings: [{ parameter: 'Moisture', value: '11.5' }], result: 'Pass', status: 'Approved' }
+  const unlinked = { ...saved, id: 8, goods_receipt_id: null, grn_number: null, batch_number: 'OLD-1' }
+  let rows = [unlinked]
+  const calls = await mockApi(page, {
+    ...SHELL,
+    'GET /api/quality/overview/': { kpis: {}, product_quality: [], certifications: [], insights: {} },
+    'GET /api/quality/trend/': [],
+    'GET /api/quality/tests/': () => ({ count: rows.length, results: rows }),
+    'GET /api/quality/standards/': [],
+    'GET /api/quality/options/': {
+      pending_receipts: [],
+      goods_receipts: [{ id: 4, grn_number: 'TEST-GRN-4', item: 'TEST Pepper', item_type: 'material', supplier: 'TEST Farms',
+                         received_date: '2026-10-10', quality_status: 'Passed' }],
+      products: [], materials: [{ id: 5, name: 'TEST Pepper' }], results: [{ value: 'pass', label: 'Pass' }], audit_types: [],
+    },
+    'POST /api/quality/tests/': () => {
+      rows = [saved, unlinked]
+      return { status: 201, body: saved }
+    },
+  })
+  await page.goto('/quality')
+  await page.getByRole('button', { name: /New Test Entry/ }).first().click()
+  const form = page.getByRole('dialog', { name: 'New Test Entry' })
+  await expect(form.getByLabel('Testing *')).toHaveValue('receipt')
+  await form.getByLabel('Goods receipt *').selectOption('4')
+  await form.getByLabel('Lot / batch number').fill('LOT-9')
+  await form.getByLabel('Result *').selectOption('pass')
+  await form.getByLabel('Parameter 1', { exact: true }).fill('Moisture')
+  await form.getByLabel('Value 1', { exact: true }).fill('11.5')
+  await form.getByRole('button', { name: 'Save Result' }).click()
+  await expect(page.getByText('Result saved for TEST Pepper lot LOT-9')).toBeVisible()
+  expect(calls.find((c) => c.key === 'POST /api/quality/tests/').body).toMatchObject({ goods_receipt_id: '4' })
+  await page.reload()
+  const table = page.getByRole('table', { name: 'Quality test results' })
+  await expect(table.getByRole('row', { name: /LOT-9/ }).getByRole('cell', { name: 'TEST-GRN-4' })).toBeVisible()
+  await expect(table.getByRole('row', { name: /OLD-1/ }).getByRole('cell', { name: '—' }).first()).toBeVisible() // unlinked stays —
+})
+
 test('tax & billing settings start empty and save', async ({ page }) => {
   await signIn(page, 'admin')
   const blank = {

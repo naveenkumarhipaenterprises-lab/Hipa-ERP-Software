@@ -11,7 +11,8 @@ const list = (v) => (Array.isArray(v) ? v : [])
 
 /**
  * Records lab results (POST /quality/tests/) for one lot of:
- *  - goods received from a supplier that are waiting for inspection (the GRN's quality status follows the result),
+ *  - goods received from a supplier: any real GRN, those awaiting inspection first (the GRN's quality status follows
+ *    the result, and the test is linked to that GRN),
  *  - a finished product, or
  *  - a raw material.
  */
@@ -20,14 +21,14 @@ export default function TestEntryModal({ open, options, onClose, onSave }) {
   return (
     <OptionsGate options={options} title="New Test Entry" onClose={onClose} loadingLabel="Loading items to test…">
       {(data) => {
-        const receipts = list(data.pending_receipts).map((g) => ({
+        const receipts = list(data.goods_receipts ?? data.pending_receipts).map((g) => ({
           value: String(g.id),
           label: `${g.grn_number} • ${g.item} • ${g.supplier} (${g.quality_status})`,
         }))
         const products = list(data.products).map((p) => ({ value: String(p.id), label: p.name }))
         const materials = list(data.materials).map((m) => ({ value: String(m.id), label: m.name }))
         const sources = [
-          receipts.length && { value: 'receipt', label: 'Goods received (awaiting inspection)' },
+          receipts.length && { value: 'receipt', label: 'Goods received (GRN)' },
           products.length && { value: 'product', label: 'Finished product' },
           materials.length && { value: 'material', label: 'Raw material' },
         ].filter(Boolean)

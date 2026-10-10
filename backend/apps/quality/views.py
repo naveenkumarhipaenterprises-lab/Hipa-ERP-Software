@@ -2,7 +2,7 @@ import re
 from datetime import timedelta
 
 from django.db import transaction
-from django.db.models import Count, Q
+from django.db.models import Case, Count, IntegerField, Q, Value, When
 from django.db.models.functions import Coalesce
 from django.shortcuts import get_object_or_404
 from django.utils.dateparse import parse_date
@@ -150,16 +150,25 @@ class TrendView(QualityView):
         return Response(points)
 
 
+def receipt_option(g):
+    return {"id": g.id, "grn_number": g.grn_number, "item": g.purchase.item_name, "item_type": g.purchase.item_type,
+            "supplier": g.purchase.supplier.name, "received_date": g.received_date, "quality_status": g.get_quality_status_display()}
+
+
 class OptionsView(QualityView):
+    MAX_RECEIPTS = 500
+
     def get(self, request):
         Q_ = GoodsReceipt.QualityStatus
-        pending = (GoodsReceipt.objects.select_related("purchase__supplier", "purchase__material", "purchase__product")
-                   .filter(quality_status__in=(Q_.PENDING, Q_.ON_HOLD)).order_by("-received_date", "-id"))
+        receipts = GoodsReceipt.objects.select_related("purchase__supplier", "purchase__material", "purchase__product")
+        waiting = Q(quality_status__in=(Q_.PENDING, Q_.ON_HOLD))
+        pending = receipts.filter(waiting).order_by("-received_date", "-id")
+        # Every real GRN can be tested, also one recorded as Passed / Failed at receipt: awaiting inspection first
+        everything = receipts.annotate(waiting=Case(When(waiting, then=Value(0)), default=Value(1), output_field=IntegerField())
+                                       ).order_by("waiting", "-received_date", "-id")[:self.MAX_RECEIPTS]
         return Response({
-            "pending_receipts": [{"id": g.id, "grn_number": g.grn_number, "item": g.purchase.item_name,
-                                  "item_type": g.purchase.item_type, "supplier": g.purchase.supplier.name,
-                                  "received_date": g.received_date, "quality_status": g.get_quality_status_display()}
-                                 for g in pending],
+            "pending_receipts": [receipt_option(g) for g in pending],
+            "goods_receipts": [receipt_option(g) for g in everything],
             "products": list(Product.objects.filter(is_active=True).values("id", "name")),
             "materials": list(RawMaterial.objects.filter(status=RawMaterial.Status.ACTIVE).values("id", "name")),
             "results": choices(R),

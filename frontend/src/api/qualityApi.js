@@ -15,6 +15,7 @@ import { api, cleanParams as clean } from './client'
  *
  * GET /quality/options/
  * { pending_receipts: [{ id, grn_number, item, item_type, supplier, received_date, quality_status }],   // goods awaiting inspection
+ *   goods_receipts: [...same shape],   // every GRN (awaiting inspection first), offered in New Test Entry
  *   products: [{ id, name }], materials: [{ id, name }], results: [{ value, label }], audit_types: [{ value, label }] }
  *
  * GET  /quality/tests/?page=&page_size=&search=&result=
