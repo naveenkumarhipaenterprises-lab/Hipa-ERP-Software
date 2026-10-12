@@ -139,6 +139,36 @@ class UsersView(ModuleMixin, generics.GenericAPIView):
         return Response(s.UserRowSerializer(user).data, status=status.HTTP_201_CREATED)
 
 
+class AddEmployeeView(SettingsView):
+    """Super Admin or Management adds a new employee: login (role + password), Attendance employee record and Attendance
+    permissions, in one transaction. Only the owner may add a Super Admin."""
+
+    def post(self, request):
+        from apps.attendance.models import Employee
+
+        data = s.AddEmployeeSerializer(data=request.data)
+        data.is_valid(raise_exception=True)
+        v = data.validated_data
+        if v["role"] == Role.ADMIN and not request.user.is_owner:
+            raise PermissionDenied("Only the owner can add or change Super Admin accounts.")
+        user = User(username=unique_username(v["email"]), email=v["email"], name=v["name"].strip(), role=v["role"],
+                    extra_roles=v.get("extra_roles", []))
+        try:
+            password_validation.validate_password(v["password"], user)
+        except DjangoValidationError as exc:
+            raise ValidationError({"password": list(exc.messages)})
+        with transaction.atomic():
+            user.set_password(v["password"])
+            user.save()
+            emp = Employee.objects.create(employee_code=v["employee_code"], name=user.name, email=user.email, user=user,
+                                          department=v.get("department", "").strip(), designation=v.get("designation", "").strip(),
+                                          phone=v.get("phone", ""), joining_date=v.get("joining_date"))
+            if user.effective_role != Role.ADMIN:
+                attendance_perms.set_granted(user, v.get("attendance_permissions", s.BASIC_ATTENDANCE))
+        audit.record(request, f"Added employee ({Role(user.role).label}, ID {emp.employee_code})", f"{user.name} <{user.email}>")
+        return Response(s.UserRowSerializer(user).data, status=status.HTTP_201_CREATED)
+
+
 class UserDetailView(SettingsView):
     def patch(self, request, pk):
         user = get_object_or_404(User, pk=pk)

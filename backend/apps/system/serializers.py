@@ -111,6 +111,54 @@ class UserRowSerializer(serializers.ModelSerializer):
         return attendance_perms.granted(obj)
 
 
+PHONE = re.compile(r"^[0-9+\-() ]{6,20}$")
+BASIC_ATTENDANCE = ["leave_apply"]  # check-in / check-out need no permission (every active employee)
+
+
+class AddEmployeeSerializer(serializers.Serializer):
+    """Settings -> Users -> Add Employee: a login, its role and password, and the Attendance employee record, in one step."""
+
+    name = serializers.CharField(max_length=150)
+    email = serializers.EmailField()
+    role = serializers.ChoiceField(choices=Role.choices)
+    extra_roles = serializers.ListField(child=serializers.ChoiceField(choices=Role.choices), required=False, allow_empty=True)
+    password = serializers.CharField(trim_whitespace=False, max_length=128)
+    employee_code = serializers.CharField(max_length=30)
+    department = serializers.CharField(max_length=100, required=False, allow_blank=True)
+    designation = serializers.CharField(max_length=100, required=False, allow_blank=True)
+    phone = serializers.CharField(max_length=20, required=False, allow_blank=True)
+    joining_date = serializers.DateField(required=False, allow_null=True)
+    # Attendance permissions; left out = leave / permission requests (check-in / out need none)
+    attendance_permissions = serializers.ListField(child=serializers.ChoiceField(choices=attendance_perms.CODES), required=False)
+
+    def validate_email(self, value):
+        value = value.strip().lower()
+        if User.objects.filter(email__iexact=value).exists():
+            raise serializers.ValidationError("A user with this e-mail already exists.")
+        return value
+
+    def validate_employee_code(self, value):
+        from apps.attendance.services import current_employees
+
+        value = value.strip()
+        if not value:
+            raise serializers.ValidationError("Enter the employee ID.")
+        if current_employees().filter(employee_code__iexact=value).exists():
+            raise serializers.ValidationError(f"Employee ID {value} is already used.")
+        return value
+
+    def validate_phone(self, value):
+        value = value.strip()
+        if value and not PHONE.match(value):
+            raise serializers.ValidationError("Enter a valid phone number.")
+        return value
+
+    def validate_extra_roles(self, value):
+        if Role.ADMIN in value:
+            raise serializers.ValidationError("Super Admin can only be the main role.")
+        return value
+
+
 class InviteUserSerializer(serializers.Serializer):
     name = serializers.CharField(max_length=150)
     email = serializers.EmailField()

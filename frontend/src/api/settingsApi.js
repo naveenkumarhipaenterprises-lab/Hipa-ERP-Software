@@ -48,6 +48,8 @@ export const settingsApi = {
 
   listUsers: (params) => api.get('/settings/users/', clean(params)),
   inviteUser: (user) => api.post('/settings/users/', user),
+  // Super Admin / Management: login + role + password + Attendance employee record in one step
+  addEmployee: (body) => api.post('/settings/users/add-employee/', body),
   updateUser: (id, changes) => api.patch(`/settings/users/${id}/`, changes),
   // Super Admin only: sets another person's password and signs them out everywhere
   setUserPassword: (id, password) => api.post(`/settings/users/${id}/password/`, { password }),

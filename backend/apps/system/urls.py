@@ -8,6 +8,7 @@ settings_urls = [
     path("company/", views.CompanySettingsView.as_view()),
     path("billing/", views.BillingSettingsView.as_view()),
     path("users/", views.UsersView.as_view()),
+    path("users/add-employee/", views.AddEmployeeView.as_view()),
     path("users/<int:pk>/", views.UserDetailView.as_view()),
     path("users/<int:pk>/password/", views.UserPasswordView.as_view()),
     path("notifications/", views.NotificationPreferencesView.as_view()),

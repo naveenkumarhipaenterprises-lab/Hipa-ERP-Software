@@ -35,6 +35,7 @@ export default function UsersSection({ options }) {
   const [confirming, setConfirming] = useState(null) // { user, changes }
   const [permsFor, setPermsFor] = useState(null) // user whose Attendance permissions are open
   const [rolesFor, setRolesFor] = useState(null) // user whose extra roles are open
+  const [addingEmployee, setAddingEmployee] = useState(false)
   const [passwordFor, setPasswordFor] = useState(null) // user whose password a Super Admin is setting
   const [refreshKey, setRefreshKey] = useState(0)
   const query = useDebouncedValue(search.trim())
@@ -74,6 +75,25 @@ export default function UsersSection({ options }) {
     toast.success(`Password set for ${passwordFor.name || passwordFor.email}`)
     refresh()
   }
+
+  const addEmployee = async (values) => {
+    const body = Object.fromEntries(Object.entries(values).filter(([, v]) => v !== '' && v !== undefined))
+    const u = await settingsApi.addEmployee({ ...body, name: values.name.trim(), email: values.email.trim() })
+    toast.success(`${u.name} added. They can sign in with ${u.email} and the password you set.`)
+    refresh()
+  }
+  const employeeFields = [
+    { name: 'name', label: 'Full name', required: true, full: true },
+    { name: 'email', label: 'Login e-mail', type: 'email', required: true },
+    { name: 'password', label: 'Password', type: 'password', required: true, hint: 'At least 8 characters with a letter and a number. Share it privately.',
+      validate: (v) => (v.length < 8 ? 'Use at least 8 characters' : !/[A-Za-z]/.test(v) || !/\d/.test(v) ? 'Include a letter and a number' : null) },
+    { name: 'role', label: 'Role', type: 'select', required: true, options: roleChoices },
+    { name: 'employee_code', label: 'Employee ID', required: true, placeholder: 'e.g. 011' },
+    { name: 'joining_date', label: 'Joining date', type: 'date' },
+    { name: 'department', label: 'Department' },
+    { name: 'designation', label: 'Designation' },
+    { name: 'phone', label: 'Phone', type: 'tel' },
+  ]
 
   const saveUser = async (values) => {
     if (editing === 'new') {
@@ -120,8 +140,8 @@ export default function UsersSection({ options }) {
       subtitle={users.loading ? 'Team members and access levels' : `${formatNumber(total)} team member${total === 1 ? '' : 's'}`}
       bodyClassName="card__body--flush"
       action={
-        <Button size="sm" icon={UserPlus} onClick={() => setEditing('new')}>
-          Invite User
+        <Button size="sm" icon={UserPlus} onClick={() => setAddingEmployee(true)}>
+          Add Employee
         </Button>
       }
     >
@@ -217,6 +237,16 @@ export default function UsersSection({ options }) {
         initialValues={editing && editing !== 'new' ? { name: editing.name ?? '', role: editing.role ?? '', status: editing.status ?? '' } : {}}
         fields={fields}
         onSubmit={saveUser}
+      />
+      <FormModal
+        open={addingEmployee}
+        onClose={() => setAddingEmployee(false)}
+        title="Add Employee"
+        subtitle="Creates their login, role and attendance record. They can check in / out and request leave or permission straight away."
+        submitLabel="Add Employee"
+        fields={employeeFields}
+        initialValues={{}}
+        onSubmit={addEmployee}
       />
       <SetPasswordModal key={`pw-${passwordFor?.id}`} user={passwordFor} onClose={() => setPasswordFor(null)} onSave={savePassword} />
       <ExtraRolesModal key={`roles-${rolesFor?.id}`} user={rolesFor} roles={roles} onClose={() => setRolesFor(null)} onSave={saveExtraRoles} />

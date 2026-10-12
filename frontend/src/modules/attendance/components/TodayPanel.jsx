@@ -4,6 +4,7 @@ import { attendanceApi } from '../../../api/attendanceApi'
 import Badge from '../../../components/common/Badge'
 import Button from '../../../components/common/Button'
 import Card from '../../../components/common/Card'
+import ConfirmDialog from '../../../components/common/ConfirmDialog'
 import ErrorMessage from '../../../components/common/ErrorMessage'
 import Loader from '../../../components/common/Loader'
 import Table from '../../../components/common/Table'
@@ -28,6 +29,7 @@ export default function TodayPanel() {
   const history = useApi(() => attendanceApi.listHistory({ page_size: 10 }), [historyKey])
   const [now, setNow] = useState(() => Date.now())
   const [busy, setBusy] = useState(false)
+  const [confirmingOut, setConfirmingOut] = useState(false) // check-out always asks first: it can't be undone
   const s = status.data
   const reload = status.reload
 
@@ -122,7 +124,7 @@ export default function TodayPanel() {
             </dl>
             <div className="attendance-actions">
               {s.can_check_out ? (
-                <Button icon={LogOut} size="lg" onClick={() => act('out')} loading={busy}>Check Out / Logout</Button>
+                <Button icon={LogOut} size="lg" onClick={() => setConfirmingOut(true)} loading={busy}>Check Out / Logout</Button>
               ) : s.can_check_in ? (
                 <Button icon={LogIn} size="lg" onClick={() => act('in')} loading={busy}>{checkInLabel}</Button>
               ) : r && !completed ? (
@@ -164,6 +166,15 @@ export default function TodayPanel() {
           />
         )}
       </Card>
+      <ConfirmDialog
+        open={confirmingOut}
+        onClose={() => setConfirmingOut(false)}
+        onConfirm={() => act('out')}
+        title="Check out now?"
+        message={`Your check-out will be recorded now${serverNow ? ` (${IST_CLOCK.format(serverNow).toUpperCase()} IST)` : ''} and your work day ends. You can't check in again for this work day. Are you sure?`}
+        confirmLabel="Yes, Check Out"
+        cancelLabel="No, Stay Checked In"
+      />
     </div>
   )
 }
