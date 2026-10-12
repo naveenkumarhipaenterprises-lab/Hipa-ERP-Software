@@ -1,4 +1,4 @@
-﻿import { ArrowRightCircle, Eye, ReceiptText, Search, ShoppingCart, XCircle } from 'lucide-react'
+﻿import { ArrowRightCircle, Eye, ReceiptText, Search, ShoppingCart, Truck, XCircle } from 'lucide-react'
 import { useState } from 'react'
 import { salesApi } from '../../../api/salesApi'
 import Badge from '../../../components/common/Badge'
@@ -18,6 +18,9 @@ import { usePageReset } from '../../../hooks/usePageReset'
 import { useToast } from '../../../hooks/useToast'
 import { formatDate, formatINR, formatNumber } from '../../../utils/formatters'
 import DeleteRecordButton from '../../../components/common/DeleteRecordButton'
+import { useAuth } from '../../../hooks/useAuth'
+import { DELIVERY_MANAGERS, DELIVERY_VIEWERS, hasAnyRole } from '../../../utils/constants'
+import DeliveryDetailsModal from '../../supplyChain/components/DeliveryDetailsModal'
 
 const PAGE_SIZE = 10
 const has = (v) => v !== null && v !== undefined && v !== ''
@@ -35,6 +38,11 @@ export default function OrdersPanel({ range, product, rangeLabel, refreshKey, st
   const [invoicing, setInvoicing] = useState(null)
   const [viewing, setViewing] = useState(null)
   const [advancing, setAdvancing] = useState(null)
+  const [delivery, setDelivery] = useState(null) // order id whose delivery details are open
+  const { user } = useAuth()
+  // Delivery status uses the same rule as Supply Chain -> Customer Deliveries
+  const canSeeDelivery = hasAnyRole(user, DELIVERY_VIEWERS)
+  const canManageDelivery = hasAnyRole(user, DELIVERY_MANAGERS)
   const query = useDebouncedValue(search.trim())
 
   // Any filter change sends the list back to page 1
@@ -74,6 +82,7 @@ export default function OrdersPanel({ range, product, rangeLabel, refreshKey, st
     { key: 'status', header: 'Status', render: (r) => (r.status ? <Badge>{r.status}</Badge> : '—') },
   ]
   columns.splice(6, 0, { key: 'invoice_number', header: 'Invoice', render: (r) => r.invoice_number || '—' })
+  columns.push({ key: 'delivery_status', header: 'Delivery', render: (r) => (r.delivery_status ? <Badge>{r.delivery_status}</Badge> : '—') })
   columns.push({
     key: 'actions',
     sticky: true,
@@ -82,6 +91,9 @@ export default function OrdersPanel({ range, product, rangeLabel, refreshKey, st
     render: (r) => (
       <span className="row-actions">
         <Button variant="ghost" size="sm" icon={Eye} onClick={() => setViewing(r)} aria-label={`View order ${r.order_number ?? r.id}`} />
+        {canSeeDelivery && r.delivery_status && (
+          <Button variant="ghost" size="sm" icon={Truck} onClick={() => setDelivery(r.id)} aria-label={`Delivery details of ${r.order_number ?? r.id}`} />
+        )}
         {canManage && r.next_status && (
           <Button variant="ghost" size="sm" icon={ArrowRightCircle} onClick={() => setAdvancing(r)} aria-label={`Mark ${r.order_number ?? r.id} ${r.next_status.label}`} />
         )}
@@ -180,6 +192,8 @@ export default function OrdersPanel({ range, product, rangeLabel, refreshKey, st
         cancelLabel="Back"
       />
       <OrderDetail order={viewing} onClose={() => setViewing(null)} />
+      <DeliveryDetailsModal orderId={delivery} canManage={canManageDelivery} onClose={() => setDelivery(null)}
+                            onChanged={() => (onChanged ? onChanged() : orders.reload())} />
     </Card>
   )
 }
@@ -198,7 +212,12 @@ function OrderDetail({ order, onClose }) {
         <div className="stack">
           <dl className="detail-grid">
             {[['Date', o.date ? formatDate(o.date) : '—'], ['Status', <Badge key="s">{o.status}</Badge>], ['Quotation', o.quotation_number || '—'],
-              ['Invoice', o.invoice_number || '—'], ['Notes', o.notes || '—']].map(([k, v]) => (
+              ['Invoice', o.invoice_number || '—'],
+              ['Delivery', o.delivery_status ? <Badge key="d">{o.delivery_status}</Badge> : '—'],
+              ['Expected Delivery', o.expected_delivery_date ? formatDate(o.expected_delivery_date) : '—'],
+              ['Tracking Ref.', o.tracking_reference || '—'],
+              ['Delivered On', o.delivered_on ? formatDate(o.delivered_on) : '—'],
+              ['Notes', o.notes || '—']].map(([k, v]) => (
               <div key={k}><dt>{k}</dt><dd>{v}</dd></div>
             ))}
           </dl>

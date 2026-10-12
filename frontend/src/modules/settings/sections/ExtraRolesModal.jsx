@@ -15,7 +15,7 @@ export default function ExtraRolesModal({ user, roles, onClose, onSave }) {
   const [error, setError] = useState('')
   if (!user) return null
 
-  const choices = roles.filter((r) => r.value !== 'admin' && r.value !== user.role)
+  const choices = roles.filter((r) => !['admin', 'attendance'].includes(r.value) && r.value !== user.role)
   const toggle = (value, on) => setChosen((s) => {
     const next = new Set(s)
     if (on) next.add(value)

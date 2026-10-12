@@ -23,6 +23,7 @@ export const ROLES = {
   FINANCE: 'finance',
   QUALITY: 'quality',
   SUPPLY_CHAIN: 'supply_chain',
+  ATTENDANCE: 'attendance', // Attendance Only: check in / out and leave or permission requests, nothing else
 }
 
 export const ROLE_LABELS = {
@@ -35,6 +36,7 @@ export const ROLE_LABELS = {
   finance: 'Accounts Team',
   quality: 'Quality Team',
   supply_chain: 'Supply Chain Team',
+  attendance: 'Attendance Only',
 }
 
 const ALL = Object.values(ROLES)
@@ -111,6 +113,10 @@ export const NAV_ITEMS = [
 ]
 
 /** Every role the user holds: the main role plus any extra roles (e.g. Purchase + Inventory). */
+// Who may open / update customer deliveries (the backend enforces the same lists)
+export const DELIVERY_VIEWERS = ['admin', 'management', 'sales', 'inventory', 'supply_chain']
+export const DELIVERY_MANAGERS = ['admin', 'management', 'sales', 'supply_chain']
+
 export const userRoles = (user) =>
   Array.isArray(user?.roles) && user.roles.length ? user.roles : user?.role ? [user.role] : []
 

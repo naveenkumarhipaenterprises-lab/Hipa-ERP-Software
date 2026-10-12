@@ -10,4 +10,9 @@ urlpatterns = [
     path("shipments/", views.ShipmentsView.as_view()),
     path("shipments/<int:pk>/status/", views.ShipmentStatusView.as_view()),
     path("shipments/<int:pk>/purchase/", views.ShipmentPurchaseView.as_view()),
+    # Customer deliveries: keyed by the sales order id
+    path("customer-deliveries/", views.CustomerDeliveriesView.as_view()),
+    path("customer-deliveries/<int:pk>/", views.CustomerDeliveryDetailView.as_view()),
+    path("customer-deliveries/<int:pk>/dispatch/", views.CustomerDeliveryDispatchView.as_view()),
+    path("customer-deliveries/<int:pk>/confirm/", views.CustomerDeliveryConfirmView.as_view()),
 ]

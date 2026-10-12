@@ -1,11 +1,13 @@
 from decimal import Decimal
 
+from django.conf import settings
 from django.core.validators import MinValueValidator
 from django.db import models
 
 from apps.core.numbering import save_with_number as _numbered
 from apps.inventory.models import Product
 from apps.purchase.models import Purchase, RawMaterial, Supplier, Unit
+from apps.sales.models import SalesOrder
 
 
 class Shipment(models.Model):
@@ -56,3 +58,32 @@ class Shipment(models.Model):
         if not self.shipment_number:
             return _numbered(self, "shipment_number", "SH", self.dispatched_on, super().save, args, kwargs)
         super().save(*args, **kwargs)
+
+
+class CustomerDelivery(models.Model):
+    """
+    Outbound delivery details for one sales order (customer deliveries). Kept separate from Shipment, which is
+    inbound from suppliers. The order's own status (Pending -> Processing -> In Transit -> Delivered) is the stage;
+    this record holds the dates, tracking and who confirmed the delivery. Created the first time any of it is saved.
+    The delivery status shown everywhere is worked out in deliveries.py.
+    """
+
+    order = models.OneToOneField(SalesOrder, on_delete=models.CASCADE, related_name="delivery")
+    expected_delivery_date = models.DateField(null=True, blank=True, db_index=True)
+    dispatched_on = models.DateField(null=True, blank=True)
+    carrier = models.CharField("transporter / vehicle", max_length=120, blank=True)
+    tracking_reference = models.CharField(max_length=60, blank=True)
+    delivered_on = models.DateField(null=True, blank=True)
+    received_by = models.CharField(max_length=120, blank=True)
+    confirmed_by = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.SET_NULL, related_name="+")
+    confirmed_at = models.DateTimeField(null=True, blank=True)
+    notes = models.CharField(max_length=500, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["-order__order_date", "-order_id"]
+        verbose_name_plural = "customer deliveries"
+
+    def __str__(self):
+        return f"Delivery of {self.order}"

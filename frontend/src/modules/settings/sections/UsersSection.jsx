@@ -87,7 +87,7 @@ export default function UsersSection({ options }) {
     { name: 'email', label: 'Login e-mail', type: 'email', required: true },
     { name: 'password', label: 'Password', type: 'password', required: true, hint: 'At least 8 characters with a letter and a number. Share it privately.',
       validate: (v) => (v.length < 8 ? 'Use at least 8 characters' : !/[A-Za-z]/.test(v) || !/\d/.test(v) ? 'Include a letter and a number' : null) },
-    { name: 'role', label: 'Role', type: 'select', required: true, options: roleChoices },
+    { name: 'role', label: 'Role', type: 'select', required: true, options: roleChoices, hint: 'Attendance Only: check in / out and leave or permission requests, no other module.' },
     { name: 'employee_code', label: 'Employee ID', required: true, placeholder: 'e.g. 011' },
     { name: 'joining_date', label: 'Joining date', type: 'date' },
     { name: 'department', label: 'Department' },
@@ -125,12 +125,12 @@ export default function UsersSection({ options }) {
       ? [
           { name: 'name', label: 'Full name', required: true, full: true },
           { name: 'email', label: 'Email', type: 'email', required: true, full: true },
-          { name: 'role', label: 'Role', type: 'select', required: true, options: roleChoices, full: true },
+          { name: 'role', label: 'Role', type: 'select', required: true, options: roleChoices, full: true, hint: 'Attendance Only: check in / out and leave or permission requests, no other module.' },
         ]
       : [
           { name: 'name', label: 'Full name', required: true, full: true },
           // Your own role and status are locked so you can't lock yourself out
-          ...(self ? [] : [{ name: 'role', label: 'Role', type: 'select', required: true, options: roleChoices }]),
+          ...(self ? [] : [{ name: 'role', label: 'Role', type: 'select', required: true, options: roleChoices, full: true, hint: 'Attendance Only: check in / out and leave or permission requests, no other module.' }]),
           ...(self || statuses.length === 0 ? [] : [{ name: 'status', label: 'Status', type: 'select', required: true, options: statuses }]),
         ]
 
@@ -211,7 +211,7 @@ export default function UsersSection({ options }) {
                       Password
                     </Button>
                   )}
-                  {!isMe(r) && r.role !== 'admin' && (
+                  {!isMe(r) && r.role !== 'admin' && r.role !== 'attendance' && (
                     <Button size="sm" variant="ghost" onClick={() => setRolesFor(r)} aria-label={`Extra roles for ${r.name || r.email}`}>
                       Roles
                     </Button>

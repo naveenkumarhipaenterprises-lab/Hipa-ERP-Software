@@ -1,7 +1,7 @@
 from django.contrib.auth.models import AbstractUser
 from django.db import models
 
-from apps.core.roles import Role
+from apps.core.roles import MAIN_ONLY, Role
 
 
 class User(AbstractUser):
@@ -38,11 +38,14 @@ class User(AbstractUser):
     def all_roles(self):
         """The main role first, then any extra roles (valid, distinct, never Super Admin)."""
         main = self.effective_role
-        extras = [r for r in (self.extra_roles or []) if r in Role.values and r not in (Role.ADMIN, main)]
+        if main == Role.ATTENDANCE:  # Attendance Only never has other areas
+            return [main]
+        extras = [r for r in (self.extra_roles or []) if r in Role.values and r not in (*MAIN_ONLY, main)]
         return [main, *dict.fromkeys(extras)]
 
     def save(self, *args, **kwargs):
-        self.extra_roles = [r for r in dict.fromkeys(self.extra_roles or []) if r in Role.values and r not in (Role.ADMIN, self.role)]
+        self.extra_roles = [] if self.role == Role.ATTENDANCE else [
+            r for r in dict.fromkeys(self.extra_roles or []) if r in Role.values and r not in (*MAIN_ONLY, self.role)]
         if self.is_superuser:  # superusers act as admins; store that too, so the database doesn't say otherwise
             self.role = Role.ADMIN
         super().save(*args, **kwargs)

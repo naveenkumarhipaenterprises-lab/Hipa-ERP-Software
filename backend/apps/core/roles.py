@@ -15,9 +15,13 @@ class Role(models.TextChoices):
     FINANCE = "finance", "Accounts Team"
     QUALITY = "quality", "Quality Team"
     SUPPLY_CHAIN = "supply_chain", "Supply Chain Team"
+    # Only Attendance (check in / out, leave and permission requests): no business module at all
+    ATTENDANCE = "attendance", "Attendance Only"
 
 
 ALL = [r.value for r in Role]
+# Roles that can't be added as extra roles: Super Admin has everything, Attendance Only means nothing else
+MAIN_ONLY = ["admin", "attendance"]
 
 # Who may open (read) each module. A team role opens only the modules where it does its own work (where it may
 # change data, see MODULE_WRITE), plus Attendance. Super Admin and Management see everything.
@@ -30,6 +34,8 @@ MODULE_READ = {
     "marketing": ["admin", "management", "marketing"],
     "customers": ["admin", "management", "sales", "marketing"],  # Marketing sends customer offers
     "supply_chain": ["admin", "management", "inventory", "supply_chain"],
+    # Customer deliveries of sales orders: the Supply Chain dashboard and the Sales orders list
+    "customer_deliveries": ["admin", "management", "sales", "inventory", "supply_chain"],
     "quality": ["admin", "management", "quality"],
     # Every user opens Attendance; each action checks its own per-user permission (apps/attendance/permissions.py)
     "attendance": ALL,
@@ -50,6 +56,7 @@ MODULE_WRITE = {
     "customers": ["admin", "management", "sales"],
     "customer_offers": ["admin", "management", "marketing"],
     "supply_chain": ["admin", "management", "inventory", "supply_chain"],
+    "customer_deliveries": ["admin", "management", "sales", "supply_chain"],  # dispatch, tracking, confirm delivery
     "quality": ["admin", "management", "quality"],
     "attendance": ALL,
     "reports": ["admin", "management"],

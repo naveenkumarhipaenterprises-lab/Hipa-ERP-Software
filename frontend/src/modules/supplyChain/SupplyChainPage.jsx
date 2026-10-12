@@ -1,4 +1,4 @@
-import { Clock, IndianRupee, Leaf, PackageCheck, Plus, ShoppingCart, Timer, Truck, Users } from 'lucide-react'
+import { AlertTriangle, CircleCheck, ClipboardList, Clock, Hourglass, IndianRupee, Leaf, PackageCheck, Plus, ShoppingCart, Timer, Truck, Users } from 'lucide-react'
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { supplyChainApi } from '../../api/supplyChainApi'
@@ -20,6 +20,8 @@ import { useToast } from '../../hooks/useToast'
 import { CHART_COLORS, DATE_RANGES, hasAnyRole } from '../../utils/constants'
 import { formatINR, formatNumber, formatPercent } from '../../utils/formatters'
 import AlertFeed from './components/AlertFeed'
+import { CustomerDeliveriesModal, deliveryColumns } from './components/CustomerDeliveries'
+import DeliveryDetailsModal from './components/DeliveryDetailsModal'
 import { SHIPMENT_COLUMNS } from './components/shipmentColumns'
 import { NewShipmentModal } from './components/ShipmentForms'
 import ShipmentsModal from './components/ShipmentsModal'
@@ -41,6 +43,15 @@ const KPIS = [
   { key: 'pending_purchases', label: 'Awaiting Receipt', icon: Timer, tone: 'yellow', format: formatNumber, goodWhenDown: true },
 ]
 
+// Customer (outbound) deliveries: counts from the backend, which uses one status rule everywhere
+const DELIVERY_KPIS = [
+  { key: 'total', label: 'Total Customer Orders', icon: ClipboardList, tone: 'blue', sub: 'Needing delivery tracking' },
+  { key: 'pending', label: 'Pending Deliveries', icon: Hourglass, tone: 'yellow', sub: 'Being prepared' },
+  { key: 'in_transit', label: 'In Transit', icon: Truck, tone: 'teal', sub: 'Dispatched, not delivered' },
+  { key: 'delivered', label: 'Delivered Orders', icon: CircleCheck, tone: 'green', sub: 'Delivery confirmed' },
+  { key: 'delayed', label: 'Delayed Deliveries', icon: AlertTriangle, tone: 'red', sub: 'Past expected date' },
+]
+
 // Styling only: colour per shipment status
 const SHIPMENT_STATUS = [
   { key: 'in_transit', label: 'In Transit', color: '#2f6fde' },
@@ -58,7 +69,8 @@ export default function SupplyChainPage() {
   const navigate = useNavigate()
   const [range, setRange] = useState(DATE_RANGES[0].value)
   const [months, setMonths] = useState(PERFORMANCE_MONTHS[0].value)
-  const [modal, setModal] = useState(null) // 'shipments' | 'new-shipment'
+  const [modal, setModal] = useState(null) // 'shipments' | 'new-shipment' | 'deliveries'
+  const [deliveryOrder, setDeliveryOrder] = useState(null) // sales order id whose delivery details are open
   const [refreshKey, setRefreshKey] = useState(0)
 
   // Suppliers, raw materials and purchases are managed in the Purchase module
@@ -81,6 +93,11 @@ export default function SupplyChainPage() {
 
   const refresh = () => setRefreshKey((k) => k + 1)
 
+  // null when the role can't see customer deliveries
+  const customerDeliveries = data?.customer_deliveries ?? null
+  const showDeliveries = loading || Boolean(customerDeliveries)
+  const viewDelivery = (row) => setDeliveryOrder(row.order_id)
+
   const createShipment = async (values) => {
     const s = await supplyChainApi.createShipment(values)
     toast.success(s?.shipment_number ? `Shipment ${s.shipment_number} created` : 'Shipment created')
@@ -90,6 +107,7 @@ export default function SupplyChainPage() {
   const actions = [
     ...(canManage ? [{ label: 'New Shipment', icon: Plus, tone: 'orange', onClick: () => setModal('new-shipment') }] : []),
     { label: 'Track Shipments', icon: Truck, tone: 'green', onClick: () => setModal('shipments') },
+    ...(customerDeliveries ? [{ label: 'Customer Deliveries', icon: ClipboardList, tone: 'teal', onClick: () => setModal('deliveries') }] : []),
     ...(canOpenPurchase
       ? [
           { label: 'Purchases', icon: ShoppingCart, tone: 'blue', onClick: () => navigate('/purchase?tab=purchases') },
@@ -221,6 +239,33 @@ export default function SupplyChainPage() {
             </Card>
           </div>
 
+          {showDeliveries && (
+            <>
+              <h2 className="section-title">Customer Deliveries <span className="muted">· outbound sales orders</span></h2>
+              <div className="kpi-grid kpi-grid--auto">
+                {DELIVERY_KPIS.map((k) => {
+                  const value = customerDeliveries?.summary?.[k.key]
+                  return (
+                    <StatCard key={k.key} icon={k.icon} tone={k.tone} label={k.label} sub={k.sub} loading={loading}
+                              value={has(value) ? formatNumber(value) : null} />
+                  )
+                })}
+              </div>
+              <Card title="Recent Customer Deliveries" subtitle="Latest sales orders" onViewAll={() => setModal('deliveries')} bodyClassName="card__body--flush">
+                <Table
+                  compact
+                  loading={loading}
+                  caption="Recent customer deliveries"
+                  data={list(customerDeliveries?.recent)}
+                  columns={deliveryColumns(viewDelivery)}
+                  emptyIcon={Truck}
+                  emptyTitle="No customer orders yet"
+                  emptyMessage="Sales orders appear here for delivery tracking once they are created in Sales."
+                />
+              </Card>
+            </>
+          )}
+
           <div className="dash-row">
             <Card title="Alerts & Notifications">{loading ? <div className="skeleton skeleton--list" aria-label="Loading" /> : <AlertFeed items={data?.alerts} />}</Card>
             <div className="stack">
@@ -239,6 +284,8 @@ export default function SupplyChainPage() {
       )}
 
       <ShipmentsModal open={modal === 'shipments'} statuses={options.data?.shipment_statuses} canManage={canManage} onChanged={refresh} onClose={() => setModal(null)} />
+      <CustomerDeliveriesModal open={modal === 'deliveries'} refreshKey={refreshKey} onView={viewDelivery} onClose={() => setModal(null)} />
+      <DeliveryDetailsModal orderId={deliveryOrder} canManage={Boolean(customerDeliveries?.can_update)} onChanged={refresh} onClose={() => setDeliveryOrder(null)} />
       <NewShipmentModal open={modal === 'new-shipment'} options={options} onClose={() => setModal(null)} onSubmit={createShipment} />
     </div>
   )

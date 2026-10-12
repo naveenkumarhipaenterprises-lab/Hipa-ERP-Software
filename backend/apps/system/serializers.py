@@ -156,6 +156,8 @@ class AddEmployeeSerializer(serializers.Serializer):
     def validate_extra_roles(self, value):
         if Role.ADMIN in value:
             raise serializers.ValidationError("Super Admin can only be the main role.")
+        if Role.ATTENDANCE in value:
+            raise serializers.ValidationError("Attendance Only can only be the main role.")
         return value
 
 
@@ -168,6 +170,8 @@ class InviteUserSerializer(serializers.Serializer):
     def validate_extra_roles(self, value):
         if Role.ADMIN in value:
             raise serializers.ValidationError("Super Admin can only be the main role.")
+        if Role.ATTENDANCE in value:
+            raise serializers.ValidationError("Attendance Only can only be the main role.")
         return value
 
     def validate_email(self, value):
@@ -192,6 +196,8 @@ class UpdateUserSerializer(serializers.Serializer):
     def validate_extra_roles(self, value):
         if Role.ADMIN in value:
             raise serializers.ValidationError("Super Admin can only be the main role.")
+        if Role.ATTENDANCE in value:
+            raise serializers.ValidationError("Attendance Only can only be the main role.")
         return value
 
     def validate_status(self, value):

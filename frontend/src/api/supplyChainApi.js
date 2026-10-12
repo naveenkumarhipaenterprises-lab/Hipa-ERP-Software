@@ -30,6 +30,18 @@ import { api, cleanParams as clean } from './client'
  * GET  /supply-chain/shipments/<id>/purchase/   ->  [{ id, purchase_number, supplier, item, quantity, unit, purchase_date }]
  *      open purchases (Pending / Partially Received) from the same supplier for the same item and unit
  * POST /supply-chain/shipments/<id>/purchase/   { purchase_id }   (a shipment saved without a purchase; only the link changes)
+ *
+ * Customer deliveries (outbound, one per non-cancelled sales order; keyed by the sales order id).
+ * Overview adds customer_deliveries: { summary: { total, pending, in_transit, delivered, delayed }, recent: [delivery], can_update }
+ *   (null when the role can't see customer deliveries)
+ * GET   /supply-chain/customer-deliveries/?page=&page_size=&search=&status=pending|in_transit|delivered|delayed
+ *       delivery: { order_id, order_number, customer, order_date, order_status, delivery_status, expected_delivery_date,
+ *                   dispatched_on, carrier, tracking_reference, delivered_on, received_by, confirmed_by, confirmed_at, notes,
+ *                   can_edit, can_dispatch, can_confirm }
+ * GET   /supply-chain/customer-deliveries/<order_id>/   -> delivery + { customer_phone, delivery_address, city, items }
+ * PATCH /supply-chain/customer-deliveries/<order_id>/   { expected_delivery_date?, carrier?, tracking_reference?, notes? }
+ * POST  /supply-chain/customer-deliveries/<order_id>/dispatch/   { dispatched_on?, carrier?, tracking_reference?, expected_delivery_date? }
+ * POST  /supply-chain/customer-deliveries/<order_id>/confirm/    { delivered_on?, received_by?, notes? }
  */
 export const supplyChainApi = {
   getOverview: ({ range }) => api.get('/supply-chain/overview/', clean({ range })),
@@ -40,4 +52,9 @@ export const supplyChainApi = {
   setShipmentStatus: (id, body) => api.post(`/supply-chain/shipments/${id}/status/`, body),
   getLinkablePurchases: (id) => api.get(`/supply-chain/shipments/${id}/purchase/`),
   linkPurchase: (id, purchaseId) => api.post(`/supply-chain/shipments/${id}/purchase/`, { purchase_id: purchaseId }),
+  listCustomerDeliveries: (params) => api.get('/supply-chain/customer-deliveries/', clean(params)),
+  getCustomerDelivery: (orderId) => api.get(`/supply-chain/customer-deliveries/${orderId}/`),
+  updateCustomerDelivery: (orderId, body) => api.patch(`/supply-chain/customer-deliveries/${orderId}/`, body),
+  dispatchOrder: (orderId, body) => api.post(`/supply-chain/customer-deliveries/${orderId}/dispatch/`, body),
+  confirmDelivery: (orderId, body) => api.post(`/supply-chain/customer-deliveries/${orderId}/confirm/`, body),
 }

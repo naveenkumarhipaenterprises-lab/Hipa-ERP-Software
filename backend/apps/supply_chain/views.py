@@ -11,6 +11,7 @@ from rest_framework.response import Response
 from apps.ai_assistant import insights
 from apps.core import periods
 from apps.core import parsing
+from apps.core.roles import can_read, can_write
 from apps.core.metrics import choices, kpi, label_choices, num, ratio_pct, resolve_choice
 from apps.core.views import ModuleAPIView
 from apps.customers.models import Customer
@@ -18,6 +19,7 @@ from apps.purchase.models import Purchase, RawMaterial, Supplier, Unit
 from apps.sales.models import SalesOrder
 from services import audit, notifications
 
+from . import deliveries
 from .models import Shipment
 from .services import monthly_usage_by_material
 
@@ -152,6 +154,8 @@ class OverviewView(SupplyView):
             "recent_shipments": [shipment_row(s) for s in Shipment.objects.select_related(
                 "supplier", "purchase", "material", "product")[:6]],
             "alerts": alerts,
+            # Outbound, to customers: kept apart from the inbound shipment figures above
+            "customer_deliveries": customer_deliveries_block(request.user),
             "insights": insights.block("supply_chain"),
         })
 
@@ -293,3 +297,148 @@ class ShipmentStatusView(SupplyView):
             notifications.notify("shipment_delays", f"Shipment {s.shipment_number} delayed",
                                  f"{s.supplier.name}, was expected {s.eta:%d %b %Y}", type="error", link="/supply-chain")
         return Response(shipment_row(Shipment.objects.select_related("supplier", "purchase", "material", "product").get(pk=pk)))
+
+
+# --- Customer deliveries (outbound, one per sales order) ---------------------------------------
+
+def deliveries_qs():
+    return (deliveries.eligible_orders().select_related("customer", "delivery", "delivery__confirmed_by")
+            .order_by("-order_date", "-id"))
+
+
+def _user_name(u):
+    return (getattr(u, "name", "") or u.get_username()) if u else None
+
+
+def delivery_row(o, today=None):
+    d = deliveries.delivery_of(o)
+    key = deliveries.status_of(o, today)
+    return {
+        "order_id": o.id, "order_number": o.order_number, "customer_id": o.customer_id, "customer": o.customer.name,
+        "order_date": o.order_date, "order_status": o.get_status_display(), "amount": num(o.total_amount),
+        "delivery_status": deliveries.LABELS.get(key, o.get_status_display()), "delivery_status_key": key,
+        "expected_delivery_date": d.expected_delivery_date if d else None,
+        "dispatched_on": d.dispatched_on if d else None,
+        "carrier": (d.carrier or None) if d else None,
+        "tracking_reference": (d.tracking_reference or None) if d else None,
+        "delivered_on": d.delivered_on if d else None,
+        "received_by": (d.received_by or None) if d else None,
+        "confirmed_by": _user_name(d.confirmed_by) if d else None,
+        "confirmed_at": d.confirmed_at if d else None,
+        "notes": (d.notes or None) if d else None,
+        "can_edit": o.status != SalesOrder.Status.DELIVERED,
+        "can_dispatch": o.status in deliveries.PREPARING,
+        "can_confirm": o.status == SalesOrder.Status.IN_TRANSIT,
+    }
+
+
+def customer_deliveries_block(user):
+    """Customer delivery KPIs and the latest orders for the Supply Chain dashboard (None if the role can't see them)."""
+    if not can_read(user, "customer_deliveries"):
+        return None
+    t = periods.today()
+    return {"summary": deliveries.summary(t), "recent": [delivery_row(o, t) for o in deliveries_qs()[:6]],
+            "can_update": can_write(user, "customer_deliveries")}
+
+
+class DeliveryView(ModuleAPIView):
+    module = "customer_deliveries"
+
+
+class CustomerDeliveriesView(DeliveryView):
+    """GET ?search=&status=pending|in_transit|delivered|delayed&page=: every non-cancelled sales order with its delivery."""
+
+    def get(self, request):
+        qs = deliveries_qs()
+        q = self.param("search")
+        if q:
+            qs = qs.filter(Q(order_number__icontains=q) | Q(customer__name__icontains=q) | Q(delivery__tracking_reference__icontains=q))
+        st = self.param("status")
+        if st:
+            filters = deliveries.status_filters()
+            if st not in filters:
+                raise ValidationError({"status": [f"Choose one of: {', '.join(filters)}."]})
+            qs = qs.filter(filters[st])
+        t = periods.today()
+        return self.paginated(qs, lambda o: delivery_row(o, t))
+
+
+def _locked_order(pk):
+    return get_object_or_404(SalesOrder.objects.select_for_update(of=("self",)).exclude(status=SalesOrder.Status.CANCELLED), pk=pk)
+
+
+def _detail(pk):
+    o = get_object_or_404(deliveries_qs().prefetch_related("items__product"), pk=pk)
+    row = delivery_row(o)
+    c = o.customer
+    row["customer_phone"] = c.phone or None
+    row["delivery_address"] = (c.shipping_address or c.address or "").strip() or None
+    row["city"] = c.city or None
+    row["items"] = [{"product": i.product.name, "quantity_kg": num(i.quantity_kg)} for i in o.items.all()]
+    return row
+
+
+class CustomerDeliveryDetailView(DeliveryView):
+    """GET: one order's delivery details. PATCH {expected_delivery_date?, carrier?, tracking_reference?, notes?}."""
+
+    FIELDS = ("expected_delivery_date", "carrier", "tracking_reference", "notes")
+
+    def get(self, request, pk):
+        return Response(_detail(pk))
+
+    def patch(self, request, pk):
+        d, errors = request.data, {}
+        with transaction.atomic():
+            order = _locked_order(pk)
+            if order.status == SalesOrder.Status.DELIVERED:
+                raise ValidationError({"detail": "This order is delivered; its delivery details are final."})
+            rec = deliveries.delivery_of(order) or deliveries.CustomerDelivery(order=order)
+            if "expected_delivery_date" in d:
+                expected = parsing.date(d, "expected_delivery_date", errors, required=False, label="expected delivery date")
+                deliveries.check_expected(order, expected, rec.dispatched_on, errors)
+                rec.expected_delivery_date = expected
+            for name, size in (("carrier", 120), ("tracking_reference", 60), ("notes", 500)):
+                if name in d:
+                    setattr(rec, name, parsing.text(d, name, size))
+            if errors:
+                raise ValidationError(errors)
+            if not any(name in d for name in self.FIELDS):
+                raise ValidationError({"detail": "Nothing to update."})
+            rec.save()
+        audit.record(request, "Updated customer delivery", order.order_number)
+        return Response(_detail(pk))
+
+
+class CustomerDeliveryDispatchView(DeliveryView):
+    """POST {dispatched_on?, carrier?, tracking_reference?, expected_delivery_date?}: Pending/Processing -> In Transit."""
+
+    def post(self, request, pk):
+        d, errors = request.data, {}
+        dispatched_on = parsing.date(d, "dispatched_on", errors, required=False, label="dispatch date")
+        expected = parsing.date(d, "expected_delivery_date", errors, required=False, label="expected delivery date")
+        if errors:
+            raise ValidationError(errors)
+        with transaction.atomic():
+            order = _locked_order(pk)
+            deliveries.dispatch(order, request.user, dispatched_on=dispatched_on, expected_delivery_date=expected,
+                                carrier=parsing.text(d, "carrier", 120) if "carrier" in d else None,
+                                tracking_reference=parsing.text(d, "tracking_reference", 60) if "tracking_reference" in d else None)
+        audit.record(request, "Dispatched sales order", order.order_number)
+        return Response(_detail(pk))
+
+
+class CustomerDeliveryConfirmView(DeliveryView):
+    """POST {delivered_on?, received_by?, notes?}: In Transit -> Delivered (the explicit delivery confirmation)."""
+
+    def post(self, request, pk):
+        d, errors = request.data, {}
+        delivered_on = parsing.date(d, "delivered_on", errors, required=False, label="delivery date")
+        if errors:
+            raise ValidationError(errors)
+        with transaction.atomic():
+            order = _locked_order(pk)
+            deliveries.confirm(order, request.user, delivered_on=delivered_on,
+                               received_by=parsing.text(d, "received_by", 120) if "received_by" in d else None,
+                               notes=parsing.text(d, "notes", 500))
+        audit.record(request, "Confirmed delivery of sales order", order.order_number)
+        return Response(_detail(pk))

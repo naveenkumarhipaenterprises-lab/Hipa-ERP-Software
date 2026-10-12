@@ -195,7 +195,7 @@ class UserDetailView(SettingsView):
         if "extra_roles" in v and user.effective_role != Role.ADMIN:  # a Super Admin already has everything
             before = user.all_roles[1:]
             user.extra_roles = v["extra_roles"]
-            after = [r for r in dict.fromkeys(v["extra_roles"]) if r not in (Role.ADMIN, user.role)]
+            after = [] if user.role == Role.ATTENDANCE else [r for r in dict.fromkeys(v["extra_roles"]) if r not in (Role.ADMIN, user.role)]
             if sorted(after) != sorted(before):
                 changes.append("extra roles: " + (", ".join(Role(r).label for r in after) or "none"))
         if "status" in v and (v["status"] == "active") != user.is_active:

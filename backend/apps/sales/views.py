@@ -47,11 +47,24 @@ def order_row(o):
         "can_cancel": o.status in SalesOrder.CANCELLABLE and invoice is None,
         "can_invoice": o.status != St.CANCELLED and invoice is None,
         "next_status": ({"value": nxt, "label": St(nxt).label} if (nxt := SalesOrder.NEXT_STATUS.get(o.status)) else None),
+        **delivery_fields(o),
     }
 
 
+def delivery_fields(o):
+    """The order's delivery status, worked out exactly as on the Supply Chain dashboard (supply_chain/deliveries.py)."""
+    from apps.supply_chain import deliveries
+
+    d = deliveries.delivery_of(o)
+    key = deliveries.status_of(o)
+    return {"delivery_status": deliveries.LABELS[key] if key else None,
+            "expected_delivery_date": d.expected_delivery_date if d else None,
+            "tracking_reference": (d.tracking_reference or None) if d else None,
+            "delivered_on": d.delivered_on if d else None}
+
+
 def orders_qs():
-    return SalesOrder.objects.select_related("customer", "quotation").prefetch_related("items__product", "invoices")
+    return SalesOrder.objects.select_related("customer", "quotation", "delivery").prefetch_related("items__product", "invoices")
 
 
 class SalesView(ModuleAPIView):
@@ -269,8 +282,16 @@ class OrderStatusView(SalesView):
                 raise ValidationError({"status": [f"A {order.get_status_display().lower()} order can't change status."]})
             if request.data.get("status") != nxt:
                 raise ValidationError({"status": [f"This order can only move on to {St(nxt).label}."]})
-            order.status = nxt
-            order.save(update_fields=["status", "updated_at"])
+            # Dispatch and delivery are recorded the same way as from Supply Chain -> Customer Deliveries
+            from apps.supply_chain import deliveries
+
+            if nxt == St.IN_TRANSIT:
+                deliveries.dispatch(order, request.user)
+            elif nxt == St.DELIVERED:
+                deliveries.confirm(order, request.user)
+            else:
+                order.status = nxt
+                order.save(update_fields=["status", "updated_at"])
         audit.record(request, f"Marked sales order {St(nxt).label.lower()}", order.order_number)
         return Response(order_row(orders_qs().get(pk=pk)))
 
