@@ -12,6 +12,7 @@ import Table from '../../../components/common/Table'
 import { usePagedList } from '../../../hooks/usePagedList'
 import { useToast } from '../../../hooks/useToast'
 import { clock, day, list } from '../shared'
+import DeleteRecordButton from '../../../components/common/DeleteRecordButton'
 
 const isPermission = (v) => v.type === 'permission'
 const TONE = { Pending: 'amber', Approved: 'green', Rejected: 'red', Cancelled: 'red' }
@@ -70,6 +71,7 @@ export default function LeavePanel({ options, refreshKey, onChanged }) {
           {r.can_reject && <Button size="sm" variant="ghost" icon={XCircle} className="btn--tone-red" onClick={() => setConfirm({ request: r, action: 'reject' })} aria-label={`Reject ${r.employee.name} ${r.type} on ${day(r.date)}`}>Reject</Button>}
           {r.can_edit && <Button size="sm" variant="ghost" icon={Pencil} onClick={() => setForm({ request: r })} aria-label={`Edit request for ${day(r.date)}`} />}
           {r.can_cancel && <Button size="sm" variant="ghost" icon={XCircle} onClick={() => setConfirm({ request: r, action: 'cancel' })} aria-label={`Cancel request for ${day(r.date)}`} />}
+          <DeleteRecordButton kind="leave_request" id={r.id} label={`${r.employee.name} ${r.type} ${day(r.date)}`} onDeleted={onChanged} />
         </span>
       ),
     },

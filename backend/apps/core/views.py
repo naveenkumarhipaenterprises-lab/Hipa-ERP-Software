@@ -1,6 +1,11 @@
-from rest_framework.exceptions import ValidationError
+from rest_framework import status
+from rest_framework.exceptions import PermissionDenied, ValidationError
 from rest_framework.generics import GenericAPIView
 from rest_framework.permissions import IsAuthenticated
+from rest_framework.response import Response
+from rest_framework.views import APIView
+
+from services import audit
 
 from .permissions import ModulePermission
 
@@ -30,3 +35,19 @@ class ModuleAPIView(ModuleMixin, GenericAPIView):
         if not value.isdigit():
             raise ValidationError({name: ["Must be a number."]})
         return int(value)
+
+
+class DeleteRecordView(APIView):
+    """DELETE /api/v1/records/<kind>/<id>/: a Super Admin deletes a wrong entry in any module (services/deletion.py)."""
+
+    permission_classes = [IsAuthenticated]
+
+    def delete(self, request, kind, pk):
+        from apps.core.roles import has_any_role
+        from services.deletion import delete_record
+
+        if not has_any_role(request.user, ["admin"]):
+            raise PermissionDenied("Only a Super Admin can delete records.")
+        label, _module, what = delete_record(kind, pk)
+        audit.record(request, f"Deleted {what}", label)
+        return Response(status=status.HTTP_204_NO_CONTENT)

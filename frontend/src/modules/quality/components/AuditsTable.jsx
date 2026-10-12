@@ -13,6 +13,7 @@ import { useApi } from '../../../hooks/useApi'
 import { usePageReset } from '../../../hooks/usePageReset'
 import { useToast } from '../../../hooks/useToast'
 import { formatDate, formatNumber } from '../../../utils/formatters'
+import DeleteRecordButton from '../../../components/common/DeleteRecordButton'
 
 const PAGE_SIZE = 10
 const FINDINGS_FIELDS = [{ name: 'findings', label: 'Findings', type: 'textarea', required: true, placeholder: 'What the auditor checked and found' }]
@@ -47,19 +48,22 @@ export default function AuditsTable({ refreshKey, statuses, canManage }) {
     { key: 'status', header: 'Status', render: (r) => (r.status ? <Badge>{r.status}</Badge> : '—') },
     { key: 'findings', header: 'Findings', render: (r) => r.findings || '—' },
   ]
-  if (canManage) {
-    columns.push({
-      key: 'actions', sticky: true, align: 'right', header: <span className="sr-only">Actions</span>,
-      render: (r) => r.can_update && (
-        <span className="row-actions">
+  columns.push({
+    key: 'actions', sticky: true, align: 'right', header: <span className="sr-only">Actions</span>,
+    render: (r) => (
+      <span className="row-actions">
+        {canManage && r.can_update && (
           <Button size="sm" variant="soft" icon={CircleCheck} onClick={() => setCompleting(r)} aria-label={`Complete ${r.audit_type} on ${formatDate(r.date)}`}>
             Complete
           </Button>
+        )}
+        {canManage && r.can_update && (
           <Button size="sm" variant="ghost" icon={XCircle} className="btn--tone-red" onClick={() => setCancelling(r)} aria-label={`Cancel ${r.audit_type} on ${formatDate(r.date)}`} />
-        </span>
-      ),
-    })
-  }
+        )}
+        <DeleteRecordButton kind="quality_audit" id={r.id} label={`${r.audit_type} audit${r.date ? ` on ${formatDate(r.date)}` : ''}`} onDeleted={audits.reload} />
+      </span>
+    ),
+  })
 
   return (
     <Card title="Audits" subtitle={audits.loading ? undefined : `${formatNumber(total)} audit${total === 1 ? '' : 's'}`} bodyClassName="card__body--flush">

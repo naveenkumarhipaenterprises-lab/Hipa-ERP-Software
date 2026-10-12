@@ -12,6 +12,7 @@ import { useDebouncedValue } from '../../../hooks/useDebouncedValue'
 import { usePageReset } from '../../../hooks/usePageReset'
 import { useToast } from '../../../hooks/useToast'
 import { formatDate, formatINR, formatNumber } from '../../../utils/formatters'
+import DeleteRecordButton from '../../../components/common/DeleteRecordButton'
 
 const PAGE_SIZE = 10
 const has = (v) => v !== null && v !== undefined && v !== ''
@@ -106,6 +107,8 @@ export default function CustomersTable({ type, refreshKey, statuses, onView }) {
             { key: 'total_purchase', header: 'Purchases', align: 'right', render: (r) => (has(r.total_purchase) ? formatINR(r.total_purchase) : '—') },
             { key: 'last_order_date', header: 'Last Order', render: (r) => <span className="nowrap">{r.last_order_date ? formatDate(r.last_order_date) : '—'}</span> },
             { key: 'status', header: 'Status', render: (r) => (r.status ? <Badge>{r.status}</Badge> : '—') },
+            { key: 'actions', sticky: true, align: 'right', header: <span className="sr-only">Actions</span>,
+              render: (r) => <DeleteRecordButton kind="customer" id={r.id} label={r.name} onDeleted={customers.reload} /> },
           ]}
         />
       )}

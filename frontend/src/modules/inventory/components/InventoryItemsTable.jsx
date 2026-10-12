@@ -14,6 +14,7 @@ import { usePageReset } from '../../../hooks/usePageReset'
 import { useToast } from '../../../hooks/useToast'
 import { formatDate, formatINR, formatNumber } from '../../../utils/formatters'
 import ItemDetailsModal from './ItemDetailsModal'
+import DeleteRecordButton from '../../../components/common/DeleteRecordButton'
 
 const PAGE_SIZE = 10
 const has = (v) => v !== null && v !== undefined && v !== ''
@@ -116,6 +117,7 @@ export default function InventoryItemsTable({ refreshKey, statuses, canManage, o
                   <Button size="sm" variant="soft" icon={Eye} onClick={() => setViewing(r)} aria-label={`View ${r.product}`}>
                     View
                   </Button>
+                  <DeleteRecordButton kind="product" id={r.id} label={r.product} onDeleted={() => (onChanged ? onChanged() : items.reload())} />
                 </span>
               ),
             },

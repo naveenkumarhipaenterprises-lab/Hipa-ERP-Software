@@ -1,4 +1,4 @@
-import { CircleCheck, IndianRupee, PackageCheck, Plus, Trash2, Undo2, XCircle } from 'lucide-react'
+import { CircleCheck, IndianRupee, PackageCheck, Plus, Undo2, XCircle } from 'lucide-react'
 import { useState } from 'react'
 import { purchaseApi } from '../../../api/purchaseApi'
 import Badge from '../../../components/common/Badge'
@@ -11,8 +11,7 @@ import { usePagedList } from '../../../hooks/usePagedList'
 import { useToast } from '../../../hooks/useToast'
 import { choiceOptions, dash, date, idOptions, money, qty, withAll } from '../shared'
 import ListToolbar from '../../../components/common/ListToolbar'
-import { useAuth } from '../../../hooks/useAuth'
-import { isSuperAdmin } from '../../../utils/constants'
+import DeleteRecordButton from '../../../components/common/DeleteRecordButton'
 
 function ListBody({ l, caption, columns, icon, emptyTitle, emptyMessage }) {
   if (l.result.error && !l.result.loading)
@@ -62,6 +61,8 @@ export function ReceiptsPanel({ options, canManage, refreshKey, onNew }) {
           { key: 'accepted_quantity', header: 'Accepted', align: 'right', render: (r) => qty(r.accepted_quantity, r.unit) },
           { key: 'quality_status', header: 'Quality', render: (r) => <Badge>{r.quality_status}</Badge> },
           { key: 'remarks', header: 'Remarks', render: (r) => dash(r.remarks) },
+          { key: 'actions', sticky: true, header: <span className="sr-only">Actions</span>, align: 'right',
+            render: (r) => <DeleteRecordButton kind="goods_receipt" id={r.id} label={r.grn_number} onDeleted={l.result.reload} /> },
         ]} />
     </Card>
   )
@@ -103,10 +104,11 @@ export function ReturnsPanel({ options, canManage, refreshKey, onNew, onChanged 
           { key: 'remarks', header: 'Remarks', render: (r) => dash(r.remarks) },
           {
             key: 'actions', sticky: true, header: <span className="sr-only">Actions</span>, align: 'right',
-            render: (r) => canManage && r.can_update && (
+            render: (r) => (
               <span className="row-actions">
-                <Button size="sm" variant="ghost" icon={CircleCheck} onClick={() => setConfirm({ row: r, status: 'completed' })} aria-label={`Mark ${r.return_number} completed`} />
-                <Button size="sm" variant="ghost" icon={XCircle} onClick={() => setConfirm({ row: r, status: 'cancelled' })} aria-label={`Cancel ${r.return_number}`} />
+                {canManage && r.can_update && <Button size="sm" variant="ghost" icon={CircleCheck} onClick={() => setConfirm({ row: r, status: 'completed' })} aria-label={`Mark ${r.return_number} completed`} />}
+                {canManage && r.can_update && <Button size="sm" variant="ghost" icon={XCircle} onClick={() => setConfirm({ row: r, status: 'cancelled' })} aria-label={`Cancel ${r.return_number}`} />}
+                <DeleteRecordButton kind="purchase_return" id={r.id} label={r.return_number} onDeleted={onChanged} />
               </span>
             ),
           },
@@ -143,7 +145,6 @@ const confirmMessage = ({ row, kind }) => ({
 })[kind]
 
 export function PaymentsPanel({ options, canPay, refreshKey, onNew, onChanged }) {
-  const canDelete = isSuperAdmin(useAuth().user) // deleting is for Super Admins only
   const toast = useToast()
   const o = options.data ?? {}
   const [confirm, setConfirm] = useState(null) // { row, kind: 'pay' | 'delete' | 'cancel' }
@@ -179,11 +180,11 @@ export function PaymentsPanel({ options, canPay, refreshKey, onNew, onChanged })
           { key: 'status', header: 'Status', render: (r) => <Badge>{r.status}</Badge> },
           {
             key: 'actions', sticky: true, header: <span className="sr-only">Actions</span>, align: 'right',
-            render: (r) => canPay && (r.can_mark_paid || r.can_cancel) && (
+            render: (r) => (
               <span className="row-actions">
-                {r.can_mark_paid && <Button size="sm" variant="ghost" icon={CircleCheck} onClick={() => setConfirm({ row: r, kind: 'pay' })} aria-label={`Mark ${r.payment_number} paid`} />}
-                {r.can_mark_paid && canDelete && <Button size="sm" variant="ghost" icon={Trash2} onClick={() => setConfirm({ row: r, kind: 'delete' })} aria-label={`Delete ${r.payment_number}`} />}
-                {r.can_cancel && <Button size="sm" variant="ghost" icon={XCircle} className="btn--tone-red" onClick={() => setConfirm({ row: r, kind: 'cancel' })} aria-label={`Cancel ${r.payment_number}`} />}
+                {canPay && r.can_mark_paid && <Button size="sm" variant="ghost" icon={CircleCheck} onClick={() => setConfirm({ row: r, kind: 'pay' })} aria-label={`Mark ${r.payment_number} paid`} />}
+                {canPay && r.can_cancel && <Button size="sm" variant="ghost" icon={XCircle} className="btn--tone-red" onClick={() => setConfirm({ row: r, kind: 'cancel' })} aria-label={`Cancel ${r.payment_number}`} />}
+                <DeleteRecordButton kind="supplier_payment" id={r.id} label={r.payment_number} onDeleted={onChanged} />
               </span>
             ),
           },

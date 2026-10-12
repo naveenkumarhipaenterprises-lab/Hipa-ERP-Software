@@ -3,6 +3,7 @@ from django.contrib import admin
 from django.urls import include, path
 
 from apps.accounts.admin_login import throttle_failed_logins
+from apps.core.views import DeleteRecordView
 from apps.system.urls import notification_urls, settings_urls
 
 admin.site.site_header = "HIPA MASALA administration"
@@ -24,6 +25,7 @@ api_v1 = [
     path("reports/", include("apps.reports.urls")),
     path("settings/", include(settings_urls)),
     path("notifications/", include(notification_urls)),
+    path("records/<slug:kind>/<int:pk>/", DeleteRecordView.as_view()),
 ]
 
 urlpatterns = [

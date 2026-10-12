@@ -19,6 +19,7 @@ import { choiceOptions, dash, date, idOptions, list, money, withAll } from '../.
 import { formatDate } from '../../../utils/formatters'
 import DocumentEditor from './DocumentEditor'
 import { ITEM_COLUMNS } from './documentColumns'
+import DeleteRecordButton from '../../../components/common/DeleteRecordButton'
 
 /** Sales invoices: list, create (direct), edit, cancel, PDF preview / print / download, payments and returns. */
 export default function InvoicesPanel({ options, canManage, canReceive, refreshKey, onChanged, onPay, onReturn }) {
@@ -50,6 +51,7 @@ export default function InvoicesPanel({ options, canManage, canReceive, refreshK
         <span className="row-actions">
           <Button size="sm" variant="ghost" icon={Eye} onClick={() => setViewing(r)} aria-label={`Open ${r.invoice_number}`} />
           {canReceive && r.can_record_payment && <Button size="sm" variant="ghost" icon={IndianRupee} onClick={() => onPay(r)} aria-label={`Record payment for ${r.invoice_number}`} />}
+          <DeleteRecordButton kind="sales_invoice" id={r.id} label={r.invoice_number} onDeleted={onChanged} />
         </span>
       ) },
   ]

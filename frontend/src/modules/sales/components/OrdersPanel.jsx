@@ -17,6 +17,7 @@ import { useDebouncedValue } from '../../../hooks/useDebouncedValue'
 import { usePageReset } from '../../../hooks/usePageReset'
 import { useToast } from '../../../hooks/useToast'
 import { formatDate, formatINR, formatNumber } from '../../../utils/formatters'
+import DeleteRecordButton from '../../../components/common/DeleteRecordButton'
 
 const PAGE_SIZE = 10
 const has = (v) => v !== null && v !== undefined && v !== ''
@@ -92,6 +93,7 @@ export default function OrdersPanel({ range, product, rangeLabel, refreshKey, st
             Cancel
           </Button>
         )}
+        <DeleteRecordButton kind="sales_order" id={r.id} label={r.order_number ?? 'Order'} onDeleted={() => (onChanged ? onChanged() : orders.reload())} />
       </span>
     ),
   })

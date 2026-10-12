@@ -17,6 +17,7 @@ import { usePagedList } from '../../../hooks/usePagedList'
 import { useToast } from '../../../hooks/useToast'
 import { choiceOptions, dash, date, list, money, optionalNumber, optionalText, withAll } from '../../../utils/display'
 import { todayISO } from '../../../utils/formatters'
+import DeleteRecordButton from '../../../components/common/DeleteRecordButton'
 
 const notFuture = (v) => (v > todayISO() ? "Can't be in the future" : undefined)
 
@@ -166,7 +167,12 @@ export function SalesPaymentsPanel({ options, canReceive, refreshKey, onNew, onC
           { key: 'reference', header: 'Reference', render: (r) => dash(r.reference) },
           { key: 'status', header: 'Status', render: (r) => <Badge>{r.status}</Badge> },
           { key: 'actions', sticky: true, header: <span className="sr-only">Actions</span>, align: 'right',
-            render: (r) => canReceive && r.can_cancel && <Button size="sm" variant="ghost" icon={XCircle} onClick={() => setCancelling(r)} aria-label={`Cancel ${r.receipt_number}`} /> },
+            render: (r) => (
+              <span className="row-actions">
+                {canReceive && r.can_cancel && <Button size="sm" variant="ghost" icon={XCircle} onClick={() => setCancelling(r)} aria-label={`Cancel ${r.receipt_number}`} />}
+                <DeleteRecordButton kind="sales_payment" id={r.id} label={r.receipt_number} onDeleted={onChanged} />
+              </span>
+            ) },
         ]} />
       <ConfirmDialog open={Boolean(cancelling)} onClose={() => setCancelling(null)} onConfirm={cancel} danger title="Cancel payment?"
                      message={`${cancelling?.receipt_number ?? ''} (${money(cancelling?.amount)}) will no longer count towards ${cancelling?.invoice_number ?? 'the invoice'}.`}
@@ -207,10 +213,11 @@ export function SalesReturnsPanel({ options, canManage, refreshKey, onNew, onCha
           { key: 'restock', header: 'Restocked', render: (r) => (r.restock ? 'Yes' : 'No') },
           { key: 'status', header: 'Status', render: (r) => <Badge>{r.status}</Badge> },
           { key: 'actions', sticky: true, header: <span className="sr-only">Actions</span>, align: 'right',
-            render: (r) => canManage && r.can_update && (
+            render: (r) => (
               <span className="row-actions">
-                <Button size="sm" variant="ghost" icon={CircleCheck} onClick={() => setConfirm({ row: r, status: 'completed' })} aria-label={`Mark ${r.return_number} completed`} />
-                <Button size="sm" variant="ghost" icon={XCircle} onClick={() => setConfirm({ row: r, status: 'cancelled' })} aria-label={`Cancel ${r.return_number}`} />
+                {canManage && r.can_update && <Button size="sm" variant="ghost" icon={CircleCheck} onClick={() => setConfirm({ row: r, status: 'completed' })} aria-label={`Mark ${r.return_number} completed`} />}
+                {canManage && r.can_update && <Button size="sm" variant="ghost" icon={XCircle} onClick={() => setConfirm({ row: r, status: 'cancelled' })} aria-label={`Cancel ${r.return_number}`} />}
+                <DeleteRecordButton kind="sales_return" id={r.id} label={r.return_number} onDeleted={onChanged} />
               </span>
             ) },
         ]} />

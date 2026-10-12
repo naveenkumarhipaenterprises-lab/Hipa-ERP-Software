@@ -16,6 +16,7 @@ import { useToast } from '../../../hooks/useToast'
 import { formatDate, formatNumber } from '../../../utils/formatters'
 import { EMPTY_ROW, cleanReadings, readingsError } from '../readings'
 import ParameterRows from './ParameterRows'
+import DeleteRecordButton from '../../../components/common/DeleteRecordButton'
 
 const PAGE_SIZE = 10
 
@@ -93,6 +94,8 @@ export default function QualityTestsTable({ refreshKey, results, canManage = fal
             { key: 'parameters', header: 'Parameters', render: (r) => <span className="cell-clip">{r.parameters || '—'}</span> },
             { key: 'result', header: 'Result', render: (r) => (r.result ? <Badge>{r.result}</Badge> : '—') },
             { key: 'status', header: 'Status', render: (r) => (r.status ? <Badge>{r.status}</Badge> : '—') },
+            { key: 'actions', sticky: true, align: 'right', header: <span className="sr-only">Actions</span>,
+              render: (r) => <DeleteRecordButton kind="quality_test" id={r.id} label={`Test ${[r.product, r.batch_number].filter(Boolean).join(' ')}`} onDeleted={tests.reload} /> },
           ]}
         />
       )}

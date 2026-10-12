@@ -22,6 +22,7 @@ import DocumentEditor from './DocumentEditor'
 import { ITEM_COLUMNS } from './documentColumns'
 import { useAuth } from '../../../hooks/useAuth'
 import { isSuperAdmin } from '../../../utils/constants'
+import DeleteRecordButton from '../../../components/common/DeleteRecordButton'
 
 /** Sales quotations: list, create / edit, status changes, PDF preview / print / download and conversions. */
 export default function QuotationsPanel({ options, canManage, refreshKey, onChanged }) {
@@ -49,7 +50,12 @@ export default function QuotationsPanel({ options, canManage, refreshKey, onChan
     { key: 'status', header: 'Status', render: (r) => <Badge>{r.status}</Badge> },
     { key: 'converted', header: 'Converted To', render: (r) => [r.sales_order_number, r.invoice_number].filter(Boolean).join(', ') || '—' },
     { key: 'actions', sticky: true, header: <span className="sr-only">Actions</span>, align: 'right',
-      render: (r) => <Button size="sm" variant="ghost" icon={Eye} onClick={() => setViewing(r)} aria-label={`Open ${r.quotation_number}`} /> },
+      render: (r) => (
+        <span className="row-actions">
+          <Button size="sm" variant="ghost" icon={Eye} onClick={() => setViewing(r)} aria-label={`Open ${r.quotation_number}`} />
+          <DeleteRecordButton kind="sales_quotation" id={r.id} label={r.quotation_number} onDeleted={onChanged} />
+        </span>
+      ) },
   ]
 
   return (

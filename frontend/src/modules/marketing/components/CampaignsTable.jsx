@@ -13,6 +13,7 @@ import { useDebouncedValue } from '../../../hooks/useDebouncedValue'
 import { usePageReset } from '../../../hooks/usePageReset'
 import { useToast } from '../../../hooks/useToast'
 import { formatDate, formatINR, formatNumber } from '../../../utils/formatters'
+import DeleteRecordButton from '../../../components/common/DeleteRecordButton'
 
 const PAGE_SIZE = 8
 const list = (v) => (Array.isArray(v) ? v : [])
@@ -56,20 +57,22 @@ export default function CampaignsTable({ refreshKey, statuses, platforms, canMan
     { key: 'leads', header: 'Leads', align: 'right', render: (r) => (has(r.leads) ? formatNumber(r.leads) : '—') },
     { key: 'sales', header: 'Sales', align: 'right', render: (r) => (has(r.sales) ? formatINR(r.sales) : '—') },
   ]
-  if (canManage) {
-    columns.push({
-      key: 'end',
-      sticky: true,
-      header: <span className="sr-only">Actions</span>,
-      align: 'right',
-      render: (r) =>
-        r.can_end === true && (
+  columns.push({
+    key: 'end',
+    sticky: true,
+    header: <span className="sr-only">Actions</span>,
+    align: 'right',
+    render: (r) => (
+      <span className="row-actions">
+        {canManage && r.can_end === true && (
           <Button variant="ghost" size="sm" icon={Square} className="btn--tone-red" onClick={() => setEnding(r)}>
             End
           </Button>
-        ),
-    })
-  }
+        )}
+        <DeleteRecordButton kind="campaign" id={r.id} label={r.name} onDeleted={() => { campaigns.reload(); onChanged?.() }} />
+      </span>
+    ),
+  })
 
   return (
     <Card title="Campaigns" subtitle={campaigns.loading ? undefined : `${formatNumber(total)} campaign${total === 1 ? '' : 's'}`} bodyClassName="card__body--flush">

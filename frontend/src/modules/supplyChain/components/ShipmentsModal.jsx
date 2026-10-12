@@ -12,6 +12,7 @@ import { usePageReset } from '../../../hooks/usePageReset'
 import { useToast } from '../../../hooks/useToast'
 import { LinkPurchaseModal, ShipmentStatusModal } from './ShipmentForms'
 import { SHIPMENT_COLUMNS } from './shipmentColumns'
+import DeleteRecordButton from '../../../components/common/DeleteRecordButton'
 
 const PAGE_SIZE = 10
 
@@ -50,26 +51,25 @@ function Shipments({ statuses, canManage, onChanged, onClose }) {
     onChanged?.()
   }
 
-  const columns = canManage
-    ? [...SHIPMENT_COLUMNS, {
+  const columns = [...SHIPMENT_COLUMNS, {
         key: 'actions', sticky: true, align: 'right', header: <span className="sr-only">Actions</span>,
-        render: (r) => (r.can_update || r.can_link_purchase) && (
+        render: (r) => (
           <span className="row-actions">
-            {r.can_link_purchase && (
+            {canManage && r.can_link_purchase && (
               <Button size="sm" variant="ghost" icon={Link2} onClick={() => setLinking(r)} aria-label={`Link ${r.shipment_number} to a purchase`} />
             )}
-            {r.can_update && (r.status === 'Delayed' ? (
+            {canManage && r.can_update && (r.status === 'Delayed' ? (
               <Button size="sm" variant="ghost" icon={Truck} onClick={() => setChange({ shipment: r, status: 'in_transit' })} aria-label={`Mark ${r.shipment_number} in transit`} />
             ) : (
               <Button size="sm" variant="ghost" icon={Clock} onClick={() => setChange({ shipment: r, status: 'delayed' })} aria-label={`Mark ${r.shipment_number} delayed`} />
             ))}
-            {r.can_update && (
+            {canManage && r.can_update && (
               <Button size="sm" variant="soft" icon={CircleCheck} onClick={() => setChange({ shipment: r, status: 'delivered' })} aria-label={`Mark ${r.shipment_number} delivered`}>Delivered</Button>
             )}
+            <DeleteRecordButton kind="shipment" id={r.id} label={r.shipment_number} onDeleted={() => { shipments.reload(); onChanged?.() }} />
           </span>
         ),
       }]
-    : SHIPMENT_COLUMNS
 
   return (
     <Modal open onClose={onClose} title="Shipment Tracking" subtitle="All shipments" size="lg">

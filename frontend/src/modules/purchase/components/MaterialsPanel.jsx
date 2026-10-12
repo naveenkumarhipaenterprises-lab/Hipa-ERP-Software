@@ -1,6 +1,7 @@
 import { Eye, Leaf, MinusCircle, Pencil, Plus, Trash2 } from 'lucide-react'
 import { useState } from 'react'
 import { purchaseApi } from '../../../api/purchaseApi'
+import { recordsApi } from '../../../api/recordsApi'
 import Badge from '../../../components/common/Badge'
 import Button from '../../../components/common/Button'
 import Card from '../../../components/common/Card'
@@ -60,7 +61,7 @@ export default function MaterialsPanel({ options, canManage, canRecordUsage, ref
   }
 
   const remove = async () => {
-    await purchaseApi.deleteMaterial(removing.id)
+    await recordsApi.remove('raw_material', removing.id) // also removes its hand-entered stock movements
     toast.success(`${removing.name} deleted`)
     onChanged()
   }
@@ -157,7 +158,7 @@ export default function MaterialsPanel({ options, canManage, canRecordUsage, ref
       />
       <MaterialDetail material={viewing} onClose={() => setViewing(null)} onChanged={onChanged} />
       <ConfirmDialog open={Boolean(removing)} onClose={() => setRemoving(null)} onConfirm={remove} danger title="Delete raw material?"
-                     message={`${removing?.name ?? ''} will be deleted. Materials with stock movements or purchases can't be deleted — set them to Inactive instead.`}
+                     message={`${removing?.name ?? ''} and its hand-entered stock movements will be deleted. A material with purchases or goods receipts can't be deleted until those are deleted — or set it to Inactive instead.`}
                      confirmLabel="Delete" />
     </Card>
   )
