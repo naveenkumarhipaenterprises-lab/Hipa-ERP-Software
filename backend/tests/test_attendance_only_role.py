@@ -31,3 +31,16 @@ class AttendanceOnlyRoleTests(TestCase):
         self.assertEqual(res.status_code, 400)
         self.assertIn("attendance", [r["value"] for r in admin.get(f"{API}/settings/options/").data["roles"]])
         self.assertEqual(User.objects.get(pk=seller.pk).all_roles, ["sales"])
+
+    def test_roles_window_switches_to_attendance_only_and_back(self):
+        admin = client_for(make_user("admin"))
+        aruna = make_user("purchase", extra_roles=["inventory"])
+        res = admin.patch(f"{API}/settings/users/{aruna.id}/", {"role": "attendance", "extra_roles": []}, format="json")
+        self.assertEqual(res.status_code, 200, res.data)
+        aruna.refresh_from_db()
+        self.assertEqual(aruna.all_roles, ["attendance"])
+        self.assertEqual(client_for(aruna).get(f"{API}/inventory/items/").status_code, 403)
+        res = admin.patch(f"{API}/settings/users/{aruna.id}/", {"role": "purchase", "extra_roles": ["inventory"]}, format="json")
+        self.assertEqual(res.status_code, 200, res.data)
+        aruna.refresh_from_db()
+        self.assertEqual(aruna.all_roles, ["purchase", "inventory"])

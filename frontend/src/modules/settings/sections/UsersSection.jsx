@@ -64,9 +64,11 @@ export default function UsersSection({ options }) {
     refresh()
   }
 
-  const saveExtraRoles = async (extraRoles) => {
-    await settingsApi.updateUser(rolesFor.id, { extra_roles: extraRoles })
-    toast.success(`Roles saved for ${rolesFor.name || rolesFor.email}`)
+  const saveExtraRoles = async (changes) => {
+    await settingsApi.updateUser(rolesFor.id, changes)
+    toast.success(changes.role === 'attendance'
+      ? `${rolesFor.name || rolesFor.email} now has Attendance access only`
+      : `Roles saved for ${rolesFor.name || rolesFor.email}`)
     refresh()
   }
 
@@ -211,8 +213,8 @@ export default function UsersSection({ options }) {
                       Password
                     </Button>
                   )}
-                  {!isMe(r) && r.role !== 'admin' && r.role !== 'attendance' && (
-                    <Button size="sm" variant="ghost" onClick={() => setRolesFor(r)} aria-label={`Extra roles for ${r.name || r.email}`}>
+                  {!isMe(r) && r.role !== 'admin' && !lockedForMe(r) && (
+                    <Button size="sm" variant="ghost" onClick={() => setRolesFor(r)} aria-label={`Roles for ${r.name || r.email}`}>
                       Roles
                     </Button>
                   )}
