@@ -102,7 +102,7 @@ test('a GRN recorded as Passed can be tested; its number shows after reloading',
 })
 
 test('quality certifications: add with a certificate, then edit and delete', async ({ page }) => {
-  await signIn(page, 'quality')
+  await signIn(page, 'admin') // deleting is for Super Admins only
   const cert = { id: 3, name: 'TEST FSSAI License', issuing_authority: 'TEST FSSAI', certificate_number: 'TEST-123', category: 'FSSAI License',
     category_value: 'fssai', issue_date: '2026-01-10', valid_until: '2027-01-09', status: 'Active', status_value: 'active', notes: null,
     document: { name: 'TEST-fssai.pdf', type: 'application/pdf', size: 2048 } }

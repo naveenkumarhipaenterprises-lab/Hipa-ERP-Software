@@ -5,7 +5,9 @@ import Badge from '../../../components/common/Badge'
 import Button from '../../../components/common/Button'
 import ConfirmDialog from '../../../components/common/ConfirmDialog'
 import EmptyState from '../../../components/common/EmptyState'
+import { useAuth } from '../../../hooks/useAuth'
 import { useToast } from '../../../hooks/useToast'
+import { isSuperAdmin } from '../../../utils/constants'
 import { formatDate } from '../../../utils/formatters'
 import { STATUS_TONES } from '../certifications'
 import { CertificationFormModal, CertificationViewModal, DocumentPreviewModal } from './CertificationForms'
@@ -21,6 +23,8 @@ export function AddCertificationButton({ onClick }) {
  */
 export default function Certifications({ items, options, canManage, adding, onAddDone, onChanged }) {
   const toast = useToast()
+  const { user } = useAuth()
+  const canDelete = canManage && isSuperAdmin(user) // deleting is for Super Admins only (checked by the server)
   const [editing, setEditing] = useState(null) // { certification? }
   const [viewing, setViewing] = useState(null)
   const [previewing, setPreviewing] = useState(null)
@@ -78,7 +82,7 @@ export default function Certifications({ items, options, canManage, adding, onAd
                   {c.document && <Button size="sm" variant="ghost" icon={FileText} onClick={() => setPreviewing(c)} aria-label={`Open certificate of ${c.name}`} />}
                   <Button size="sm" variant="ghost" icon={Eye} onClick={() => setViewing(c)} aria-label={`View ${c.name}`} />
                   {canManage && <Button size="sm" variant="ghost" icon={Pencil} onClick={() => setEditing({ certification: c })} aria-label={`Edit ${c.name}`} />}
-                  {canManage && <Button size="sm" variant="ghost" icon={Trash2} className="btn--tone-red" onClick={() => setDeleting(c)} aria-label={`Delete ${c.name}`} />}
+                  {canDelete && <Button size="sm" variant="ghost" icon={Trash2} className="btn--tone-red" onClick={() => setDeleting(c)} aria-label={`Delete ${c.name}`} />}
                 </span>
               </div>
               {c.status && <Badge tone={STATUS_TONES[c.status]}>{c.status}</Badge>}

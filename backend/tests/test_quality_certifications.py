@@ -94,7 +94,9 @@ class CertificationTests(TestCase):
 
     def test_delete_removes_only_that_certification(self):
         keep, drop = self.create(name="TEST keep", document=pdf()), self.create(name="TEST drop", document=pdf())
-        self.assertEqual(self.api.delete(f"{API}/quality/certifications/{drop['id']}/").status_code, 204)
+        self.assertEqual(self.api.delete(f"{API}/quality/certifications/{drop['id']}/").status_code, 403)  # Super Admins only
+        admin = client_for(make_user("admin", username="boss"))
+        self.assertEqual(admin.delete(f"{API}/quality/certifications/{drop['id']}/").status_code, 204)
         self.assertEqual([r["id"] for r in self.listed()], [keep["id"]])
         self.assertEqual(self.api.get(f"{API}/quality/certifications/{drop['id']}/document/").status_code, 404)
         self.assertEqual(self.api.get(f"{API}/quality/certifications/{keep['id']}/document/").status_code, 200)
