@@ -44,7 +44,8 @@ export default function EntriesPanel({ options, refreshKey, onChanged }) {
     : { date: todayISO() }
 
   const save = async (values) => {
-    const saved = await attendanceApi.saveRecord({ ...values, check_out: values.check_out || null })
+    // A correction names its record, so changing the employee or work date moves it instead of adding a second one
+    const saved = await attendanceApi.saveRecord({ ...values, check_out: values.check_out || null, ...(r ? { record_id: r.id } : {}) })
     toast.success(`Attendance saved for ${saved.employee.name}, ${day(saved.attendance_date)}`)
     onChanged()
   }

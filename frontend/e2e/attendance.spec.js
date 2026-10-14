@@ -49,14 +49,15 @@ const TODAY = (permissions, statusReply = status({ permissions })) => ({
   'GET /api/attendance/dashboard/': EMPTY_DASHBOARD,
 })
 
-test('main menu follows the new order and Attendance has exactly six sections', async ({ page }) => {
+test('main menu follows the new order; a Super Admin sees seven Attendance sections', async ({ page }) => {
   await signIn(page, 'admin')
   await mockApi(page, TODAY(ALL_PERMS))
   await page.goto('/attendance')
   const menu = page.getByRole('navigation', { name: 'Main' })
-  await expect(menu.getByRole('link').filter({ hasNotText: /^(Attendance|Employees|Leave \/ Permission|Calendar|Settings|Reports)$/ }))
+  await expect(menu.getByRole('link').filter({ hasNotText: /^(Attendance|Employees|Leave \/ Permission|Calendar|Settings|Reports|Manual Entries)$/ }))
     .toHaveText(['Dashboard', 'Sales', 'Purchase', 'Inventory', 'Customers', 'Supply Chain', 'Quality', 'Marketing', 'AI Assistant'])
-  await expect(page.getByRole('tab')).toHaveText(['Attendance', 'Employees', 'Leave / Permission', 'Calendar', 'Reports', 'Settings'])
+  await expect(page.getByRole('tab')).toHaveText(['Attendance', 'Employees', 'Leave / Permission', 'Calendar', 'Reports', 'Settings',
+    'Manual Entries'])
   await expect(menu.getByText('Accounts')).toHaveCount(0)
 })
 
@@ -91,6 +92,7 @@ test('evening check-out shows scheduled hours, approved permission and actual wo
   })
   await page.goto('/attendance')
   await page.getByRole('button', { name: 'Check Out / Logout' }).click()
+  await page.getByRole('dialog', { name: 'Check out now?' }).getByRole('button', { name: 'Yes, Check Out' }).click() // asks first
   await expect(page.getByText('Checked out at 05:30 PM')).toBeVisible()
   await expect(page.getByText('08h 30m')).toBeVisible() // scheduled
   await expect(page.getByText('08h 05m')).toBeVisible()
@@ -120,6 +122,7 @@ test('check-out after 9:20 AM needs no Attendance permission', async ({ page }) 
   await page.goto('/attendance')
   await expect(page.getByText(/permission\./)).toHaveCount(0) // no "You don't have the Check-Out permission."
   await page.getByRole('button', { name: 'Check Out / Logout' }).click()
+  await page.getByRole('dialog', { name: 'Check out now?' }).getByRole('button', { name: 'Yes, Check Out' }).click()
   await expect(page.getByText('Checked out at 09:36 AM')).toBeVisible()
   await expect(page.getByText('Check-In is closed. It opens again at 5:00 PM.', { exact: true })).toBeVisible() // Check-In stays closed
 })

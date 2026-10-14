@@ -121,11 +121,23 @@ def refresh_receipt_status(purchase):
 
 
 def refresh_money(purchase):
-    """Paid and credited (returned) amounts of a purchase (call with the purchase locked)."""
-    purchase.paid_amount = purchase.payments.filter(status__in=(SupplierPayment.Status.PAID, SupplierPayment.Status.PARTIALLY_PAID)
-                                                    ).aggregate(t=Sum("amount"))["t"] or ZERO
+    """
+    Paid and credited (returned) amounts of a purchase, and the Paid / Partially Paid label of each payment made on it
+    (call with the purchase locked). In the order they were recorded, the payment that brings the total up to what is
+    owed (and any after it) is Paid, the ones before it Partially Paid, so the labels stay right after a payment,
+    cancellation or return.
+    """
+    made = (SupplierPayment.Status.PAID, SupplierPayment.Status.PARTIALLY_PAID)
+    purchase.paid_amount = purchase.payments.filter(status__in=made).aggregate(t=Sum("amount"))["t"] or ZERO
     purchase.returned_amount = purchase.returns.filter(status=PurchaseReturn.Status.COMPLETED).aggregate(t=Sum("amount"))["t"] or ZERO
     purchase.save(update_fields=["paid_amount", "returned_amount", "updated_at"])
+    running = ZERO
+    for payment in purchase.payments.filter(status__in=made).order_by("id"):
+        running += payment.amount
+        label = SupplierPayment.Status.PAID if running >= purchase.payable else SupplierPayment.Status.PARTIALLY_PAID
+        if payment.status != label:
+            payment.status = label
+            payment.save(update_fields=["status", "updated_at"])
 
 
 @transaction.atomic

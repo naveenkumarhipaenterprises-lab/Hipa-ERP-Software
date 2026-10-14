@@ -264,7 +264,8 @@ if not DEBUG:
     SECURE_SSL_REDIRECT = env_bool("SECURE_SSL_REDIRECT", True)
     SESSION_COOKIE_SECURE = True
     CSRF_COOKIE_SECURE = True
-    SECURE_HSTS_SECONDS = int(env("SECURE_HSTS_SECONDS", "3600"))
+    # Browsers keep using HTTPS for a year. Only this host (no subdomains, no preload list), so it is easy to live with.
+    SECURE_HSTS_SECONDS = int(env("SECURE_HSTS_SECONDS", str(365 * 24 * 3600)))
     SECURE_CONTENT_TYPE_NOSNIFF = True
     X_FRAME_OPTIONS = "DENY"
 

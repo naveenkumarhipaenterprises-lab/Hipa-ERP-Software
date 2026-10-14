@@ -1,13 +1,17 @@
+import logging
+
 from rest_framework import status
 from rest_framework.exceptions import PermissionDenied, ValidationError
 from rest_framework.generics import GenericAPIView
-from rest_framework.permissions import IsAuthenticated
+from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from services import audit
 
 from .permissions import ModulePermission
+
+logger = logging.getLogger(__name__)
 
 
 class ModuleMixin:
@@ -35,6 +39,29 @@ class ModuleAPIView(ModuleMixin, GenericAPIView):
         if not value.isdigit():
             raise ValidationError({name: ["Must be a number."]})
         return int(value)
+
+
+class HealthView(APIView):
+    """
+    GET /api/v1/health/: for uptime monitors. Open to everyone and tells nothing about the setup: 200 {"status": "ok"}
+    when the server and its database answer, 503 when the database can't be reached.
+    """
+
+    authentication_classes = []
+    permission_classes = [AllowAny]
+
+    def get(self, request):
+        from django.db import connection
+
+        try:
+            with connection.cursor() as cursor:
+                cursor.execute("SELECT 1")
+                cursor.fetchone()
+        except Exception:
+            logger.exception("Health check: database unreachable")
+            return Response({"status": "unavailable", "database": "unreachable"}, status=status.HTTP_503_SERVICE_UNAVAILABLE,
+                            headers={"Cache-Control": "no-store"})
+        return Response({"status": "ok", "database": "ok"}, headers={"Cache-Control": "no-store"})
 
 
 class DeleteRecordView(APIView):

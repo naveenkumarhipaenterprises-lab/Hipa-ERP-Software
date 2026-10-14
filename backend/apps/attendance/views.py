@@ -15,12 +15,12 @@ from django.http import HttpResponse
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
 from rest_framework import status
-from rest_framework.exceptions import PermissionDenied, ValidationError
+from rest_framework.exceptions import NotFound, PermissionDenied, ValidationError
 from rest_framework.response import Response
 
 from apps.accounts.models import User
 from apps.core import parsing
-from apps.core.roles import ATTENDANCE_MANAGERS, has_any_role
+from apps.core.roles import ATTENDANCE_MANAGERS, Role, has_any_role, role_of
 from apps.core.views import ModuleAPIView
 from services import audit
 from services.exporters import MIME, export
@@ -222,9 +222,15 @@ class RecordsView(AttendanceView):
         return self.get_paginated_response(record_rows(self.paginate_queryset(qs), window.state()))
 
     def post(self, request):
+        """record_id (optional): the record being corrected, which then moves if its employee or work date changes."""
         require_attendance_manager(request.user)
         d, errors = request.data, {}
         emp = parsing.record(d, "employee_id", current_employees(), errors, message="Choose an employee.")
+        if emp and emp.user_id == request.user.id and role_of(request.user) != Role.ADMIN:
+            raise PermissionDenied("You can't enter or correct your own attendance. Ask a Super Admin or another manager.")
+        current = None
+        if d.get("record_id") not in (None, ""):
+            current = parsing.record(d, "record_id", AttendanceRecord.objects.all(), errors, message="This record no longer exists.")
         day = parsing.date(d, "date", errors, label="work date")
         t_in = read_clock(d, "check_in", errors, "check-in")
         t_out = read_clock(d, "check_out", errors, "check-out", required=False)
@@ -234,7 +240,11 @@ class RecordsView(AttendanceView):
             errors["date"] = ["The work date can't be in the future."]
         if errors:
             raise ValidationError(errors)
-        check_in_at = datetime.combine(day, t_in, tzinfo=window.IST)
+        # The same work-day rule as a self check-in: from the Check-In opening time (overnight window) it is the
+        # evening before the work date, e.g. 6:00 PM for 15 Oct is 14 Oct 6:00 PM.
+        s = AttendanceSettings.load()
+        evening = s.close_time <= s.open_time and t_in >= s.open_time
+        check_in_at = datetime.combine(day - window.DAY if evening else day, t_in, tzinfo=window.IST)
         check_out_at = None
         if t_out:
             check_out_at = datetime.combine(day, t_out, tzinfo=window.IST)
@@ -242,15 +252,23 @@ class RecordsView(AttendanceView):
                 check_out_at += window.DAY
         if check_in_at > now or (check_out_at and check_out_at > now):
             raise ValidationError({"detail": "Times can't be in the future."})
-        with transaction.atomic():
-            record = AttendanceRecord.objects.select_for_update().filter(employee=emp, attendance_date=day).first()
-            created = record is None
-            record = record or AttendanceRecord(employee=emp, attendance_date=day)
-            before = None if created else (record.check_in_at, record.check_out_at)
-            record.check_in_at, record.check_out_at = check_in_at, check_out_at
-            record.status = AttendanceRecord.Status.COMPLETED if check_out_at else AttendanceRecord.Status.CHECKED_IN
-            record.entered_by, record.note = request.user, note
-            record.save()
+        try:
+            with transaction.atomic():
+                record = AttendanceRecord.objects.select_for_update().filter(employee=emp, attendance_date=day).first()
+                if current is not None and record is not None and record.pk != current.pk:
+                    raise ValidationError({"date": [f"{emp.name} already has a record for {day:%d %b %Y}. Correct that one instead."]})
+                if current is not None and record is None:  # the corrected record moves to the new employee / date
+                    record = AttendanceRecord.objects.select_for_update().get(pk=current.pk)
+                created = record is None
+                record = record or AttendanceRecord(employee=emp, attendance_date=day)
+                before = None if created else (record.check_in_at, record.check_out_at)
+                record.employee, record.attendance_date = emp, day
+                record.check_in_at, record.check_out_at = check_in_at, check_out_at
+                record.status = AttendanceRecord.Status.COMPLETED if check_out_at else AttendanceRecord.Status.CHECKED_IN
+                record.entered_by, record.note = request.user, note
+                record.save()
+        except IntegrityError:  # someone saved the same employee and day at the same moment
+            raise ValidationError({"detail": "This attendance was just saved by someone else. Reload and try again."})
         times = f"{window.clock(check_in_at)}" + (f" – {window.clock(check_out_at)}" if check_out_at else "")
         audit.record(request, f"{'Entered' if created else 'Corrected'} attendance {day:%d %b %Y} ({times})"[:200],
                      f"{emp.employee_code} {emp.name}" + ("" if created else f" (was {window.clock(before[0])}"
@@ -488,6 +506,8 @@ class LeaveActionView(AttendanceView):
     ACTIONS = {"approve": (LS.APPROVED, "leave_approve"), "reject": (LS.REJECTED, "leave_reject"), "cancel": (LS.CANCELLED, None)}
 
     def post(self, request, pk, action):
+        if action not in self.ACTIONS:
+            raise NotFound("Unknown action. Use approve, reject or cancel.")
         new, code = self.ACTIONS[action]
         with transaction.atomic():
             lr = get_object_or_404(leave_qs().select_for_update(of=("self",)), pk=pk)
