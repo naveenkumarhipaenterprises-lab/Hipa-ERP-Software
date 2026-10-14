@@ -203,6 +203,8 @@ class UserDetailView(SettingsView):
             changes.append("activated" if user.is_active else "deactivated")
         if "attendance_permissions" in v and user.effective_role != Role.ADMIN:  # a Super Admin always has all
             wanted = sorted(set(v["attendance_permissions"]))
+            if user.pk == me.pk and wanted != attendance_perms.granted(user):
+                raise PermissionDenied("You can't change your own Attendance permissions. Ask a Super Admin.")
             if wanted != attendance_perms.granted(user):
                 attendance_perms.set_granted(user, wanted)
                 changes.append("attendance permissions: " + (", ".join(attendance_perms.LABELS[c] for c in wanted) or "none"))

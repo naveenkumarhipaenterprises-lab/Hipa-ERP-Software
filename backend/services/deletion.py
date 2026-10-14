@@ -13,7 +13,7 @@ from collections import defaultdict
 from decimal import Decimal
 
 from django.db import transaction
-from django.db.models import ProtectedError
+from django.db.models import ProtectedError, Sum
 from rest_framework.exceptions import NotFound, ValidationError
 
 ZERO = Decimal("0")
@@ -151,12 +151,17 @@ def purchase(p):
 def goods_receipt(grn):
     from apps.inventory.models import StockMovement as SM
     from apps.purchase.models import MaterialMovement as MM
-    from apps.purchase.models import Purchase
+    from apps.purchase.models import Purchase, PurchaseReturn
     from apps.purchase.services import refresh_receipt_status
 
     if grn.quality_tests.exists():
         _refuse(f"{grn.grn_number} has a quality test. Delete the quality test first.")
     p = Purchase.objects.select_for_update(of=("self",)).get(pk=grn.purchase_id)
+    # Returns can only cover goods that were received (the same rule as recording a return)
+    returned = p.returns.exclude(status=PurchaseReturn.Status.CANCELLED).aggregate(q=Sum("quantity"))["q"] or ZERO
+    if returned > p.received_quantity - grn.accepted_quantity:
+        _refuse(f"{p.purchase_number} has returns of {returned.normalize():f} {p.unit}, more than would still be received "
+                f"without {grn.grn_number}. Cancel or delete those returns first.")
     _undo_product_movements(grn.grn_number, [SM.Source.PURCHASE])
     _undo_material_movements(grn.grn_number, [MM.Source.GOODS_RECEIPT])
     _delete(grn, "goods receipt")
@@ -239,6 +244,21 @@ def stock_movement(m):
 
 # --- Other modules -------------------------------------------------------------------------------
 
+def quality_test(t):
+    """A goods receipt's quality status follows its latest test; without tests it waits for inspection again."""
+    from apps.purchase.models import GoodsReceipt
+    from apps.quality.models import QualityTest
+
+    label = str(t)
+    grn = GoodsReceipt.objects.select_for_update().get(pk=t.goods_receipt_id) if t.goods_receipt_id else None
+    _delete(t, "quality test")
+    if grn:
+        latest = grn.quality_tests.order_by("-created_at", "-id").first()  # the same test that set it when recorded
+        grn.quality_status = QualityTest.GRN_STATUS_FOR_RESULT[latest.result] if latest else GoodsReceipt.QualityStatus.PENDING
+        grn.save(update_fields=["quality_status"])
+    return label
+
+
 def plain(what, label):
     def handler(obj):
         name = label(obj)
@@ -281,7 +301,7 @@ def _models():
         "material_movement": (MaterialMovement, "purchase", material_movement),
         "product": (Product, "inventory", product),
         "stock_movement": (StockMovement, "inventory", stock_movement),
-        "quality_test": (QualityTest, "quality", plain("quality test", lambda t: str(t))),
+        "quality_test": (QualityTest, "quality", quality_test),
         "quality_audit": (QualityAudit, "quality", plain("audit", lambda a: str(a))),
         "campaign": (Campaign, "marketing", plain("campaign", lambda c: c.name)),
         "scheduled_post": (ScheduledPost, "marketing", plain("post", lambda p: str(p))),

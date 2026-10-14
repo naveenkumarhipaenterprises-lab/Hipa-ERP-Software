@@ -218,6 +218,8 @@ class ImportView(CustomersModuleView):
             data["type"] = row_type or ""
             data["phone"] = data["phone"].replace(" ", "").replace("-", "")
             existing = Customer.objects.filter(name__iexact=data["name"], city__iexact=data["city"]).first()
+            if existing:  # an empty cell keeps what is saved; it never erases it
+                data = {k: v for k, v in data.items() if v not in ("", None)}
             ser = CustomerWriteSerializer(existing, data=data, partial=bool(existing))
             if not ser.is_valid():
                 field, messages = next(iter(ser.errors.items()))
