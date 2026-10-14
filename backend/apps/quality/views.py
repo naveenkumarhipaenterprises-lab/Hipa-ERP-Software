@@ -2,12 +2,13 @@ import re
 from datetime import timedelta
 
 from django.db import transaction
+from django.http import HttpResponse
 from django.db.models import Case, Count, IntegerField, Q, Value, When
 from django.db.models.functions import Coalesce
 from django.shortcuts import get_object_or_404
 from django.utils.dateparse import parse_date
 from rest_framework import status
-from rest_framework.exceptions import ValidationError
+from rest_framework.exceptions import NotFound, ValidationError
 from rest_framework.response import Response
 
 from apps.ai_assistant import insights
@@ -36,13 +37,25 @@ def test_row(t):
 
 
 def certification_status(c, today):
+    """Pending Verification / Suspended when set; otherwise from the expiry date (Expiring Soon = within 60 days)."""
+    if c.status != Certification.Status.ACTIVE:
+        return c.get_status_display()
     if not c.valid_until:
-        return None
+        return "Active"
     if c.valid_until < today:
         return "Expired"
     if c.valid_until <= today + timedelta(days=60):
         return "Expiring Soon"
     return "Active"
+
+
+def certification_row(c, today=None):
+    return {"id": c.id, "name": c.name, "detail": c.detail or None, "issuing_authority": c.issuing_authority or None,
+            "certificate_number": c.certificate_number or None, "category": c.get_category_display() or None,
+            "category_value": c.category or None, "issue_date": c.issue_date, "valid_until": c.valid_until,
+            "status": certification_status(c, today or periods.today()), "status_value": c.status, "notes": c.notes or None,
+            "document": {"name": c.document_name, "type": c.document_type, "size": c.document_size} if c.document_name else None,
+            "updated_at": c.updated_at}
 
 
 def test_stats(qs):
@@ -123,8 +136,7 @@ class OverviewView(QualityView):
             },
             "product_quality": [{"name": r["item"], "batches": r["n"], "pass_rate_pct": ratio_pct(r["passed"], r["n"])}
                                 for r in per_product],
-            "certifications": [{"id": c.id, "name": c.name, "detail": c.detail or None, "valid_until": c.valid_until,
-                                "status": certification_status(c, today)} for c in Certification.objects.all()],
+            "certifications": [certification_row(c, today) for c in certifications()],
             "insights": insights.items_block("quality"),
         })
 
@@ -174,6 +186,8 @@ class OptionsView(QualityView):
             "results": choices(R),
             "audit_types": choices(QualityAudit.AuditType),
             "audit_statuses": label_choices(QualityAudit.Status),
+            "certification_categories": choices(Certification.Category),
+            "certification_statuses": choices(Certification.Status),
         })
 
 
@@ -344,3 +358,121 @@ class ReportView(QualityView):
                 for t in filtered_tests(request.query_params, cur).order_by("test_date", "id"))
         return csv_response(f"hipa-quality-{self.param('range') or 'this_month'}-{periods.today():%Y%m%d}.csv",
                             ["Lot / batch", "Item", "GRN", "Test date", "Parameters", "Result", "Status", "Notes"], rows)
+
+
+# --- Certifications -------------------------------------------------------------------------------
+
+MAX_DOCUMENT_BYTES = 4 * 1024 * 1024  # Vercel refuses requests over 4.5 MB
+# Allowed certificate files: extension -> (MIME type, how the file starts)
+DOCUMENT_TYPES = {".pdf": ("application/pdf", (b"%PDF-",)), ".jpg": ("image/jpeg", (b"\xff\xd8\xff",)),
+                  ".jpeg": ("image/jpeg", (b"\xff\xd8\xff",)), ".png": ("image/png", (b"\x89PNG\r\n\x1a\n",))}
+
+
+def certifications():
+    """Without the stored documents (they are only read when someone opens one)."""
+    return Certification.objects.defer("document")
+
+
+def read_document(upload, errors):
+    """(name, MIME type, bytes) of an uploaded certificate, or None with errors["document"] set."""
+    name = (upload.name or "").strip()
+    ext = name[name.rfind("."):].lower() if "." in name else ""
+    if ext not in DOCUMENT_TYPES:
+        errors["document"] = ["Upload a PDF, JPG, JPEG or PNG file."]
+        return None
+    if upload.size > MAX_DOCUMENT_BYTES:
+        errors["document"] = ["The file can be at most 4 MB."]
+        return None
+    content = upload.read()
+    if not content:
+        errors["document"] = ["The file is empty."]
+        return None
+    mime, signatures = DOCUMENT_TYPES[ext]
+    if not content.startswith(signatures):  # e.g. another kind of file renamed to .pdf
+        errors["document"] = [f"This file is not a real {ext[1:].upper()} file."]
+        return None
+    return name[-150:], mime, content
+
+
+def read_certification(d, files, current=None):
+    errors = {}
+    name = str(d.get("name") or "").strip()
+    if not name:
+        errors["name"] = ["Enter the certification name."]
+    for field, label, limit in (("name", "name", 120), ("issuing_authority", "issuing authority", 150),
+                                ("certificate_number", "certificate number", 80)):
+        if len(str(d.get(field) or "").strip()) > limit:
+            errors[field] = [f"The {label} can be at most {limit} characters."]
+    category = parsing.choice(d, "category", Certification.Category, errors, required=False)
+    cert_status = parsing.choice(d, "status", Certification.Status, errors, default=Certification.Status.ACTIVE)
+    issue = parsing.date(d, "issue_date", errors, required=False, label="issue date")
+    expiry = parsing.date(d, "valid_until", errors, required=False, label="expiry date")
+    if issue and issue > periods.today():
+        errors["issue_date"] = ["The issue date can't be in the future."]
+    if issue and expiry and expiry < issue:
+        errors["valid_until"] = ["The expiry date can't be before the issue date."]
+    document = read_document(files["document"], errors) if files.get("document") else None
+    if errors:
+        raise ValidationError(errors)
+    fields = {"name": name, "issuing_authority": parsing.text(d, "issuing_authority", 150),
+              "certificate_number": parsing.text(d, "certificate_number", 80), "category": category or "",
+              "issue_date": issue, "valid_until": expiry, "status": cert_status, "notes": parsing.text(d, "notes", 5000)}
+    if document:
+        fields.update(document_name=document[0], document_type=document[1], document=document[2], document_size=len(document[2]))
+    elif current is not None and str(d.get("remove_document") or "").lower() in ("true", "1", "yes"):
+        fields.update(document_name="", document_type="", document=None, document_size=None)
+    return fields
+
+
+class CertificationsView(QualityView):
+    """GET: every certification. POST (multipart): a new one, its certificate document saved in the same step."""
+
+    def get(self, request):
+        today = periods.today()
+        return Response([certification_row(c, today) for c in certifications()])
+
+    def post(self, request):
+        fields = read_certification(request.data, request.FILES)
+        c = Certification.objects.create(created_by=request.user, **fields)
+        audit.record(request, "Added certification", c.name)
+        return Response(certification_row(c), status=status.HTTP_201_CREATED)
+
+
+class CertificationDetailView(QualityView):
+    def get(self, request, pk):
+        return Response(certification_row(get_object_or_404(certifications(), pk=pk)))
+
+    def patch(self, request, pk):
+        """Fields not sent keep their value; a new document replaces the old one; remove_document=true removes it."""
+        c = get_object_or_404(Certification, pk=pk)
+        current = {"name": c.name, "issuing_authority": c.issuing_authority, "certificate_number": c.certificate_number,
+                   "category": c.category, "issue_date": c.issue_date.isoformat() if c.issue_date else "",
+                   "valid_until": c.valid_until.isoformat() if c.valid_until else "", "status": c.status, "notes": c.notes}
+        data = {**current, **{k: request.data.get(k) for k in current if k in request.data},
+                "remove_document": request.data.get("remove_document")}
+        for k, v in read_certification(data, request.FILES, current=c).items():
+            setattr(c, k, v)
+        c.save()
+        audit.record(request, "Edited certification", c.name)
+        return Response(certification_row(c))
+
+    def delete(self, request, pk):
+        c = get_object_or_404(certifications(), pk=pk)
+        audit.record(request, "Deleted certification", c.name)
+        c.delete()  # the document is in the same row, so it goes with it
+        return Response(status=status.HTTP_204_NO_CONTENT)
+
+
+class CertificationDocumentView(QualityView):
+    """The stored certificate file, for signed-in users who may open Quality. ?download=1 saves it instead of showing it."""
+
+    def get(self, request, pk):
+        c = get_object_or_404(Certification, pk=pk)
+        if not c.document_name or c.document is None:
+            raise NotFound("No certificate document has been uploaded.")
+        response = HttpResponse(bytes(c.document), content_type=c.document_type or "application/octet-stream")
+        safe = "".join(ch for ch in c.document_name if ch not in '"\r\n')
+        response["Content-Disposition"] = f'{"attachment" if self.param("download") else "inline"}; filename="{safe}"'
+        response["X-Content-Type-Options"] = "nosniff"
+        response["Cache-Control"] = "private, no-store"
+        return response

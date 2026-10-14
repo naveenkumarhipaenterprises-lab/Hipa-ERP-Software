@@ -1,4 +1,15 @@
-import { api, cleanParams as clean } from './client'
+import client, { api, cleanParams as clean } from './client'
+
+/** Certification fields + the optional document as multipart/form-data (the file and details are saved together). */
+function certificationForm({ document, removeDocument, ...fields }) {
+  const form = new FormData()
+  for (const [k, v] of Object.entries(fields)) form.append(k, v ?? '')
+  if (document) form.append('document', document)
+  if (removeDocument) form.append('remove_document', 'true')
+  return form
+}
+const sendForm = async (method, url, form) =>
+  (await client.request({ method, url, data: form, headers: { 'Content-Type': 'multipart/form-data' } })).data
 
 /**
  * Quality assurance endpoints (Django REST API).
@@ -7,7 +18,7 @@ import { api, cleanParams as clean } from './client'
  * {
  *   kpis: { batches_tested, pass_rate_pct, failed_batches, avg_testing_hours },   // each { value, change? }
  *   product_quality: [{ name, batches, pass_rate_pct }],
- *   certifications:  [{ id, name, detail?, valid_until?, status? }],
+ *   certifications:  [certification],
  *   insights:        { items?: string[], actions?: string[] },   // from the AI engine / QA team; empty until available
  * }
  *
@@ -25,6 +36,12 @@ import { api, cleanParams as clean } from './client'
  * POST  /quality/tests/      { goods_receipt_id | product_id | material_id, batch_number?, test_date, result, readings, notes? }
  * PATCH /quality/tests/<id>/ { readings }   (changes only the Parameter + Value rows)
  * GET  /quality/standards/  ->  [{ id, parameter, limit, applies_to? }]
+ * GET  /quality/certifications/   ->  [certification]      POST (multipart) -> certification
+ *      certification: { id, name, issuing_authority, certificate_number, category, category_value, issue_date, valid_until,
+ *                       status (Active | Expiring Soon | Expired | Pending Verification | Suspended), status_value, notes,
+ *                       document: { name, type, size } | null }
+ * GET/PATCH (multipart)/DELETE /quality/certifications/<id>/   (PATCH: a new document replaces the old; remove_document=true)
+ * GET  /quality/certifications/<id>/document/?download=1   the stored PDF / JPG / PNG (max 4 MB), permission-checked
  * GET  /quality/audits/?page=&page_size=&status=   ->  { count, results: [{ id, audit_type, date, auditor, status, findings, can_update }] }
  * POST /quality/audits/     { audit_type, date, auditor? }
  * POST /quality/audits/<id>/status/   { status: 'completed', findings } | { status: 'cancelled' }   (scheduled audits only)
@@ -38,6 +55,12 @@ export const qualityApi = {
   createTest: (test) => api.post('/quality/tests/', test),
   updateTestReadings: (id, readings) => api.patch(`/quality/tests/${id}/`, { readings }),
   getStandards: () => api.get('/quality/standards/'),
+  listCertifications: () => api.get('/quality/certifications/'),
+  createCertification: (values) => sendForm('post', '/quality/certifications/', certificationForm(values)),
+  updateCertification: (id, values) => sendForm('patch', `/quality/certifications/${id}/`, certificationForm(values)),
+  deleteCertification: (id) => api.delete(`/quality/certifications/${id}/`),
+  getCertificationDocument: (id) => api.blob(`/quality/certifications/${id}/document/`),
+  downloadCertificationDocument: (id, name) => api.download(`/quality/certifications/${id}/document/`, { download: 1 }, name),
   scheduleAudit: (audit) => api.post('/quality/audits/', audit),
   listAudits: (params) => api.get('/quality/audits/', clean(params)),
   setAuditStatus: (id, body) => api.post(`/quality/audits/${id}/status/`, body),

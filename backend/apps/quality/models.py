@@ -74,12 +74,49 @@ class QualityStandard(models.Model):
 
 
 class Certification(models.Model):
+    """
+    A food-safety / quality certificate the company holds. The certificate document is kept in this row
+    (Vercel's servers have no lasting disk), so the file and its details are always saved together.
+    """
+
+    class Category(models.TextChoices):
+        FSSAI = "fssai", "FSSAI License"
+        ISO = "iso", "ISO Certification"
+        HACCP = "haccp", "HACCP"
+        GMP = "gmp", "GMP"
+        ORGANIC = "organic", "Organic"
+        HALAL = "halal", "Halal"
+        EXPORT = "export", "Export / Spices Board"
+        OTHER = "other", "Other"
+
+    class Status(models.TextChoices):
+        ACTIVE = "active", "Active"
+        PENDING = "pending", "Pending Verification"
+        SUSPENDED = "suspended", "Suspended"
+
     name = models.CharField(max_length=120)
-    detail = models.CharField(max_length=255, blank=True, help_text="Licence / certificate number or issuing body")
-    valid_until = models.DateField(null=True, blank=True)
+    detail = models.CharField(max_length=255, blank=True, help_text="Older free text; new entries use the fields below")
+    issuing_authority = models.CharField(max_length=150, blank=True)
+    certificate_number = models.CharField(max_length=80, blank=True)
+    category = models.CharField(max_length=10, choices=Category.choices, blank=True)
+    issue_date = models.DateField(null=True, blank=True)
+    valid_until = models.DateField("expiry date", null=True, blank=True)
+    status = models.CharField(max_length=10, choices=Status.choices, default=Status.ACTIVE)
+    notes = models.TextField(blank=True)
+    document = models.BinaryField(null=True, blank=True, editable=False)
+    document_name = models.CharField(max_length=150, blank=True)
+    document_type = models.CharField(max_length=40, blank=True)
+    document_size = models.PositiveIntegerField(null=True, blank=True)
+    created_by = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.SET_NULL, related_name="+")
+    created_at = models.DateTimeField(auto_now_add=True, null=True)
+    updated_at = models.DateTimeField(auto_now=True, null=True)
 
     class Meta:
         ordering = ["valid_until", "name"]
+        constraints = [
+            models.CheckConstraint(condition=models.Q(issue_date__isnull=True) | models.Q(valid_until__isnull=True) |
+                                   models.Q(valid_until__gte=models.F("issue_date")), name="certification_expiry_after_issue"),
+        ]
 
     def __str__(self):
         return self.name

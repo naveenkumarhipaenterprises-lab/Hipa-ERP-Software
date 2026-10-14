@@ -18,7 +18,7 @@ import { CHART_COLORS, DATE_RANGES, hasAnyRole } from '../../utils/constants'
 import { formatDate, formatNumber, formatPercent } from '../../utils/formatters'
 import AuditModal from './components/AuditModal'
 import AuditsTable from './components/AuditsTable'
-import Certifications from './components/Certifications'
+import Certifications, { AddCertificationButton } from './components/Certifications'
 import LabProcess from './components/LabProcess'
 import QualityTestsTable from './components/QualityTestsTable'
 import StandardsModal from './components/StandardsModal'
@@ -49,6 +49,7 @@ export default function QualityPage() {
   const [granularity, setGranularity] = useState(GRANULARITY[0].value)
   const [modal, setModal] = useState(null) // 'test' | 'standards' | 'audit'
   const [refreshKey, setRefreshKey] = useState(0)
+  const [addingCertification, setAddingCertification] = useState(false)
   const [downloading, setDownloading] = useState(false)
 
   const canManage = hasAnyRole(user, QUALITY_MANAGERS)
@@ -183,7 +184,13 @@ export default function QualityPage() {
                 />
               )}
             </Card>
-            <Card title="Quality Certifications">{loading ? skeleton : <Certifications items={data?.certifications} />}</Card>
+            <Card title="Quality Certifications"
+                  action={canManage && data ? <AddCertificationButton onClick={() => setAddingCertification(true)} /> : undefined}>
+              {loading ? skeleton : (
+                <Certifications items={data?.certifications} options={options.data} canManage={canManage} adding={addingCertification}
+                                onAddDone={() => setAddingCertification(false)} onChanged={refresh} />
+              )}
+            </Card>
           </div>
         </>
       )}

@@ -101,6 +101,90 @@ test('a GRN recorded as Passed can be tested; its number shows after reloading',
   await expect(table.getByRole('row', { name: /OLD-1/ }).getByRole('cell', { name: '—' }).first()).toBeVisible() // unlinked stays —
 })
 
+test('quality certifications: add with a certificate, then edit and delete', async ({ page }) => {
+  await signIn(page, 'quality')
+  const cert = { id: 3, name: 'TEST FSSAI License', issuing_authority: 'TEST FSSAI', certificate_number: 'TEST-123', category: 'FSSAI License',
+    category_value: 'fssai', issue_date: '2026-01-10', valid_until: '2027-01-09', status: 'Active', status_value: 'active', notes: null,
+    document: { name: 'TEST-fssai.pdf', type: 'application/pdf', size: 2048 } }
+  let certifications = []
+  let rejectNext = true
+  const calls = await mockApi(page, {
+    ...SHELL,
+    'GET /api/quality/overview/': () => ({ kpis: {}, product_quality: [], certifications, insights: {} }),
+    'GET /api/quality/trend/': [],
+    'GET /api/quality/tests/': { count: 0, results: [] },
+    'GET /api/quality/audits/': { count: 0, results: [] },
+    'GET /api/quality/options/': { pending_receipts: [], products: [], materials: [], results: [], audit_types: [],
+      certification_categories: [{ value: 'fssai', label: 'FSSAI License' }, { value: 'iso', label: 'ISO Certification' }],
+      certification_statuses: [{ value: 'active', label: 'Active' }, { value: 'pending', label: 'Pending Verification' }] },
+    'POST /api/quality/certifications/': () => {
+      if (rejectNext) {
+        rejectNext = false
+        return { status: 400, body: { document: ['This file is not a real PDF file.'] } }
+      }
+      certifications = [cert]
+      return { status: 201, body: cert }
+    },
+    'PATCH /api/quality/certifications/3/': () => {
+      certifications = [{ ...cert, certificate_number: 'TEST-999' }]
+      return certifications[0]
+    },
+    'GET /api/quality/certifications/3/document/': { status: 200, body: 'TEST' },
+    'DELETE /api/quality/certifications/3/': () => {
+      certifications = []
+      return {}
+    },
+  })
+  await page.goto('/quality')
+  const card = page.locator('.card').filter({ has: page.getByRole('heading', { name: 'Quality Certifications' }) })
+  await expect(card.getByText('No certifications recorded')).toBeVisible()
+  await expect(card.getByRole('button', { name: 'Upload Certificate' })).toBeVisible()
+  await card.getByRole('button', { name: 'Add Certification' }).first().click()
+  const form = page.getByRole('dialog', { name: 'Add Certification' })
+  await form.getByLabel(/Certification Name/).fill('TEST FSSAI License')
+  await form.getByLabel(/Issue Date/).fill('2026-01-10')
+  await form.getByLabel(/Expiry Date/).fill('2025-12-31')
+  await form.getByLabel('Certificate Document').setInputFiles({ name: 'TEST.exe', mimeType: 'application/octet-stream', buffer: Buffer.from('MZ') })
+  await form.getByRole('button', { name: 'Save Certification' }).click()
+  await expect(form.getByText("The expiry date can't be before the issue date")).toBeVisible()
+  await expect(form.getByText('Upload a PDF, JPG, JPEG or PNG file.')).toBeVisible()
+  expect(calls.some((c) => c.key === 'POST /api/quality/certifications/')).toBe(false) // nothing sent
+  await form.getByLabel(/Expiry Date/).fill('2027-01-09')
+  await form.getByLabel('Certificate Document').setInputFiles({ name: 'TEST-fssai.pdf', mimeType: 'application/pdf', buffer: Buffer.from('%PDF-1.4 TEST') })
+  await form.getByRole('button', { name: 'Save Certification' }).click()
+  await expect(form.getByText('This file is not a real PDF file.')).toBeVisible() // the server's refusal, not a false success
+  await expect(page.getByText('TEST FSSAI License added')).toHaveCount(0)
+  await form.getByRole('button', { name: 'Save Certification' }).click()
+  await expect(page.getByText('TEST FSSAI License added')).toBeVisible()
+  const sentBody = calls.filter((c) => c.key === 'POST /api/quality/certifications/').at(-1).body
+  expect(String(sentBody)).toContain('TEST-fssai.pdf') // the real file is uploaded with the details
+
+  await page.reload()
+  await expect(card.getByText('TEST FSSAI License')).toBeVisible()
+  await expect(card.getByText('Certificate: TEST-fssai.pdf')).toBeVisible()
+  await card.getByRole('button', { name: 'Open certificate of TEST FSSAI License' }).click()
+  const preview = page.getByRole('dialog', { name: 'TEST-fssai.pdf' })
+  await expect(preview.locator('iframe')).toBeVisible() // fetched with the user's sign-in
+  expect(calls.some((c) => c.key === 'GET /api/quality/certifications/3/document/')).toBe(true)
+  await preview.getByRole('button', { name: /close/i }).first().click()
+  await card.getByRole('button', { name: 'View TEST FSSAI License' }).click()
+  await expect(page.getByRole('dialog', { name: 'TEST FSSAI License' }).getByText('09 Jan 2027')).toBeVisible()
+  await page.getByRole('dialog', { name: 'TEST FSSAI License' }).getByRole('button', { name: /close/i }).first().click()
+  await card.getByRole('button', { name: 'Edit TEST FSSAI License' }).click()
+  const edit = page.getByRole('dialog', { name: 'Edit TEST FSSAI License' })
+  await expect(edit.getByLabel(/Certificate Number/)).toHaveValue('TEST-123')
+  await expect(edit.getByText('TEST-fssai.pdf')).toBeVisible()
+  await edit.getByLabel(/Certificate Number/).fill('TEST-999')
+  await edit.getByRole('button', { name: 'Save Changes' }).click()
+  await expect(page.getByText('TEST FSSAI License updated')).toBeVisible()
+  await expect(card.getByText(/No\. TEST-999/)).toBeVisible()
+
+  await card.getByRole('button', { name: 'Delete TEST FSSAI License' }).click()
+  await page.getByRole('dialog', { name: 'Delete certification?' }).getByRole('button', { name: 'Delete' }).click()
+  await expect(page.getByText('TEST FSSAI License deleted')).toBeVisible()
+  await expect(card.getByText('No certifications recorded')).toBeVisible()
+})
+
 test('tax & billing settings start empty and save', async ({ page }) => {
   await signIn(page, 'admin')
   const blank = {
