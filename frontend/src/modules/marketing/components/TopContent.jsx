@@ -8,7 +8,7 @@ const stat = (v) => (v === null || v === undefined ? '—' : formatCompact(v))
 export default function TopContent({ items }) {
   const rows = Array.isArray(items) ? items : []
   if (rows.length === 0) {
-    return <EmptyState compact icon={ImageOff} title="No content data yet" message="Your best-performing posts will appear here." />
+    return <EmptyState compact icon={ImageOff} title="No content data yet" message="Your best-performing posts appear here once they are entered (Enter Data → Content)." />
   }
   return (
     <ul className="content-list">

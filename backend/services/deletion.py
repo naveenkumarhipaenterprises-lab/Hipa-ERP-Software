@@ -278,7 +278,7 @@ def _models():
     from apps.attendance.models import AttendanceRecord, LeaveRequest, OfficeHoliday
     from apps.customers.models import Customer
     from apps.inventory.models import Product, StockMovement
-    from apps.marketing.models import Campaign, ScheduledPost
+    from apps.marketing.models import AudienceSegment, Campaign, ContentItem, MarketingMetric, ScheduledPost
     from apps.purchase.models import GoodsReceipt, MaterialMovement, Purchase, PurchaseReturn, RawMaterial, Supplier, SupplierPayment
     from apps.quality.models import QualityAudit, QualityTest
     from apps.sales.models import SalesInvoice, SalesOrder, SalesPayment, SalesQuotation, SalesReturn
@@ -305,6 +305,9 @@ def _models():
         "quality_audit": (QualityAudit, "quality", plain("audit", lambda a: str(a))),
         "campaign": (Campaign, "marketing", plain("campaign", lambda c: c.name)),
         "scheduled_post": (ScheduledPost, "marketing", plain("post", lambda p: str(p))),
+        "marketing_metric": (MarketingMetric, "marketing", plain("marketing numbers", lambda m: str(m))),
+        "content_item": (ContentItem, "marketing", plain("content", lambda c: c.title[:80])),
+        "audience_segment": (AudienceSegment, "marketing", plain("audience figure", lambda s: str(s))),
         "shipment": (Shipment, "supply_chain", plain("shipment", lambda s: s.shipment_number)),
         "attendance_record": (AttendanceRecord, "attendance",
                               plain("attendance record", lambda r: f"{r.employee.name} {r.attendance_date:%d %b %Y}")),

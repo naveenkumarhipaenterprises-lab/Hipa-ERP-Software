@@ -1,4 +1,4 @@
-import { CalendarDays, Megaphone, MousePointer2, Plus, ShoppingCart, Sparkles, SquarePen, Users, UsersRound } from 'lucide-react'
+import { CalendarDays, ChartColumn, Megaphone, MousePointer2, Plus, ShoppingCart, Sparkles, SquarePen, Users, UsersRound } from 'lucide-react'
 import { useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { marketingApi } from '../../api/marketingApi'
@@ -21,6 +21,7 @@ import { formatCompact, formatINR, formatNumber, formatPercent } from '../../uti
 import CampaignFormModal from './components/CampaignFormModal'
 import CampaignsTable from './components/CampaignsTable'
 import ContentCalendarModal from './components/ContentCalendarModal'
+import MarketingDataModal from './components/MarketingDataModal'
 import SchedulePostModal from './components/SchedulePostModal'
 import TopContent from './components/TopContent'
 
@@ -51,7 +52,7 @@ export default function MarketingPage() {
   const [range, setRange] = useState(DATE_RANGES[0].value)
   const [days, setDays] = useState(PERFORMANCE_DAYS[0].value)
   const [platform, setPlatform] = useState('')
-  const [modal, setModal] = useState(null) // 'post' | 'calendar'
+  const [modal, setModal] = useState(null) // 'post' | 'calendar' | 'data'
   const [refreshKey, setRefreshKey] = useState(0)
 
   const canManage = hasAnyRole(user, MARKETING_MANAGERS)
@@ -102,6 +103,7 @@ export default function MarketingPage() {
       ? [
           { label: 'Create Post', icon: SquarePen, tone: 'red', onClick: () => setModal('post') },
           { label: 'Ad Campaign', icon: Megaphone, tone: 'blue', onClick: () => setCampaignParam(true) },
+          { label: 'Enter Data', icon: ChartColumn, tone: 'orange', onClick: () => setModal('data') },
         ]
       : []),
     { label: 'Content Calendar', icon: CalendarDays, tone: 'green', onClick: () => setModal('calendar') },
@@ -117,6 +119,11 @@ export default function MarketingPage() {
       <title>Marketing | HIPA MASALA</title>
       <PageHeader icon={Megaphone} title="Marketing" subtitle="Grow your brand with data-driven marketing insights">
         <DateRangeSelect value={range} onChange={setRange} />
+        {canManage && (
+          <Button variant="outline" icon={ChartColumn} onClick={() => setModal('data')}>
+            Enter Data
+          </Button>
+        )}
         {canManage && (
           <Button icon={Plus} onClick={() => setCampaignParam(true)}>
             Create Campaign
@@ -170,7 +177,7 @@ export default function MarketingPage() {
                   tooltipFormatter={(v) => formatNumber(v)}
                   height={260}
                   emptyTitle="No performance data yet"
-                  emptyMessage="Reach, engagement and visitors appear once platforms report data."
+                  emptyMessage="Reach, engagement and visitors appear once daily numbers are entered (Enter Data)."
                 />
               )}
             </Card>
@@ -224,7 +231,7 @@ export default function MarketingPage() {
                   centerLabel="Audience"
                   size={170}
                   emptyTitle="No audience data yet"
-                  emptyMessage="The audience split appears once platforms report it."
+                  emptyMessage="The audience split appears once it is entered (Enter Data → Audience)."
                 />
               )}
             </Card>
@@ -245,6 +252,7 @@ export default function MarketingPage() {
 
       <CampaignFormModal open={creatingCampaign} options={options} onClose={() => setCampaignParam(false)} onCreate={createCampaign} />
       <SchedulePostModal open={modal === 'post'} options={options} onClose={() => setModal(null)} onSchedule={schedulePost} />
+      <MarketingDataModal open={modal === 'data'} options={options} canManage={canManage} onClose={() => setModal(null)} onChanged={refresh} />
       <ContentCalendarModal
         open={modal === 'calendar'}
         refreshKey={refreshKey}
