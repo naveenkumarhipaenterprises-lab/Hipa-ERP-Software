@@ -26,7 +26,6 @@ import DeleteRecordButton from '../../../components/common/DeleteRecordButton'
 
 /** Sales quotations: list, create / edit, status changes, PDF preview / print / download and conversions. */
 export default function QuotationsPanel({ options, canManage, refreshKey, onChanged }) {
-  const canDelete = isSuperAdmin(useAuth().user) // deleting is for Super Admins only
   const toast = useToast()
   const o = options.data ?? {}
   const [editing, setEditing] = useState(null) // detail | {} for new
@@ -82,6 +81,7 @@ export default function QuotationsPanel({ options, canManage, refreshKey, onChan
 }
 
 function QuotationDetail({ quotation, canManage, statuses, refreshKey, onClose, onEdit, onChanged }) {
+  const canDelete = isSuperAdmin(useAuth().user) // deleting is for Super Admins only (checked by the server too)
   const toast = useToast()
   const [tick, setTick] = useState(0)
   const [pdf, setPdf] = useState(null) // { print: bool }
