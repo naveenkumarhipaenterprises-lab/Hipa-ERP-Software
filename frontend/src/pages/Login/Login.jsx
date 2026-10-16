@@ -16,8 +16,10 @@ export default function Login() {
     <>
       <title>Login | HIPA MASALA</title>
       <div className="auth__card-head">
-        <Logo />
-        <h1>Welcome Back!</h1>
+        <Logo size={150} />
+        <h1>
+          Welcome <span className="auth__accent">Back!</span>
+        </h1>
         <p>Login to access your HIPA MASALA portal</p>
       </div>
 
@@ -30,8 +32,11 @@ export default function Login() {
 
       <LoginForm onSubmit={handleLogin} />
 
+      <hr className="auth__divider" />
       <p className="auth__alt">
-        New to HIPA MASALA? <strong className="text-brand">Contact your administrator</strong> for an account.
+        New to HIPA MASALA?
+        <br />
+        <strong className="text-brand">Contact your administrator</strong> for an account.
       </p>
     </>
   )

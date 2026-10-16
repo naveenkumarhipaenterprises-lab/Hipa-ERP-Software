@@ -1,4 +1,4 @@
-import { ArrowRight, UserRound } from 'lucide-react'
+import { ArrowRight, Mail } from 'lucide-react'
 import { useState } from 'react'
 import { Link } from 'react-router-dom'
 import { validateLogin } from '../../utils/validation'
@@ -54,8 +54,8 @@ export default function LoginForm({ onSubmit }) {
       <ErrorMessage message={serverError} />
       <Input
         label="Email / Username"
-        icon={UserRound}
-        placeholder="Enter your email or username"
+        icon={Mail}
+        placeholder="Email / Username"
         autoComplete="username"
         autoCapitalize="none"
         spellCheck={false}
@@ -66,7 +66,7 @@ export default function LoginForm({ onSubmit }) {
         disabled={pending}
       />
       <PasswordInput
-        placeholder="Enter your password"
+        placeholder="Password"
         autoComplete="current-password"
         value={values.password}
         onChange={set('password')}

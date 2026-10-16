@@ -35,6 +35,24 @@ test.describe('login', () => {
     expect(calls.find((c) => c.key === 'POST /api/auth/login/').body).toEqual({ username: 'ravi', password: 'secret' })
   })
 
+  test('the password can be shown and hidden, and Remember me keeps the sign-in after the browser closes', async ({ page }) => {
+    await mockApi(page, { ...SHELL, 'POST /api/auth/login/': TEST_LOGIN })
+    await page.goto('/login')
+    await expect(page.getByRole('heading', { name: 'Welcome Back!' })).toBeVisible()
+    const password = page.getByLabel('Password', { exact: true })
+    await password.fill('secret')
+    await expect(password).toHaveAttribute('type', 'password')
+    await page.getByRole('button', { name: 'Show password' }).click()
+    await expect(password).toHaveAttribute('type', 'text')
+    await page.getByRole('button', { name: 'Hide password' }).click()
+    await expect(password).toHaveAttribute('type', 'password')
+    await page.getByLabel('Email / Username').fill('ravi')
+    await page.getByLabel('Remember me').check()
+    await page.getByRole('button', { name: 'Login' }).click()
+    await expect(page).not.toHaveURL(/\/login$/)
+    expect(await page.evaluate(() => localStorage.getItem('hipa_token'))).toBe('test-token') // kept, not just for this tab
+  })
+
   test('forgot password sends the trimmed email and confirms', async ({ page }) => {
     const calls = await mockApi(page, { 'POST /api/auth/password/forgot/': {} })
     await page.goto('/forgot-password')

@@ -1019,44 +1019,37 @@ code {
 /* =========================================================
    Auth
    ========================================================= */
-.auth { display: grid; grid-template-columns: 1fr 1fr; min-height: 100vh; }
-.auth__hero {
-  position: relative; overflow: hidden;
-  display: flex; flex-direction: column; justify-content: space-between;
-  padding: 44px 48px;
-  color: #fff;
+/* The sunrise spice-farm photo fills the screen (public/images/login-background.jpg); until it is added, a warm
+   sky-to-field colour wash shows in its place. The form sits in a frosted-glass card on the right. */
+.auth {
+  min-height: 100vh; min-height: 100dvh;
+  display: flex; align-items: center; justify-content: space-between; gap: 32px;
+  padding: 56px clamp(24px, 8vw, 150px);
   background:
-    radial-gradient(ellipse at 20% 10%, rgba(80, 140, 60, 0.35), transparent 50%),
-    radial-gradient(ellipse at 80% 90%, rgba(190, 90, 30, 0.35), transparent 55%),
-    linear-gradient(160deg, #2b1c10 0%, #3d2615 45%, #1d140b 100%);
+    url('/images/login-background.jpg') left center / cover no-repeat,
+    linear-gradient(180deg, #f6c98a 0%, #f3a95f 26%, #c9b46a 44%, #6f9a4a 62%, #3f6e2c 100%);
+  overflow-x: hidden;
 }
-.auth__hero-inner { position: relative; z-index: 1; display: flex; flex-direction: column; align-items: flex-start; gap: 22px; }
-.auth__hero-inner .logo { align-self: center; }
-.auth__headline { font-family: 'Merriweather', Georgia, serif; font-size: clamp(2.2em, 3.6vw, 3.6em); line-height: 1.12; font-weight: 900; }
-.auth__lead { font-size: 1.35em; color: #f1e9dc; }
-.auth__promises { list-style: none; margin: 8px 0 0; padding: 0; display: flex; gap: 26px; flex-wrap: wrap; }
-.auth__promises li { display: flex; flex-direction: column; align-items: center; gap: 8px; text-align: center; width: 90px; font-size: 0.92em; }
-.auth__art { position: absolute; right: -40px; bottom: 40px; width: 90%; max-width: 620px; height: auto; opacity: 0.95; }
-.auth__hero-foot { position: relative; z-index: 1; display: flex; flex-direction: column; gap: 18px; }
-.auth__hero-foot p { font-size: 0.95em; color: #f1e9dc; }
-
-.auth__panel {
-  position: relative;
-  display: flex; flex-direction: column; align-items: center; justify-content: center;
-  padding: 60px 24px 30px;
-  background: radial-gradient(circle at 100% 20%, #e8f4ea 0, transparent 30%), radial-gradient(circle at 100% 90%, #e8f4ea 0, transparent 25%), #f8faf9;
-}
-.auth__lang { position: absolute; top: 22px; right: 28px; }
+.auth__brand { align-self: flex-start; margin-top: -6px; flex-shrink: 0; }
+.auth__brand .logo { width: clamp(150px, 12vw, 215px); height: auto; filter: drop-shadow(0 6px 18px rgba(0, 0, 0, 0.18)); }
 .auth__card {
-  width: 100%; max-width: 470px;
-  background: var(--surface); border-radius: 18px;
-  padding: 34px 34px 28px; box-shadow: 0 10px 40px rgba(16, 24, 40, 0.08);
+  width: 100%; max-width: 600px;
+  padding: 34px clamp(24px, 3.6vw, 64px) 30px;
+  border-radius: 28px;
+  background: rgba(255, 255, 255, 0.62);
+  border: 1px solid rgba(255, 255, 255, 0.8);
+  box-shadow: 0 24px 60px rgba(40, 30, 10, 0.22);
+  -webkit-backdrop-filter: blur(16px) saturate(1.15);
+  backdrop-filter: blur(16px) saturate(1.15);
   display: flex; flex-direction: column; gap: 18px;
 }
 .auth__card-head { display: flex; flex-direction: column; align-items: center; text-align: center; gap: 6px; }
-.auth__card-head h1 { margin-top: 10px; font-size: 1.9em; font-weight: 800; color: #0f1e45; }
-.auth__card-head p { color: var(--text-2); }
-.auth__alt { text-align: center; color: var(--text-2); font-size: 0.95em; }
+.auth__card-head h1 { margin-top: 10px; font-family: 'Merriweather', Georgia, serif; font-size: clamp(1.9em, 2.6vw, 2.6em);
+                      font-weight: 900; letter-spacing: -0.5px; color: #12203f; }
+.auth__accent { color: var(--green-600); }
+.auth__card-head p { color: #3a3f47; font-size: 1.05em; }
+.auth__alt { text-align: center; color: #2c3138; font-size: 0.97em; line-height: 1.6; }
+.auth__divider { border: 0; border-top: 1px solid rgba(60, 60, 50, 0.22); margin: 6px 0 -4px; width: 100%; }
 .auth__success { display: grid; place-items: center; color: var(--green-600); padding: 8px; }
 .auth__success--warn { color: var(--amber-600); }
 .auth__hint { text-align: center; color: var(--text-2); font-size: 0.92em; }
@@ -1073,12 +1066,18 @@ code {
 .pw-rules svg { opacity: 0.35; }
 .pw-rules__met { color: var(--green-600); }
 .pw-rules__met svg { opacity: 1; }
-.auth__foot { margin-top: 30px; display: flex; align-items: center; gap: 10px; letter-spacing: 2px; font-size: 0.85em; color: var(--text-2); }
-.auth__foot svg { color: var(--green-600); }
-.auth__foot span { color: var(--border-strong); }
-
 .login-form { display: flex; flex-direction: column; gap: 16px; }
 .login-form__row { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; }
+/* Login fields show their name as the placeholder, as in the design; the label stays for screen readers */
+.login-form .field__label {
+  position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0;
+}
+.auth__card .control__input { height: 56px; border-radius: 10px; background: rgba(255, 255, 255, 0.88); border-color: rgba(255, 255, 255, 0.95);
+                              box-shadow: 0 1px 2px rgba(16, 24, 40, 0.06); font-size: 1.02em; }
+.auth__card .control--icon .control__input { padding-left: 50px; }
+.auth__card .control__icon { left: 16px; color: #3b4250; }
+.auth__card .btn--lg { height: 60px; border-radius: 10px; font-size: 1.12em; }
+.auth__card .checkbox input { width: 20px; height: 20px; }
 
 /* =========================================================
    Responsive
@@ -1103,8 +1102,9 @@ code {
   .app-main { margin-left: 0; }
   .topbar__menu { display: inline-grid; }
   .topbar__user-text, .topbar__caret, .topbar__kbd { display: none; }
-  .auth { grid-template-columns: 1fr; }
-  .auth__hero { display: none; }
+  /* Tablet: the card is centred over the photo and carries the only logo */
+  .auth { justify-content: center; padding: 40px 24px; }
+  .auth__brand { display: none; }
 }
 
 /* Small tablet / phone */
@@ -1116,7 +1116,9 @@ code {
   .grid-2, .kpi-grid, .form-grid { grid-template-columns: minmax(0, 1fr); }
   .page-header h1 { font-size: 1.55em; }
   .page-header__actions { width: 100%; }
-  .auth__card { padding: 26px 20px; }
+  .auth { padding: 24px 16px; align-items: flex-start; background-position: 20% center, 0 0; }
+  .auth__card { padding: 26px 20px; border-radius: 22px; gap: 16px; }
+  .auth__card-head .logo { width: 110px; height: auto; }
   .detail-list { grid-template-columns: 1fr; gap: 2px; }
   .detail-list dd { margin-bottom: 10px; }
   .modal__footer { flex-wrap: wrap; }
