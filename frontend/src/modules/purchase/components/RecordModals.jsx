@@ -2,6 +2,7 @@ import EmptyState from '../../../components/common/EmptyState'
 import FormModal from '../../../components/common/FormModal'
 import Modal from '../../../components/common/Modal'
 import OptionsGate from '../../../components/common/OptionsGate'
+import { useRequestKey } from '../../../hooks/useRequestKey'
 import { todayISO } from '../../../utils/formatters'
 import { choiceOptions, idOptions, list, money, optionalNumber, optionalText, qty } from '../shared'
 
@@ -99,6 +100,7 @@ export function PurchaseReturnModal({ open, purchase, options, onClose, onSave }
 
 /** A payment made to a supplier, or a scheduled one (Pending; shown as Overdue once its date passes). */
 export function SupplierPaymentModal({ open, purchase, options, onClose, onSave }) {
+  const requestKey = useRequestKey(open) // one payment per opening, even if sent twice
   if (!open) return null
   return (
     <OptionsGate options={options} title="Supplier Payment" onClose={onClose}>
@@ -141,7 +143,8 @@ export function SupplierPaymentModal({ open, purchase, options, onClose, onSave 
               { name: 'notes', label: 'Notes', type: 'textarea' },
             ]}
             onSubmit={(v) => onSave({ ...v, purchase_id: v.purchase_id || undefined, supplier_id: v.purchase_id ? undefined : v.supplier_id,
-                                      transaction_reference: optionalText(v.transaction_reference), notes: optionalText(v.notes) })}
+                                      transaction_reference: optionalText(v.transaction_reference), notes: optionalText(v.notes),
+                                      request_key: requestKey })}
           />
         )
       }}

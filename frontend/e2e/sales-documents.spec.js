@@ -106,3 +106,38 @@ test('sales sub-menu and role rules', async ({ page }) => {
   await sub.getByRole('link', { name: 'Payments', exact: true }).click()
   await expect(page.getByRole('button', { name: 'Record Payment' })).toBeVisible() // finance may record receipts
 })
+
+test('a payment form sent again (e.g. after an error) carries the same one-time code; a new form gets a new one', async ({ page }) => {
+  await signIn(page, 'finance')
+  let attempt = 0
+  const calls = await mockApi(page, {
+    ...SHELL, 'GET /api/sales/options/': TEST_OPTIONS, 'GET /api/sales/payments/': EMPTY_LIST,
+    'GET /api/sales/invoices/': { count: 1, results: [{ id: 7, invoice_number: 'TEST-INV-7', customer_name: 'TEST Buyer', balance: 1000 }] },
+    'POST /api/sales/payments/': () => {
+      attempt += 1
+      return attempt === 1 ? { status: 500, body: { detail: 'TEST network hiccup' } }
+        : { status: 201, body: { id: 1, receipt_number: 'TEST-RCP-1', invoice_number: 'TEST-INV-7' } }
+    },
+  })
+  await page.goto('/sales?tab=payments')
+  await page.getByRole('button', { name: 'Record Payment' }).first().click()
+  const form = page.getByRole('dialog', { name: 'Record Payment' })
+  await form.getByLabel(/^Amount/).fill('500')
+  await form.getByLabel(/Payment method/).selectOption('UPI')
+  await form.getByRole('button', { name: 'Save Payment' }).click()
+  await expect.poll(() => calls.filter((c) => c.key === 'POST /api/sales/payments/').length).toBe(1)
+  await expect(form.getByRole('alert').first()).toBeVisible() // the server error is shown and the form stays open
+  await form.getByRole('button', { name: 'Save Payment' }).click()
+  await expect(page.getByText('TEST-RCP-1 recorded for TEST-INV-7')).toBeVisible()
+  const sent = calls.filter((c) => c.key === 'POST /api/sales/payments/').map((c) => c.body.request_key)
+  expect(sent).toHaveLength(2)
+  expect(sent[0]).toBeTruthy()
+  expect(sent[1]).toBe(sent[0]) // the retry is recognised by the server as the same payment
+
+  await page.getByRole('button', { name: 'Record Payment' }).first().click()
+  await page.getByRole('dialog', { name: 'Record Payment' }).getByLabel(/^Amount/).fill('100')
+  await page.getByRole('dialog', { name: 'Record Payment' }).getByLabel(/Payment method/).selectOption('UPI')
+  await page.getByRole('dialog', { name: 'Record Payment' }).getByRole('button', { name: 'Save Payment' }).click()
+  await expect.poll(() => calls.filter((c) => c.key === 'POST /api/sales/payments/').length).toBe(3)
+  expect(calls.filter((c) => c.key === 'POST /api/sales/payments/')[2].body.request_key).not.toBe(sent[0]) // a new form: a new code
+})

@@ -1,6 +1,7 @@
 import { CircleCheck, IndianRupee, Plus, Undo2, XCircle } from 'lucide-react'
 import { useState } from 'react'
 import { salesApi } from '../../../api/salesApi'
+import { useRequestKey } from '../../../hooks/useRequestKey'
 import Badge from '../../../components/common/Badge'
 import Button from '../../../components/common/Button'
 import Card from '../../../components/common/Card'
@@ -40,6 +41,7 @@ function useOpenInvoices(open, invoice) {
 /** Money received from a customer against an invoice. */
 export function ReceivePaymentModal({ open, invoice, options, onClose, onSave }) {
   const invoices = useOpenInvoices(open, invoice)
+  const requestKey = useRequestKey(open) // one payment per opening, even if sent twice
   if (!open) return null
   if (!invoice && !invoices.data)
     return (
@@ -73,7 +75,7 @@ export function ReceivePaymentModal({ open, invoice, options, onClose, onSave })
         { name: 'reference', label: 'Transaction reference', placeholder: 'UTR / cheque no.' },
         { name: 'notes', label: 'Notes', type: 'textarea' },
       ]}
-      onSubmit={(v) => onSave({ ...v, reference: optionalText(v.reference), notes: optionalText(v.notes) })}
+      onSubmit={(v) => onSave({ ...v, reference: optionalText(v.reference), notes: optionalText(v.notes), request_key: requestKey })}
     />
   )
 }

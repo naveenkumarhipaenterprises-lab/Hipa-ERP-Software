@@ -14,6 +14,7 @@ from apps.customers.models import Customer
 from apps.inventory.models import Product
 from apps.system.models import BillingSettings
 from services import audit
+from services.once import only_once
 
 from . import pdf, services
 from .models import PaymentMethod, SalesInvoice, SalesPayment, SalesQuotation, SalesQuotationItem, SalesReturn
@@ -425,6 +426,10 @@ class PaymentsView(SalesView):
         return self.paginated(date_range(self, qs, "payment_date"), lambda p: payment_row(p, editable))
 
     def post(self, request):
+        with only_once(request, "sales_payment"):  # the same form can't record the payment twice
+            return self.record(request)
+
+    def record(self, request):
         d, errors = request.data, {}
         invoice = parsing.record(d, "invoice_id", SalesInvoice.objects.filter(status=IS.ISSUED), errors, message="Choose an invoice.")
         amount = parsing.decimal(d, "amount", errors, positive=True, maximum=services.MAX_PRICE, message="Enter an amount greater than 0.")

@@ -20,6 +20,7 @@ from apps.core.views import ModuleAPIView
 from apps.inventory.models import Product
 from apps.system.models import BillingSettings
 from services import audit
+from services.once import only_once
 
 from . import services
 from .models import GoodsReceipt, MaterialMovement, Purchase, PurchaseReturn, RawMaterial, Supplier, SupplierPayment, Unit
@@ -935,6 +936,10 @@ class PaymentsView(PurchaseView):
         return self.paginated(date_filter(self, qs, "payment_date"), lambda pm: payment_row(pm, editable))
 
     def post(self, request):
+        with only_once(request, "supplier_payment"):  # the same form can't record the payment twice
+            return self.record(request)
+
+    def record(self, request):
         d, errors = request.data, {}
         purchase = parsing.record(d, "purchase_id", Purchase.objects.exclude(status=PSt.CANCELLED).select_related("supplier"),
                                   errors, required=False, message="Choose a purchase.")
