@@ -225,7 +225,7 @@ export default function QualityPage() {
       )}
 
       <TestEntryModal open={modal === 'test'} options={options} onClose={() => setModal(null)} onSave={saveTest} />
-      <StandardsModal open={modal === 'standards'} onClose={() => setModal(null)} />
+      <StandardsModal open={modal === 'standards'} options={options} canManage={canManage} onClose={() => setModal(null)} />
       <AuditModal open={modal === 'audit'} options={options} onClose={() => setModal(null)} onSchedule={scheduleAudit} />
     </div>
   )

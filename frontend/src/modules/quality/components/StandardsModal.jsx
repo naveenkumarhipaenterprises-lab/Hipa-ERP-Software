@@ -1,21 +1,44 @@
-import { ClipboardList } from 'lucide-react'
+import { ClipboardList, Pencil, Plus } from 'lucide-react'
+import { useState } from 'react'
 import { qualityApi } from '../../../api/qualityApi'
+import Button from '../../../components/common/Button'
+import DeleteRecordButton from '../../../components/common/DeleteRecordButton'
 import ErrorMessage from '../../../components/common/ErrorMessage'
+import FormModal from '../../../components/common/FormModal'
 import Modal from '../../../components/common/Modal'
 import Table from '../../../components/common/Table'
 import { useApi } from '../../../hooks/useApi'
+import { useToast } from '../../../hooks/useToast'
 
-/** Acceptance limits applied to batches (GET /quality/standards/). */
-export default function StandardsModal({ open, onClose }) {
+const list = (v) => (Array.isArray(v) ? v : [])
+
+/**
+ * Acceptance limits applied to batches (GET /quality/standards/). The quality team adds and edits them here
+ * (one limit per parameter and product, or for all products); deleting is for Super Admins.
+ */
+export default function StandardsModal({ open, options, canManage = false, onClose }) {
   if (!open) return null
-  return <Standards onClose={onClose} />
+  return <Standards options={options} canManage={canManage} onClose={onClose} />
 }
 
-function Standards({ onClose }) {
+function Standards({ options, canManage, onClose }) {
+  const toast = useToast()
+  const [form, setForm] = useState(null) // { standard? }
   const standards = useApi(() => qualityApi.getStandards(), [])
-  const rows = Array.isArray(standards.data) ? standards.data : []
+  const rows = list(standards.data)
+  const products = list(options?.data?.products).map((p) => ({ value: String(p.id), label: p.name }))
+  const s = form?.standard
+
+  const save = async (values) => {
+    const body = { ...values, product_id: values.product_id || null }
+    const saved = s ? await qualityApi.updateStandard(s.id, body) : await qualityApi.createStandard(body)
+    toast.success(s ? `${saved.parameter} updated` : `${saved.parameter} added`)
+    standards.reload()
+  }
+
   return (
-    <Modal open onClose={onClose} title="Quality Standards" subtitle="Acceptance limits applied to every batch">
+    <Modal open onClose={onClose} title="Quality Standards" subtitle="Acceptance limits applied to every batch"
+           footer={canManage ? <Button icon={Plus} onClick={() => setForm({})}>Add Standard</Button> : undefined}>
       {standards.error && !standards.loading ? (
         <ErrorMessage message={standards.error.message} onRetry={standards.reload} />
       ) : (
@@ -27,14 +50,37 @@ function Standards({ onClose }) {
           data={rows}
           emptyIcon={ClipboardList}
           emptyTitle="No standards defined"
-          emptyMessage="Acceptance limits are set up by the quality team in the system settings."
+          emptyMessage={canManage ? 'Add the acceptance limits your lots must meet, e.g. Moisture ≤ 10%.' : 'The quality team sets the acceptance limits.'}
           columns={[
             { key: 'parameter', header: 'Parameter' },
             { key: 'limit', header: 'Limit' },
             { key: 'applies_to', header: 'Applies to', render: (r) => r.applies_to || 'All products' },
+            ...(canManage ? [{
+              key: 'actions', align: 'right', header: <span className="sr-only">Actions</span>,
+              render: (r) => (
+                <span className="row-actions">
+                  <Button size="sm" variant="ghost" icon={Pencil} onClick={() => setForm({ standard: r })} aria-label={`Edit ${r.parameter}`} />
+                  <DeleteRecordButton kind="quality_standard" id={r.id} label={`${r.parameter} standard`} onDeleted={standards.reload} />
+                </span>
+              ),
+            }] : []),
           ]}
         />
       )}
+      <FormModal
+        open={Boolean(form)}
+        onClose={() => setForm(null)}
+        title={s ? `Edit ${s.parameter}` : 'Add Standard'}
+        subtitle="One limit per parameter and product (or for all products)"
+        fields={[
+          { name: 'parameter', label: 'Parameter', required: true, placeholder: 'e.g. Moisture' },
+          { name: 'limit', label: 'Limit', required: true, placeholder: 'e.g. ≤ 10%' },
+          { name: 'product_id', label: 'Applies to', type: 'select', full: true, placeholder: 'All products', options: products },
+        ]}
+        initialValues={s ? { parameter: s.parameter, limit: s.limit, product_id: s.product_id ? String(s.product_id) : '' } : {}}
+        submitLabel="Save"
+        onSubmit={save}
+      />
     </Modal>
   )
 }

@@ -280,7 +280,7 @@ def _models():
     from apps.inventory.models import Product, StockMovement
     from apps.marketing.models import AudienceSegment, Campaign, ContentItem, MarketingMetric, ScheduledPost
     from apps.purchase.models import GoodsReceipt, MaterialMovement, Purchase, PurchaseReturn, RawMaterial, Supplier, SupplierPayment
-    from apps.quality.models import QualityAudit, QualityTest
+    from apps.quality.models import QualityAudit, QualityStandard, QualityTest
     from apps.sales.models import SalesInvoice, SalesOrder, SalesPayment, SalesQuotation, SalesReturn
     from apps.supply_chain.models import Shipment
 
@@ -303,6 +303,7 @@ def _models():
         "stock_movement": (StockMovement, "inventory", stock_movement),
         "quality_test": (QualityTest, "quality", quality_test),
         "quality_audit": (QualityAudit, "quality", plain("audit", lambda a: str(a))),
+        "quality_standard": (QualityStandard, "quality", plain("quality standard", lambda s: str(s))),
         "campaign": (Campaign, "marketing", plain("campaign", lambda c: c.name)),
         "scheduled_post": (ScheduledPost, "marketing", plain("post", lambda p: str(p))),
         "marketing_metric": (MarketingMetric, "marketing", plain("marketing numbers", lambda m: str(m))),

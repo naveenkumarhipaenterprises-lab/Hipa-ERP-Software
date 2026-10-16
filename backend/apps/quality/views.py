@@ -277,12 +277,53 @@ class TestDetailView(QualityView):
         return Response(test_row(test))
 
 
+def standard_row(s):
+    return {"id": s.id, "parameter": s.parameter, "limit": s.limit, "product_id": s.product_id,
+            "applies_to": s.product.name if s.product else "All products"}
+
+
+def read_standard(d, current=None):
+    """A parameter is set once per product, and once for all products."""
+    errors = {}
+    parameter = parsing.text(d, "parameter", 120, required=True, errors=errors, label="parameter")
+    limit = parsing.text(d, "limit", 120, required=True, errors=errors, label="limit")
+    for field, label in (("parameter", "parameter"), ("limit", "limit")):
+        if len(str(d.get(field) or "").strip()) > 120:
+            errors[field] = [f"The {label} can be at most 120 characters."]
+    product = parsing.record(d, "product_id", Product.objects.all(), errors, required=False, message="Choose a valid product.")
+    if parameter and not errors:
+        clash = QualityStandard.objects.filter(parameter__iexact=parameter, product=product)
+        if current is not None:
+            clash = clash.exclude(pk=current.pk)
+        if clash.exists():
+            errors["parameter"] = [f"{parameter} already has a limit for {product.name if product else 'all products'}. Edit that one."]
+    if errors:
+        raise ValidationError(errors)
+    return {"parameter": parameter, "limit": limit, "product": product}
+
+
 class StandardsView(QualityView):
+    """GET: the acceptance limits. POST {parameter, limit, product_id?}: a new one (no product = all products)."""
+
     def get(self, request):
-        return Response([
-            {"id": s.id, "parameter": s.parameter, "limit": s.limit, "applies_to": s.product.name if s.product else "All products"}
-            for s in QualityStandard.objects.select_related("product")
-        ])
+        return Response([standard_row(s) for s in QualityStandard.objects.select_related("product")])
+
+    def post(self, request):
+        s = QualityStandard.objects.create(**read_standard(request.data))
+        audit.record(request, "Added quality standard", f"{s.parameter}: {s.limit}")
+        return Response(standard_row(s), status=status.HTTP_201_CREATED)
+
+
+class StandardDetailView(QualityView):
+    def patch(self, request, pk):
+        """Fields not sent keep their value."""
+        s = get_object_or_404(QualityStandard.objects.select_related("product"), pk=pk)
+        current = {"parameter": s.parameter, "limit": s.limit, "product_id": s.product_id or ""}
+        for k, v in read_standard({**current, **{k: request.data.get(k) for k in current if k in request.data}}, s).items():
+            setattr(s, k, v)
+        s.save()
+        audit.record(request, "Edited quality standard", f"{s.parameter}: {s.limit}")
+        return Response(standard_row(s))
 
 
 def audit_row(a):

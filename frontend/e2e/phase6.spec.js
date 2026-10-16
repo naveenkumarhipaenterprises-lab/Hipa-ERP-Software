@@ -185,6 +185,37 @@ test('quality certifications: add with a certificate, then edit and delete', asy
   await expect(card.getByText('No certifications recorded')).toBeVisible()
 })
 
+test('quality standards are added on screen', async ({ page }) => {
+  await signIn(page, 'quality')
+  let standards = []
+  const calls = await mockApi(page, {
+    ...SHELL,
+    'GET /api/quality/overview/': { kpis: {}, product_quality: [], certifications: [], insights: {} },
+    'GET /api/quality/trend/': [],
+    'GET /api/quality/tests/': { count: 0, results: [] },
+    'GET /api/quality/audits/': { count: 0, results: [] },
+    'GET /api/quality/options/': { pending_receipts: [], products: [{ id: 21, name: 'TEST Chilli' }], materials: [], results: [], audit_types: [] },
+    'GET /api/quality/standards/': () => standards,
+    'POST /api/quality/standards/': () => {
+      standards = [{ id: 1, parameter: 'Moisture', limit: '≤ 10%', product_id: 21, applies_to: 'TEST Chilli' }]
+      return { status: 201, body: standards[0] }
+    },
+  })
+  await page.goto('/quality')
+  await page.getByRole('button', { name: 'Quality Standards' }).click()
+  const win = page.getByRole('dialog', { name: 'Quality Standards' })
+  await expect(win.getByText('No standards defined')).toBeVisible()
+  await win.getByRole('button', { name: 'Add Standard' }).click()
+  const form = page.getByRole('dialog', { name: 'Add Standard' })
+  await form.getByLabel(/^Parameter/).fill('Moisture')
+  await form.getByLabel(/^Limit/).fill('≤ 10%')
+  await form.getByLabel(/^Applies to/).selectOption('21')
+  await form.getByRole('button', { name: 'Save' }).click()
+  await expect(page.getByText('Moisture added')).toBeVisible()
+  await expect(win.getByRole('cell', { name: 'TEST Chilli' })).toBeVisible()
+  expect(calls.find((c) => c.key === 'POST /api/quality/standards/').body).toEqual({ parameter: 'Moisture', limit: '≤ 10%', product_id: '21' })
+})
+
 test('tax & billing settings start empty and save', async ({ page }) => {
   await signIn(page, 'admin')
   const blank = {

@@ -35,7 +35,8 @@ const sendForm = async (method, url, form) =>
  *      readings: [{ parameter, value }] (value = decimal number as text); parameters = the same pairs as one line
  * POST  /quality/tests/      { goods_receipt_id | product_id | material_id, batch_number?, test_date, result, readings, notes? }
  * PATCH /quality/tests/<id>/ { readings }   (changes only the Parameter + Value rows)
- * GET  /quality/standards/  ->  [{ id, parameter, limit, applies_to? }]
+ * GET  /quality/standards/  ->  [{ id, parameter, limit, product_id, applies_to }]   POST { parameter, limit, product_id? }
+ * PATCH /quality/standards/<id>/   (one limit per parameter + product, or all products; delete: Super Admin)
  * GET  /quality/certifications/   ->  [certification]      POST (multipart) -> certification
  *      certification: { id, name, issuing_authority, certificate_number, category, category_value, issue_date, valid_until,
  *                       status (Active | Expiring Soon | Expired | Pending Verification | Suspended), status_value, notes,
@@ -55,6 +56,8 @@ export const qualityApi = {
   createTest: (test) => api.post('/quality/tests/', test),
   updateTestReadings: (id, readings) => api.patch(`/quality/tests/${id}/`, { readings }),
   getStandards: () => api.get('/quality/standards/'),
+  createStandard: (body) => api.post('/quality/standards/', body),
+  updateStandard: (id, body) => api.patch(`/quality/standards/${id}/`, body),
   listCertifications: () => api.get('/quality/certifications/'),
   createCertification: (values) => sendForm('post', '/quality/certifications/', certificationForm(values)),
   updateCertification: (id, values) => sendForm('patch', `/quality/certifications/${id}/`, certificationForm(values)),
