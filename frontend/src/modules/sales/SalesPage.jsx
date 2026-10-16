@@ -16,6 +16,7 @@ import OrdersPanel from './components/OrdersPanel'
 import QuotationsPanel from './components/QuotationsPanel'
 import SalesOverview from './components/SalesOverview'
 import { ReceivePaymentModal, SalesPaymentsPanel, SalesReturnModal, SalesReturnsPanel } from './components/SalesRecords'
+import { SalesSettlementsPanel, SettleOverpaymentModal } from './components/SettlementForms'
 
 // Roles that may create quotations, orders, invoices and returns (the backend enforces the same rule)
 const SALES_MANAGERS = ['admin', 'management', 'sales']
@@ -32,7 +33,7 @@ export default function SalesPage() {
   const [range, setRange] = useState(DATE_RANGES[0].value)
   const [product, setProduct] = useState('')
   const [refreshKey, setRefreshKey] = useState(0)
-  const [record, setRecord] = useState(null) // { kind: 'payment' | 'return', invoice? }
+  const [record, setRecord] = useState(null) // { kind: 'payment' | 'return' | 'settle', invoice? }
   const justCreated = useRef(false)
 
   const canManage = hasAnyRole(user, SALES_MANAGERS)
@@ -75,6 +76,11 @@ export default function SalesPage() {
   const savePayment = async (body) => {
     const p = await salesApi.createPayment(body)
     toast.success(`${p.receipt_number} recorded for ${p.invoice_number}`)
+    refresh()
+  }
+  const saveSettlement = async (body) => {
+    const st = await salesApi.createSettlement(body)
+    toast.success(`${st.number} recorded: ${st.kind.toLowerCase()} on ${st.invoice_number}`)
     refresh()
   }
   const saveReturn = async (body) => {
@@ -139,10 +145,14 @@ export default function SalesPage() {
         )}
         {tab === 'invoices' && (
           <InvoicesPanel options={options} canManage={canManage} canReceive={canReceive} refreshKey={refreshKey} onChanged={refresh}
-                         onPay={(inv) => setRecord({ kind: 'payment', invoice: inv })} onReturn={(inv) => setRecord({ kind: 'return', invoice: inv })} />
+                         onPay={(inv) => setRecord({ kind: 'payment', invoice: inv })} onReturn={(inv) => setRecord({ kind: 'return', invoice: inv })}
+                         onSettle={(inv) => setRecord({ kind: 'settle', invoice: inv })} />
         )}
         {tab === 'payments' && (
-          <SalesPaymentsPanel options={options} canReceive={canReceive} refreshKey={refreshKey} onChanged={refresh} onNew={() => setRecord({ kind: 'payment' })} />
+          <>
+            <SalesPaymentsPanel options={options} canReceive={canReceive} refreshKey={refreshKey} onChanged={refresh} onNew={() => setRecord({ kind: 'payment' })} />
+            <SalesSettlementsPanel canReceive={canReceive} refreshKey={refreshKey} onChanged={refresh} />
+          </>
         )}
         {tab === 'returns' && (
           <SalesReturnsPanel options={options} canManage={canManage} refreshKey={refreshKey} onChanged={refresh} onNew={() => setRecord({ kind: 'return' })} />
@@ -151,6 +161,7 @@ export default function SalesPage() {
 
       <NewOrderModal open={newOrderOpen} onClose={closeNewOrder} options={options} onCreate={createOrder} />
       <ReceivePaymentModal open={record?.kind === 'payment'} invoice={record?.invoice} options={options} onClose={() => setRecord(null)} onSave={savePayment} />
+      <SettleOverpaymentModal open={record?.kind === 'settle'} invoice={record?.invoice} options={options} onClose={() => setRecord(null)} onSave={saveSettlement} />
       <SalesReturnModal open={record?.kind === 'return'} invoice={record?.invoice} options={options} onClose={() => setRecord(null)} onSave={saveReturn} />
     </div>
   )

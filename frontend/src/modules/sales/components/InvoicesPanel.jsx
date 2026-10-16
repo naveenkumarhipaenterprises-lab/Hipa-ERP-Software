@@ -22,7 +22,7 @@ import { ITEM_COLUMNS } from './documentColumns'
 import DeleteRecordButton from '../../../components/common/DeleteRecordButton'
 
 /** Sales invoices: list, create (direct), edit, cancel, PDF preview / print / download, payments and returns. */
-export default function InvoicesPanel({ options, canManage, canReceive, refreshKey, onChanged, onPay, onReturn }) {
+export default function InvoicesPanel({ options, canManage, canReceive, refreshKey, onChanged, onPay, onReturn, onSettle }) {
   const toast = useToast()
   const o = options.data ?? {}
   const [editing, setEditing] = useState(null)
@@ -44,7 +44,12 @@ export default function InvoicesPanel({ options, canManage, canReceive, refreshK
     { key: 'products', header: 'Products', render: (r) => dash(r.products) },
     { key: 'grand_total', header: 'Total', align: 'right', render: (r) => money(r.grand_total) },
     { key: 'balance', header: 'Balance', align: 'right', render: (r) => (r.status === 'Cancelled' ? '—' : money(r.balance)) },
-    { key: 'payment_status', header: 'Payment', render: (r) => (r.payment_status ? <Badge>{r.payment_status}</Badge> : <Badge>{r.status}</Badge>) },
+    { key: 'payment_status', header: 'Payment', render: (r) => (
+      <span className="row-actions">
+        {r.payment_status ? <Badge>{r.payment_status}</Badge> : <Badge>{r.status}</Badge>}
+        {Number(r.overpaid) > 0 && <Badge tone="amber">{`Overpaid ${money(r.overpaid)}`}</Badge>}
+      </span>
+    ) },
     { key: 'source', header: 'From', render: (r) => r.sales_order_number || r.quotation_number || 'Direct' },
     { key: 'actions', sticky: true, header: <span className="sr-only">Actions</span>, align: 'right',
       render: (r) => (
@@ -79,12 +84,13 @@ export default function InvoicesPanel({ options, canManage, canReceive, refreshK
                       onClose={() => setEditing(null)} onSave={save} />
       <InvoiceDetail invoice={viewing} canManage={canManage} canReceive={canReceive} refreshKey={refreshKey} onClose={() => setViewing(null)}
                      onEdit={(inv) => { setViewing(null); setEditing(inv) }} onChanged={onChanged}
-                     onPay={(inv) => { setViewing(null); onPay(inv) }} onReturn={(inv) => { setViewing(null); onReturn(inv) }} />
+                     onPay={(inv) => { setViewing(null); onPay(inv) }} onReturn={(inv) => { setViewing(null); onReturn(inv) }}
+                     onSettle={onSettle && ((inv) => { setViewing(null); onSettle(inv) })} />
     </Card>
   )
 }
 
-export function InvoiceDetail({ invoice, canManage, canReceive, refreshKey, onClose, onEdit, onChanged, onPay, onReturn }) {
+export function InvoiceDetail({ invoice, canManage, canReceive, refreshKey, onClose, onEdit, onChanged, onPay, onReturn, onSettle }) {
   const toast = useToast()
   const [tick, setTick] = useState(0)
   const [pdf, setPdf] = useState(null)
@@ -116,6 +122,9 @@ export function InvoiceDetail({ invoice, canManage, canReceive, refreshKey, onCl
               <Button size="sm" variant="outline" icon={Download} onClick={() => salesApi.downloadInvoicePdf(inv.id).catch((e) => toast.error(e.message))}>Download PDF</Button>
               {canManage && inv.can_edit && <Button size="sm" variant="outline" icon={Pencil} onClick={() => onEdit(inv)}>Edit</Button>}
               {canReceive && inv.can_record_payment && <Button size="sm" icon={IndianRupee} onClick={() => onPay(inv)}>Record Payment</Button>}
+              {canReceive && inv.can_settle && onSettle && (
+                <Button size="sm" icon={IndianRupee} onClick={() => onSettle(inv)}>{`Settle Overpayment (${money(inv.overpaid)})`}</Button>
+              )}
               {canManage && inv.status === 'Issued' && <Button size="sm" variant="outline" icon={Undo2} onClick={() => onReturn(inv)}>Record Return</Button>}
               {canManage && inv.can_cancel && <Button size="sm" variant="ghost" icon={Ban} onClick={() => setCancelling(true)}>Cancel Invoice</Button>}
             </div>
@@ -131,7 +140,11 @@ export function InvoiceDetail({ invoice, canManage, canReceive, refreshKey, onCl
             <TotalsSummary totals={{ subtotal: inv.subtotal, discount: inv.discount_amount, gst: inv.gst_amount, total: inv.grand_total }}
                            totalLabel="Invoice Total" />
             <dl className="detail-grid">
-              {[['Paid', money(inv.amount_paid)], ['Credited (returns)', money(inv.credited_amount)], ['Balance due', money(inv.balance)],
+              {[['Paid', money(inv.amount_paid)], ['Credited (returns)', money(inv.credited_amount)],
+                ...(Number(inv.settled_amount) > 0 ? [['Refunded / kept as credit', money(inv.settled_amount)]] : []),
+                ...(Number(inv.overpaid) > 0 ? [['Overpaid (to settle)', money(inv.overpaid)]] : []),
+                ['Balance due', money(inv.balance)],
+                ...(Number(inv.customer_credit) > 0 ? [['Customer credit available', money(inv.customer_credit)]] : []),
                 ['Payment terms', inv.payment_terms || '—'], ['Notes', inv.notes || '—']].map(([k, v]) => (
                 <div key={k}><dt>{k}</dt><dd style={{ whiteSpace: 'pre-line' }}>{v}</dd></div>
               ))}
@@ -141,6 +154,16 @@ export function InvoiceDetail({ invoice, canManage, canReceive, refreshKey, onCl
                    columns={[{ key: 'receipt_number', header: 'Receipt' }, { key: 'payment_date', header: 'Date', render: (r) => date(r.payment_date) },
                              { key: 'amount', header: 'Amount', align: 'right', render: (r) => money(r.amount) }, { key: 'payment_method', header: 'Method' },
                              { key: 'reference', header: 'Reference', render: (r) => dash(r.reference) }, { key: 'status', header: 'Status', render: (r) => <Badge>{r.status}</Badge> }]} />
+            {list(inv.settlements).length > 0 && (
+              <>
+                <h3 className="card__title">Refunds &amp; Credits</h3>
+                <Table compact caption="Refunds and credits" data={inv.settlements}
+                       columns={[{ key: 'number', header: 'Number' }, { key: 'date', header: 'Date', render: (r) => date(r.date) },
+                                 { key: 'kind', header: 'Type' }, { key: 'amount', header: 'Amount', align: 'right', render: (r) => money(r.amount) },
+                                 { key: 'payment_method', header: 'Refunded by', render: (r) => dash(r.payment_method) },
+                                 { key: 'status', header: 'Status', render: (r) => <Badge>{r.status}</Badge> }]} />
+              </>
+            )}
             {list(inv.returns).length > 0 && (
               <>
                 <h3 className="card__title">Returns</h3>

@@ -67,11 +67,17 @@ export function ReceivePaymentModal({ open, invoice, options, onClose, onSave })
       initialValues={{ invoice_id: String(choices[0].id), amount: invoice ? invoice.balance : '', payment_date: todayISO() }}
       fields={[
         { name: 'invoice_id', label: 'Invoice', type: 'select', required: true, full: true,
-          options: choices.map((i) => ({ value: String(i.id), label: `${i.invoice_number} · ${i.customer_name} · ${money(i.balance)} due` })) },
+          options: choices.map((i) => ({ value: String(i.id), label: `${i.invoice_number} · ${i.customer_name} · ${money(i.balance)} due`
+            + (Number(i.customer_credit) > 0 ? ` · ${money(i.customer_credit)} credit` : '') })) },
         { name: 'amount', label: 'Amount (₹)', type: 'number', required: true, min: 0.01,
           validate: (v, vals) => (find(vals.invoice_id) && Number(v) > Number(find(vals.invoice_id).balance) ? `Only ${money(find(vals.invoice_id).balance)} is outstanding` : undefined) },
         { name: 'payment_date', label: 'Payment date', type: 'date', required: true, validate: notFuture },
-        { name: 'payment_method', label: 'Payment method', type: 'select', required: true, options: choiceOptions(options.data?.payment_methods) },
+        { name: 'payment_method', label: 'Payment method', type: 'select', required: true, options: choiceOptions(options.data?.payment_methods),
+          validate: (v, vals) => {
+            const credit = Number(find(vals.invoice_id)?.customer_credit ?? 0)
+            if (v !== 'Customer credit') return undefined
+            return Number(vals.amount) > credit ? `This customer has ${money(credit)} credit available` : undefined
+          } },
         { name: 'reference', label: 'Transaction reference', placeholder: 'UTR / cheque no.' },
         { name: 'notes', label: 'Notes', type: 'textarea' },
       ]}

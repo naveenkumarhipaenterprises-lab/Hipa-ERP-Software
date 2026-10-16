@@ -25,6 +25,7 @@ class PaymentMethod(models.TextChoices):
     CASH = "cash", "Cash"
     CARD = "card", "Card"
     OTHER = "other", "Other"
+    CREDIT = "credit", "Customer credit"  # paid from the customer's credit (an overpayment kept for later)
 
 
 class LineAmounts(models.Model):
@@ -241,6 +242,8 @@ class SalesInvoice(CustomerDetails, DocumentTotals):
     # Kept up to date by the payment and return services
     amount_paid = models.DecimalField(max_digits=14, decimal_places=2, default=ZERO, editable=False)
     credited_amount = models.DecimalField(max_digits=14, decimal_places=2, default=ZERO, editable=False)
+    # An overpayment refunded or kept as customer credit (SalesSettlement): money taken back off this invoice
+    settled_amount = models.DecimalField(max_digits=14, decimal_places=2, default=ZERO, editable=False)
     # True when this invoice itself took the goods out of stock (no sales order)
     stock_moved = models.BooleanField(default=False, editable=False)
     payment_terms = models.CharField(max_length=255, blank=True)
@@ -263,18 +266,28 @@ class SalesInvoice(CustomerDetails, DocumentTotals):
         return max(self.grand_total - self.credited_amount, ZERO)
 
     @property
+    def net_paid(self):
+        """Received, less what was refunded or moved to the customer's credit."""
+        return self.amount_paid - self.settled_amount
+
+    @property
     def balance(self):
-        return max(self.payable - self.amount_paid, ZERO)
+        return max(self.payable - self.net_paid, ZERO)
+
+    @property
+    def overpaid(self):
+        """Paid more than is owed (e.g. goods returned after paying), not yet refunded or kept as credit."""
+        return max(self.net_paid - self.payable, ZERO)
 
     @property
     def payment_status(self):
         if self.status == self.Status.CANCELLED:
             return None
-        if self.amount_paid >= self.payable:
+        if self.net_paid >= self.payable:
             return self.PaymentStatus.PAID
         if self.due_date and self.due_date < today():
             return self.PaymentStatus.OVERDUE
-        if self.amount_paid > 0:
+        if self.net_paid > 0:
             return self.PaymentStatus.PARTIALLY_PAID
         return self.PaymentStatus.UNPAID
 
@@ -325,6 +338,48 @@ class SalesPayment(models.Model):
     def save(self, *args, **kwargs):
         if not self.receipt_number:
             return save_with_number(self, "receipt_number", "RCP", self.payment_date, super().save, args, kwargs)
+        super().save(*args, **kwargs)
+
+
+class SalesSettlement(models.Model):
+    """
+    What happens to money a customer overpaid on an invoice (e.g. goods returned after paying): paid back as a refund,
+    or kept as the customer's credit for a later payment (payment method "Customer credit"). Decided each time.
+    """
+
+    class Kind(models.TextChoices):
+        REFUND = "refund", "Refund"
+        CREDIT = "credit", "Customer credit"
+
+    class Status(models.TextChoices):
+        ACTIVE = "active", "Active"
+        CANCELLED = "cancelled", "Cancelled"
+
+    number = models.CharField(max_length=20, unique=True, editable=False)
+    invoice = models.ForeignKey(SalesInvoice, on_delete=models.PROTECT, related_name="settlements")
+    customer = models.ForeignKey(Customer, on_delete=models.PROTECT, related_name="settlements")
+    kind = models.CharField(max_length=6, choices=Kind.choices)
+    amount = models.DecimalField(max_digits=14, decimal_places=2, validators=[MinValueValidator(Decimal("0.01"))])
+    date = models.DateField(db_index=True)
+    payment_method = models.CharField(max_length=13, choices=PaymentMethod.choices, blank=True, help_text="How a refund was paid")
+    reference = models.CharField("transaction reference", max_length=80, blank=True)
+    notes = models.CharField(max_length=500, blank=True)
+    status = models.CharField(max_length=10, choices=Status.choices, default=Status.ACTIVE, db_index=True)
+    created_by = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.SET_NULL, related_name="+")
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["-date", "-id"]
+        constraints = [models.CheckConstraint(condition=models.Q(amount__gt=0), name="sales_settlement_positive")]
+
+    def __str__(self):
+        return self.number or f"Settlement {self.pk}"
+
+    def save(self, *args, **kwargs):
+        if not self.number:
+            prefix = "RFD" if self.kind == self.Kind.REFUND else "CRN"
+            return save_with_number(self, "number", prefix, self.date, super().save, args, kwargs)
         super().save(*args, **kwargs)
 
 

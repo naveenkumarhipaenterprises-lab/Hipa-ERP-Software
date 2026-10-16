@@ -21,8 +21,8 @@ from apps.inventory.services import move_stock
 from apps.system.models import BillingSettings
 from services import notifications
 
-from .models import (QuotationStatusChange, SalesInvoice, SalesInvoiceItem, SalesOrder, SalesOrderItem, SalesPayment,
-                     SalesQuotation, SalesReturn)
+from .models import (PaymentMethod, QuotationStatusChange, SalesInvoice, SalesInvoiceItem, SalesOrder, SalesOrderItem, SalesPayment,
+                     SalesQuotation, SalesReturn, SalesSettlement)
 
 QS = SalesQuotation.Status
 MAX_QTY = Decimal("999999999")
@@ -318,7 +318,77 @@ def cancel_invoice(invoice, user):
 def refresh_invoice_money(inv):
     inv.amount_paid = inv.payments.filter(status=SalesPayment.Status.RECEIVED).aggregate(t=Sum("amount"))["t"] or ZERO
     inv.credited_amount = inv.returns.filter(status=SalesReturn.Status.COMPLETED).aggregate(t=Sum("amount"))["t"] or ZERO
-    inv.save(update_fields=["amount_paid", "credited_amount", "updated_at"])
+    inv.settled_amount = inv.settlements.filter(status=SalesSettlement.Status.ACTIVE).aggregate(t=Sum("amount"))["t"] or ZERO
+    inv.save(update_fields=["amount_paid", "credited_amount", "settled_amount", "updated_at"])
+
+
+# --- Customer credit (overpayments kept for later) ---------------------------------------------
+
+def credit_by_customer(customer_ids):
+    """{customer_id: credit still available}: overpayments kept as credit, less what was paid with it."""
+    ids = {i for i in customer_ids if i}
+    if not ids:
+        return {}
+    kept = dict(SalesSettlement.objects.filter(customer_id__in=ids, kind=SalesSettlement.Kind.CREDIT,
+                                               status=SalesSettlement.Status.ACTIVE)
+                .values("customer_id").annotate(t=Sum("amount")).values_list("customer_id", "t"))
+    used = dict(SalesPayment.objects.filter(customer_id__in=ids, payment_method=PaymentMethod.CREDIT,
+                                            status=SalesPayment.Status.RECEIVED)
+                .values("customer_id").annotate(t=Sum("amount")).values_list("customer_id", "t"))
+    return {i: (kept.get(i) or ZERO) - (used.get(i) or ZERO) for i in ids}
+
+
+def customer_credit(customer_id):
+    return credit_by_customer([customer_id]).get(customer_id, ZERO)
+
+
+def lock_customer(customer_id):
+    """Serialises everything that adds or uses a customer's credit."""
+    from apps.customers.models import Customer
+
+    Customer.objects.select_for_update().filter(pk=customer_id).first()
+
+
+@transaction.atomic
+def settle_overpayment(invoice, *, kind, amount, date, method, reference, notes, user):
+    """Refund an invoice's overpayment, or keep it as the customer's credit (decided each time; part of it is fine)."""
+    inv = SalesInvoice.objects.select_for_update(of=("self",)).get(pk=invoice.pk)
+    lock_customer(inv.customer_id)
+    if inv.status == SalesInvoice.Status.CANCELLED:
+        raise ValidationError({"invoice_id": ["This invoice is cancelled."]})
+    if inv.overpaid <= 0:
+        raise ValidationError({"invoice_id": [f"{inv.invoice_number} has no overpayment to settle."]})
+    if amount > inv.overpaid:
+        raise ValidationError({"amount": [f"Only ₹{inv.overpaid:,.2f} was overpaid on {inv.invoice_number}."]})
+    if date < inv.invoice_date:
+        raise ValidationError({"date": ["The date can't be before the invoice date."]})
+    refund = kind == SalesSettlement.Kind.REFUND
+    if refund and (not method or method == PaymentMethod.CREDIT):
+        raise ValidationError({"payment_method": ["Choose how the refund was paid."]})
+    settlement = SalesSettlement.objects.create(
+        invoice=inv, customer=inv.customer, kind=kind, amount=amount, date=date, payment_method=method if refund else "",
+        reference=reference if refund else "", notes=notes, created_by=user)
+    refresh_invoice_money(inv)
+    return settlement
+
+
+@transaction.atomic
+def cancel_settlement(settlement):
+    """Undoes a refund or credit: the invoice shows the overpayment again. Credit that was already used can't go."""
+    st = SalesSettlement.objects.select_for_update(of=("self",)).get(pk=settlement.pk)
+    if st.status == SalesSettlement.Status.CANCELLED:
+        raise ValidationError({"detail": f"{st.number} is already cancelled."})
+    inv = SalesInvoice.objects.select_for_update(of=("self",)).get(pk=st.invoice_id)
+    lock_customer(st.customer_id)
+    if st.kind == SalesSettlement.Kind.CREDIT:
+        available = customer_credit(st.customer_id)
+        if st.amount > available:
+            raise ValidationError({"detail": f"₹{st.amount - available:,.2f} of this credit was already used for payments. "
+                                             "Cancel those payments first."})
+    st.status = SalesSettlement.Status.CANCELLED
+    st.save(update_fields=["status", "updated_at"])
+    refresh_invoice_money(inv)
+    return st
 
 
 # --- Payments ----------------------------------------------------------------------------------
@@ -332,6 +402,11 @@ def receive_payment(invoice, *, amount, payment_date, method, reference, notes, 
         raise ValidationError({"amount": [f"Only ₹{inv.balance:,.2f} is outstanding on {inv.invoice_number}."]})
     if payment_date < inv.invoice_date:
         raise ValidationError({"payment_date": ["The payment date can't be before the invoice date."]})
+    if method == PaymentMethod.CREDIT:  # paid from the customer's credit
+        lock_customer(inv.customer_id)
+        available = customer_credit(inv.customer_id)
+        if amount > available:
+            raise ValidationError({"amount": [f"{inv.customer_name} has ₹{max(available, ZERO):,.2f} credit available."]})
     payment = SalesPayment.objects.create(invoice=inv, customer=inv.customer, amount=amount, payment_date=payment_date,
                                           payment_method=method, reference=reference, notes=notes, created_by=user)
     refresh_invoice_money(inv)

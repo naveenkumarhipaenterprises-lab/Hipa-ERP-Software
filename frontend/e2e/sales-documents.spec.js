@@ -141,3 +141,57 @@ test('a payment form sent again (e.g. after an error) carries the same one-time 
   await expect.poll(() => calls.filter((c) => c.key === 'POST /api/sales/payments/').length).toBe(3)
   expect(calls.filter((c) => c.key === 'POST /api/sales/payments/')[2].body.request_key).not.toBe(sent[0]) // a new form: a new code
 })
+
+const OVERPAID = { id: 7, invoice_number: 'TEST-INV-7', invoice_date: '2026-10-01', due_date: '2026-10-20', customer_id: 11,
+  customer_name: 'TEST Buyer', status: 'Issued', payment_status: 'Paid', grand_total: 2500, amount_paid: 2500, credited_amount: 500,
+  settled_amount: 0, overpaid: 500, balance: 0, customer_credit: 0, can_settle: true, can_record_payment: false, can_edit: false,
+  can_cancel: false, items: [], payments: [], returns: [], settlements: [] }
+
+test('an overpaid invoice is settled: refund or keep as credit, chosen each time', async ({ page }) => {
+  await signIn(page, 'finance')
+  const calls = await mockApi(page, {
+    ...SHELL, 'GET /api/sales/options/': { ...TEST_OPTIONS, payment_methods: [{ value: 'UPI', label: 'UPI' }, { value: 'Customer credit', label: 'Customer credit' }] },
+    'GET /api/sales/invoices/': { count: 1, results: [OVERPAID] },
+    'GET /api/sales/invoices/7/': OVERPAID,
+    'POST /api/sales/settlements/': { status: 201, body: { id: 1, number: 'TEST-RFD-1', kind: 'Refund', invoice_number: 'TEST-INV-7' } },
+  })
+  await page.goto('/sales?tab=invoices')
+  await expect(page.getByText('Overpaid ₹500')).toBeVisible()
+  await page.getByRole('button', { name: 'TEST-INV-7' }).first().click()
+  await page.getByRole('button', { name: /Settle Overpayment/ }).click()
+  const form = page.getByRole('dialog', { name: 'Settle Overpayment' })
+  await expect(form.getByLabel(/^Amount/)).toHaveValue('500')
+  await expect(form.getByLabel(/^Refunded by/)).toBeVisible() // a refund needs how it was paid back
+  await form.getByLabel(/^What happens to it/).selectOption('credit')
+  await expect(form.getByLabel(/^Refunded by/)).toHaveCount(0) // credit: nothing is paid out
+  await form.getByLabel(/^What happens to it/).selectOption('refund')
+  await form.getByLabel(/^Amount/).fill('600')
+  await form.getByRole('button', { name: 'Save' }).click()
+  await expect(form.getByText('Only ₹500 was overpaid')).toBeVisible()
+  await form.getByLabel(/^Amount/).fill('300')
+  await form.getByLabel(/^Refunded by/).selectOption('UPI')
+  await form.getByRole('button', { name: 'Save' }).click()
+  await expect(page.getByText('TEST-RFD-1 recorded: refund on TEST-INV-7')).toBeVisible()
+  const body = calls.find((c) => c.key === 'POST /api/sales/settlements/').body
+  expect(body).toMatchObject({ invoice_id: 7, kind: 'refund', amount: 300, payment_method: 'UPI' })
+  expect(body.request_key).toBeTruthy()
+})
+
+test('paying with customer credit is limited to the credit available', async ({ page }) => {
+  await signIn(page, 'finance')
+  const calls = await mockApi(page, {
+    ...SHELL, 'GET /api/sales/options/': { ...TEST_OPTIONS, payment_methods: [{ value: 'UPI', label: 'UPI' }, { value: 'Customer credit', label: 'Customer credit' }] },
+    'GET /api/sales/payments/': EMPTY_LIST, 'GET /api/sales/settlements/': EMPTY_LIST,
+    'GET /api/sales/invoices/': { count: 1, results: [{ id: 8, invoice_number: 'TEST-INV-8', customer_name: 'TEST Buyer', balance: 1000, customer_credit: 200 }] },
+  })
+  await page.goto('/sales?tab=payments')
+  await expect(page.getByRole('heading', { name: 'Refunds & Credits' })).toBeVisible()
+  await page.getByRole('button', { name: 'Record Payment' }).first().click()
+  const form = page.getByRole('dialog', { name: 'Record Payment' })
+  await expect(form.getByRole('option', { name: /₹200 credit/ })).toHaveCount(1)
+  await form.getByLabel(/^Amount/).fill('300')
+  await form.getByLabel(/Payment method/).selectOption('Customer credit')
+  await form.getByRole('button', { name: 'Save Payment' }).click()
+  await expect(form.getByText('This customer has ₹200 credit available')).toBeVisible()
+  expect(calls.some((c) => c.key === 'POST /api/sales/payments/')).toBe(false)
+})

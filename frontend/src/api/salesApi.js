@@ -31,7 +31,9 @@ import { api, cleanParams as clean } from './client'
  * Invoices   GET/POST /sales/invoices/ ?search=&status=&payment_status=&customer=&range=&date_from=&date_to=
  *            GET/PATCH /sales/invoices/<id>/ · POST /sales/invoices/<id>/cancel/ · GET /sales/invoices/<id>/pdf/?download=1
  * Payments   GET/POST /sales/payments/ { invoice_id, amount, payment_date, payment_method, reference?, notes? }
- *            POST /sales/payments/<id>/cancel/
+ *            POST /sales/payments/<id>/cancel/   (payment method "Customer credit" pays from the customer's credit)
+ * Overpaid  GET/POST /sales/settlements/ { invoice_id, kind: refund | credit, amount, date, payment_method?, reference?, notes? }
+ *            POST /sales/settlements/<id>/cancel/   (invoice rows: overpaid, settled_amount, can_settle, customer_credit)
  * Returns    GET/POST /sales/returns/ { invoice_id, product_id, quantity_kg, return_date, reason, amount?, restock, remarks? }
  *            PATCH /sales/returns/<id>/ { status: 'completed' | 'cancelled' }
  */
@@ -70,6 +72,9 @@ export const salesApi = {
   listPayments: (params) => api.get('/sales/payments/', clean(params)),
   createPayment: (body) => api.post('/sales/payments/', body),
   cancelPayment: (id) => api.post(`/sales/payments/${id}/cancel/`),
+  listSettlements: (params) => api.get('/sales/settlements/', clean(params)),
+  createSettlement: (body) => api.post('/sales/settlements/', body),
+  cancelSettlement: (id) => api.post(`/sales/settlements/${id}/cancel/`),
 
   listReturns: (params) => api.get('/sales/returns/', clean(params)),
   createReturn: (body) => api.post('/sales/returns/', body),

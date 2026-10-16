@@ -24,6 +24,8 @@ urlpatterns = [
     path("invoices/<int:pk>/pdf/", docs.InvoicePDFView.as_view()),
     path("payments/", docs.PaymentsView.as_view()),
     path("payments/<int:pk>/cancel/", docs.CancelPaymentView.as_view()),
+    path("settlements/", docs.SettlementsView.as_view()),
+    path("settlements/<int:pk>/cancel/", docs.CancelSettlementView.as_view()),
     path("returns/", docs.ReturnsView.as_view()),
     path("returns/<int:pk>/", docs.ReturnDetailView.as_view()),
 ]

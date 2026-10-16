@@ -17,7 +17,7 @@ from services import audit
 from services.once import only_once
 
 from . import pdf, services
-from .models import PaymentMethod, SalesInvoice, SalesPayment, SalesQuotation, SalesQuotationItem, SalesReturn
+from .models import PaymentMethod, SalesInvoice, SalesPayment, SalesQuotation, SalesQuotationItem, SalesReturn, SalesSettlement
 from .views import SalesView, item_row
 
 QS = SalesQuotation.Status
@@ -266,6 +266,8 @@ def invoice_row(inv, editable=True):
         "id": inv.id, "invoice_number": inv.invoice_number, "invoice_date": inv.invoice_date, "due_date": inv.due_date,
         "customer_id": inv.customer_id, **party(inv), "products": ", ".join(i.product.name for i in lines) or None, **money(inv),
         "amount_paid": num(inv.amount_paid), "credited_amount": num(inv.credited_amount), "balance": num(inv.balance),
+        "settled_amount": num(inv.settled_amount), "overpaid": num(inv.overpaid),
+        "can_settle": inv.status == IS.ISSUED and inv.overpaid > 0,
         "status": inv.get_status_display(), "payment_status": SalesInvoice.PaymentStatus(pay).label if pay else None,
         "payment_terms": inv.payment_terms, "notes": inv.notes, "terms_conditions": inv.terms_conditions,
         "sales_order_id": inv.sales_order_id, "sales_order_number": inv.sales_order.order_number if inv.sales_order else None,
@@ -283,6 +285,8 @@ def invoice_detail(pk, editable):
     row["items"] = [item_row(i) for i in inv.items.all()]
     row["payments"] = [payment_row(p, False) for p in inv.payments.select_related("invoice")]
     row["returns"] = [return_row(r, False) for r in inv.returns.select_related("invoice", "product")]
+    row["settlements"] = [settlement_row(st, editable) for st in inv.settlements.select_related("invoice")]
+    row["customer_credit"] = num(services.customer_credit(inv.customer_id))
     return row
 
 
@@ -300,17 +304,22 @@ class InvoicesView(SalesView):
         if pay:
             from django.db.models import DecimalField, ExpressionWrapper, F
 
-            qs = qs.filter(status=IS.ISSUED).annotate(payable_amt=ExpressionWrapper(
-                F("grand_total") - F("credited_amount"), output_field=DecimalField(max_digits=14, decimal_places=2)))
-            paid = Q(amount_paid__gte=F("payable_amt"))
+            money_field = DecimalField(max_digits=14, decimal_places=2)
+            qs = qs.filter(status=IS.ISSUED).annotate(
+                payable_amt=ExpressionWrapper(F("grand_total") - F("credited_amount"), output_field=money_field),
+                received_net=ExpressionWrapper(F("amount_paid") - F("settled_amount"), output_field=money_field))
+            paid = Q(received_net__gte=F("payable_amt"))
             overdue = ~paid & Q(due_date__lt=periods.today())
-            qs = qs.filter({"paid": paid, "overdue": overdue, "partially_paid": ~paid & ~overdue & Q(amount_paid__gt=0),
-                            "unpaid": ~paid & ~overdue & Q(amount_paid=0)}[pay])
+            qs = qs.filter({"paid": paid, "overdue": overdue, "partially_paid": ~paid & ~overdue & Q(received_net__gt=0),
+                            "unpaid": ~paid & ~overdue & Q(received_net__lte=0)}[pay])
         customer = self.int_param("customer")
         if customer:
             qs = qs.filter(customer_id=customer)
         editable = can_write(request.user, "sales")
-        return self.paginated(date_range(self, qs, "invoice_date").order_by("-invoice_date", "-id"), lambda x: invoice_row(x, editable))
+        page = self.paginate_queryset(date_range(self, qs, "invoice_date").order_by("-invoice_date", "-id"))
+        credit = services.credit_by_customer(i.customer_id for i in page)
+        return self.get_paginated_response([{**invoice_row(x, editable), "customer_credit": num(credit.get(x.customer_id, 0))}
+                                            for x in page])
 
     def post(self, request):
         """A direct invoice (customer + items), or `sales_order_id` to invoice an existing order."""
@@ -444,6 +453,69 @@ class PaymentsView(SalesView):
                                            user=request.user)
         audit.record(request, "Recorded customer payment", f"{payment.receipt_number} for {invoice.invoice_number}")
         return Response(payment_row(SalesPayment.objects.select_related("invoice").get(pk=payment.pk)), status=status.HTTP_201_CREATED)
+
+
+def settlement_row(st, editable=True):
+    return {"id": st.id, "number": st.number, "kind": st.get_kind_display(), "kind_value": st.kind, "invoice_id": st.invoice_id,
+            "invoice_number": st.invoice.invoice_number, "customer_id": st.customer_id, "customer": st.invoice.customer_name,
+            "amount": num(st.amount), "date": st.date, "payment_method": st.get_payment_method_display() or None,
+            "reference": st.reference or None, "notes": st.notes or None, "status": st.get_status_display(),
+            "can_cancel": editable and st.status == SalesSettlement.Status.ACTIVE}
+
+
+class SettlementsView(SalesView):
+    """
+    GET: refunds and credits (?search=&kind=&status=&customer=). POST {invoice_id, kind: refund | credit, amount, date?,
+    payment_method + reference (refund), notes?}: settles an invoice's overpayment; decided each time.
+    """
+
+    write_module = "sales_payments"
+
+    def get(self, request):
+        qs = SalesSettlement.objects.select_related("invoice")
+        q = self.param("search")
+        if q:
+            qs = qs.filter(Q(number__icontains=q) | Q(invoice__invoice_number__icontains=q) | Q(invoice__customer_name__icontains=q)
+                           | Q(reference__icontains=q))
+        for name, choices_ in (("kind", SalesSettlement.Kind), ("status", SalesSettlement.Status)):
+            value = resolve_choice(choices_, self.param(name), name)
+            if value:
+                qs = qs.filter(**{name: value})
+        customer = self.int_param("customer")
+        if customer:
+            qs = qs.filter(customer_id=customer)
+        editable = can_write(request.user, "sales_payments")
+        return self.paginated(qs, lambda st: settlement_row(st, editable))
+
+    def post(self, request):
+        with only_once(request, "sales_settlement"):  # the same form can't settle twice
+            return self.record(request)
+
+    def record(self, request):
+        d, errors = request.data, {}
+        invoice = parsing.record(d, "invoice_id", SalesInvoice.objects.all(), errors, message="Choose an invoice.")
+        kind = parsing.choice(d, "kind", SalesSettlement.Kind, errors, message="Choose Refund or Customer credit.")
+        amount = parsing.decimal(d, "amount", errors, positive=True, maximum=services.MAX_PRICE, message="Enter an amount greater than 0.")
+        day = parsing.date(d, "date", errors, required=False, label="date") or periods.today()
+        if day > periods.today():
+            errors["date"] = ["The date can't be in the future."]
+        method = parsing.choice(d, "payment_method", PaymentMethod, errors, required=False)
+        if errors:
+            raise ValidationError(errors)
+        st = services.settle_overpayment(invoice, kind=kind, amount=amount, date=day, method=method or "",
+                                         reference=parsing.text(d, "reference", 80), notes=parsing.text(d, "notes", 500),
+                                         user=request.user)
+        audit.record(request, f"Recorded {st.get_kind_display().lower()} {st.number}", f"₹{st.amount:,.2f} on {invoice.invoice_number}")
+        return Response(settlement_row(SalesSettlement.objects.select_related("invoice").get(pk=st.pk)), status=status.HTTP_201_CREATED)
+
+
+class CancelSettlementView(SalesView):
+    write_module = "sales_payments"
+
+    def post(self, request, pk):
+        st = services.cancel_settlement(get_object_or_404(SalesSettlement, pk=pk))
+        audit.record(request, f"Cancelled {st.get_kind_display().lower()} {st.number}", f"₹{st.amount:,.2f} on {st.invoice.invoice_number}")
+        return Response(settlement_row(SalesSettlement.objects.select_related("invoice").get(pk=pk)))
 
 
 class CancelPaymentView(SalesView):

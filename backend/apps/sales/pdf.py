@@ -238,6 +238,8 @@ def invoice_pdf(inv):
         rows.append(("Credited (returns)", f"− {inr(inv.credited_amount)}", False))
     if inv.amount_paid:
         rows.append(("Paid", f"− {inr(inv.amount_paid)}", False))
+    if inv.settled_amount:
+        rows.append(("Refunded / kept as credit", f"+ {inr(inv.settled_amount)}", False))
     if inv.status != inv.Status.CANCELLED:
         rows.append(("Balance due", inr(inv.balance), True))
     totals_block(pdf, rows)
