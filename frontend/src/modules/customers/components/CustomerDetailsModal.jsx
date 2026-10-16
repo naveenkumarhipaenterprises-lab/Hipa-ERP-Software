@@ -52,6 +52,10 @@ function Details({ customer: c, onClose, onEdit }) {
         <dd>{show(c.city)}</dd>
         <dt>Address</dt>
         <dd>{show(c.address)}</dd>
+        <dt>Shipping address</dt>
+        <dd>{c.shipping_address || (c.address ? 'Same as address' : '—')}</dd>
+        <dt>GSTIN</dt>
+        <dd>{show(c.gstin)}</dd>
         <dt>Total orders</dt>
         <dd>{show(c.total_orders, formatNumber)}</dd>
         <dt>Total purchase</dt>

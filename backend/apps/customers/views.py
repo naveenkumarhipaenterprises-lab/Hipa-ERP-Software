@@ -28,7 +28,7 @@ from .serializers import CustomerWriteSerializer, customer_row
 log = logging.getLogger(__name__)
 
 NOT_CANCELLED = ~Q(orders__status="cancelled")
-TEMPLATE_HEADER = ["name", "type", "contact_person", "phone", "email", "city", "address"]
+TEMPLATE_HEADER = ["name", "type", "contact_person", "phone", "email", "city", "address", "shipping_address", "gstin"]
 
 
 def end_of(day):
@@ -158,11 +158,11 @@ class ExportView(CustomersModuleView):
     def get(self, request):
         qs = with_totals(filtered_customers(request.query_params)).order_by("name")
         rows = (
-            [c.name, c.get_type_display(), c.contact_person, c.phone, c.email, c.city, c.address,
+            [c.name, c.get_type_display(), c.contact_person, c.phone, c.email, c.city, c.address, c.shipping_address, c.gstin,
              c.total_orders, num(c.total_purchase or 0), c.last_order_date, c.get_status_display()]
             for c in qs
         )
-        header = ["Name", "Type", "Contact person", "Phone", "Email", "City", "Address",
+        header = ["Name", "Type", "Contact person", "Phone", "Email", "City", "Address", "Shipping address", "GSTIN",
                   "Total orders", "Total purchase (INR)", "Last order date", "Status"]
         return csv_response(f"hipa-customers-{periods.today():%Y%m%d}.csv", header, rows)
 

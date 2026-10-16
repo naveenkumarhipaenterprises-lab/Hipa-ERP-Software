@@ -1,5 +1,6 @@
 import FormModal from '../../../components/common/FormModal'
 import OptionsGate from '../../../components/common/OptionsGate'
+import { isGstin } from '../../../utils/validation'
 
 const list = (v) => (Array.isArray(v) ? v : [])
 
@@ -21,6 +22,9 @@ export default function CustomerFormModal({ open, customer, options, onClose, on
           { name: 'phone', label: 'Mobile number', type: 'tel', placeholder: '10-digit mobile number' },
           { name: 'email', label: 'Email', type: 'email', full: true, placeholder: 'name@business.com' },
           { name: 'address', label: 'Address', type: 'textarea' },
+          { name: 'shipping_address', label: 'Shipping address', type: 'textarea', placeholder: 'Leave empty if it is the same as the address' },
+          { name: 'gstin', label: 'GSTIN', placeholder: '15 characters, e.g. 33ABCDE1234F1Z5',
+            validate: (v) => (isGstin(v) ? undefined : 'Enter a valid 15-character GSTIN') },
         ]
         if (editing && list(data.statuses).length) {
           fields.splice(2, 0, { name: 'status', label: 'Status', type: 'select', required: true, options: data.statuses })
