@@ -108,6 +108,9 @@ def dispatch(order, user, *, dispatched_on=None, carrier=None, tracking_referenc
     expected = expected_delivery_date or d.expected_delivery_date
     if expected_delivery_date:
         check_expected(order, expected_delivery_date, dispatched_on, errors)
+    elif expected and expected < dispatched_on:
+        errors["expected_delivery_date"] = [f"The saved expected delivery date ({expected:%d %b %Y}) is before the dispatch date. "
+                                            "Enter a new expected delivery date."]
     if errors:
         raise ValidationError(errors)
     d.dispatched_on = dispatched_on

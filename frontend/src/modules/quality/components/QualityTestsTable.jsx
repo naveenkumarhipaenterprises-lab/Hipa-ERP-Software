@@ -24,7 +24,7 @@ const PAGE_SIZE = 10
  * Quality test results: server-side search, result filter and pagination, with a details view.
  * Quality managers can edit a test's Parameter + Value rows from the details view (nothing else of the test changes).
  */
-export default function QualityTestsTable({ refreshKey, results, canManage = false }) {
+export default function QualityTestsTable({ refreshKey, results, canManage = false, onChanged }) {
   const toast = useToast()
   const [search, setSearch] = useState('')
   const [result, setResult] = useState('')
@@ -95,7 +95,7 @@ export default function QualityTestsTable({ refreshKey, results, canManage = fal
             { key: 'result', header: 'Result', render: (r) => (r.result ? <Badge>{r.result}</Badge> : '—') },
             { key: 'status', header: 'Status', render: (r) => (r.status ? <Badge>{r.status}</Badge> : '—') },
             { key: 'actions', sticky: true, align: 'right', header: <span className="sr-only">Actions</span>,
-              render: (r) => <DeleteRecordButton kind="quality_test" id={r.id} label={`Test ${[r.product, r.batch_number].filter(Boolean).join(' ')}`} onDeleted={tests.reload} /> },
+              render: (r) => <DeleteRecordButton kind="quality_test" id={r.id} label={`Test ${[r.product, r.batch_number].filter(Boolean).join(' ')}`} onDeleted={() => { tests.reload(); onChanged?.() }} /> },
           ]}
         />
       )}

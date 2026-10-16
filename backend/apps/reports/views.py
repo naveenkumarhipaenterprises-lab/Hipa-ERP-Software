@@ -39,11 +39,19 @@ def file_name(report_type, range_key, fmt):
     return f"hipa-{report_type.replace('_', '-')}-report-{range_key}-{periods.today():%Y%m%d}.{fmt}"
 
 
+def old_file_exists(r):
+    """Reports from before files were kept in the database live on a server disk (gone on Vercel)."""
+    try:
+        return bool(r.file) and r.file.storage.exists(r.file.name)
+    except Exception:
+        return False
+
+
 def report_row(r, stored=None):
     stored = r.content is not None if stored is None else stored
     return {"id": r.id, "name": r.name, "type": r.type, "range_label": r.range_label, "format": r.format,
             "created_at": r.created_at, "created_by": (r.created_by.name or r.created_by.username) if r.created_by else None,
-            "status": r.get_status_display(), "download_available": r.status == Report.Status.READY and (stored or bool(r.file))}
+            "status": r.get_status_display(), "download_available": r.status == Report.Status.READY and (stored or old_file_exists(r))}
 
 
 def visible_types(user):
@@ -142,7 +150,7 @@ class DownloadView(ReportsView):
             return response
         try:  # generated before reports were kept in the database
             handle = report.file.open("rb")
-        except FileNotFoundError:
-            raise NotFound("This report file is no longer on the server.")
+        except OSError:
+            raise NotFound("This report file is no longer on the server. Generate the report again.")
         name = report.file.name.rsplit("/", 1)[-1]
         return FileResponse(handle, as_attachment=True, filename=name, content_type=MIME[report.format])

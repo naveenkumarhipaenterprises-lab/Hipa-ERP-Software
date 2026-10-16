@@ -204,3 +204,58 @@ class HealthCheckTests(TestCase):
         with mock.patch("django.db.backends.utils.CursorWrapper.execute", side_effect=Exception("TEST down")):
             res = self.client.get(f"{API}/health/")
         self.assertEqual((res.status_code, res.json()["status"]), (503, "unavailable"))
+
+
+class SmallFixesTests(Base):
+    def test_nobody_approves_their_own_leave(self):
+        from apps.attendance.models import Employee, LeaveRequest
+
+        approver = make_user("management", username="approver")
+        attendance_perms.set_granted(approver, ["leave_apply", "leave_approve", "leave_reject"])
+        emp = Employee.objects.create(employee_code="T-A", name="TEST Approver", user=approver)
+        lr = LeaveRequest.objects.create(employee=emp, requested_by=approver, type="leave", date=today(), reason="TEST")
+        own = client_for(approver)
+        for action in ("approve", "reject"):
+            res = own.post(f"{API}/attendance/leave/{lr.pk}/{action}/")
+            self.assertEqual(res.status_code, 403, action)
+            self.assertIn("your own request", res.data["detail"])
+        self.assertEqual(self.call("post", f"/attendance/leave/{lr.pk}/approve/")["status"], "Approved")  # another approver
+
+    def test_an_old_report_file_that_is_gone_offers_no_download(self):
+        from apps.reports.models import Report
+
+        r = Report.objects.create(name="TEST old report", type="sales", range="this_month", range_label="TEST", format="csv",
+                                  status=Report.Status.READY, file="reports/2026/10/TEST-missing.csv")
+        row = next(x for x in self.call("get", "/reports/")["results"] if x["id"] == r.id)
+        self.assertFalse(row["download_available"])
+        self.call("get", f"/reports/{r.id}/download/", expected=404)
+
+    def test_an_overdue_in_transit_shipment_counts_as_delayed(self):
+        from datetime import timedelta
+
+        from apps.supply_chain.models import Shipment
+
+        s = self.call("post", "/purchase/suppliers/", {"name": "TEST Farms", "city": "Erode"}, 201)
+        m = self.call("post", "/purchase/raw-materials/", {"name": "TEST Raw Clove", "category": "whole_spice", "unit": "kg"}, 201)
+        sh = self.call("post", "/supply-chain/shipments/", {"supplier_id": s["id"], "material_id": m["id"], "quantity": 5, "unit": "kg",
+                                                            "destination": "TEST", "eta": today().isoformat()}, 201)
+        Shipment.objects.filter(pk=sh["id"]).update(dispatched_on=today() - timedelta(days=5), eta=today() - timedelta(days=1))
+        summary = self.call("get", "/supply-chain/overview/")["shipment_summary"]
+        self.assertEqual((summary["in_transit"], summary["delayed"]), (0, 1))
+
+
+class DispatchExpectedDateTests(Base):
+    def test_an_out_of_date_expected_date_must_be_renewed_on_dispatch(self):
+        from datetime import timedelta
+
+        product = self.call("post", "/inventory/items/", {"product_name": "TEST Turmeric", "opening_stock_kg": 10, "price_per_kg": 250,
+                                                         "min_stock_kg": 0, "reorder_level_kg": 0}, 201)
+        cust = self.call("post", "/customers/", {"name": "TEST Traders", "type": "retailer", "city": "Erode"}, 201)
+        o = self.call("post", "/sales/orders/", {"customer_id": cust["id"], "product_id": product["id"], "quantity_kg": 1,
+                                                 "order_date": (today() - timedelta(days=5)).isoformat()}, 201)
+        base = f"/supply-chain/customer-deliveries/{o['id']}/"
+        self.call("patch", base, {"expected_delivery_date": (today() - timedelta(days=2)).isoformat()})
+        err = self.call("post", f"{base}dispatch/", {}, expected=400)
+        self.assertIn("Enter a new expected delivery date", err["expected_delivery_date"][0])
+        row = self.call("post", f"{base}dispatch/", {"expected_delivery_date": (today() + timedelta(days=2)).isoformat()})
+        self.assertEqual(row["delivery_status"], "In Transit")  # not "Delayed" straight away

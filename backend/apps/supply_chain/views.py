@@ -100,7 +100,9 @@ class OverviewView(SupplyView):
         ships = Shipment.objects.aggregate(
             d1=delivered(cur), ok1=delivered(cur, Q(delivered_on__lte=F("eta"))),
             d2=delivered(prev), ok2=delivered(prev, Q(delivered_on__lte=F("eta"))),
-            in_transit=Count("id", filter=Q(status=Sh.IN_TRANSIT)), delayed=Count("id", filter=Q(status=Sh.DELAYED)),
+            # past its expected arrival an in-transit shipment counts as delayed (the same rule as the delay alerts)
+            in_transit=Count("id", filter=Q(status=Sh.IN_TRANSIT) & ~Q(eta__lt=t)),
+            delayed=Count("id", filter=Q(status=Sh.DELAYED) | Q(status=Sh.IN_TRANSIT, eta__lt=t)),
             active=Count("id", filter=~Q(status=Sh.DELIVERED)))
         usage_by_material = monthly_usage_by_material()
 

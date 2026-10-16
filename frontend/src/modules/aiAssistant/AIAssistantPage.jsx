@@ -11,7 +11,7 @@ import ChatMessage from './components/ChatMessage'
 import { AiInsights, ConversationList } from './components/SidePanels'
 
 const MAX_FILE_MB = 10
-const FILE_TYPES = /\.(csv|pdf|xls|xlsx)$/i
+const FILE_TYPES = /\.(csv|txt|xlsx|xlsm)$/i // the same files the server reads
 
 // Question shortcuts only; the answers come from the AI engine
 const TOPICS = [
@@ -138,7 +138,7 @@ export default function AIAssistantPage() {
     const f = e.target.files?.[0]
     e.target.value = ''
     if (!f) return
-    if (!FILE_TYPES.test(f.name)) return setFileError('Attach a CSV, PDF or Excel file.')
+    if (!FILE_TYPES.test(f.name)) return setFileError('Attach a CSV, text or Excel (.xlsx) file.')
     if (f.size > MAX_FILE_MB * 1024 * 1024) return setFileError(`The file is larger than ${MAX_FILE_MB} MB.`)
     setFileError('')
     setAttachment(f)
@@ -305,7 +305,7 @@ export default function AIAssistantPage() {
                     Attach CSV / PDF / Excel
                   </Button>
                 ))}
-              <input ref={fileRef} type="file" hidden accept=".csv,.pdf,.xls,.xlsx" onChange={pickFile} />
+              <input ref={fileRef} type="file" hidden accept=".csv,.txt,.xlsx,.xlsm" onChange={pickFile} />
             </div>
             {fileError && (
               <p className="field__error" role="alert">

@@ -197,14 +197,14 @@ export default function QualityPage() {
 
       {!failed && (
         <div className="grid-main-side">
-          <QualityTestsTable refreshKey={refreshKey} results={options.data?.results} canManage={canManage} />
+          <QualityTestsTable refreshKey={refreshKey} results={options.data?.results} canManage={canManage} onChanged={refresh} />
           <Card title="Lab Testing Process">
             <LabProcess />
           </Card>
         </div>
       )}
 
-      {!failed && <AuditsTable refreshKey={refreshKey} statuses={options.data?.audit_statuses} canManage={canManage} />}
+      {!failed && <AuditsTable refreshKey={refreshKey} statuses={options.data?.audit_statuses} canManage={canManage} onChanged={refresh} />}
 
       {!failed && (
         <div className="dash-row">

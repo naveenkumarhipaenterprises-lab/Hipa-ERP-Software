@@ -511,8 +511,11 @@ class LeaveActionView(AttendanceView):
         new, code = self.ACTIONS[action]
         with transaction.atomic():
             lr = get_object_or_404(leave_qs().select_for_update(of=("self",)), pk=pk)
+            own = lr.requested_by_id == request.user.id or lr.employee.user_id == request.user.id
             if code:
                 perms.require(request.user, code, f"You don't have permission to {action} requests.")
+                if own and role_of(request.user) != Role.ADMIN:
+                    raise PermissionDenied(f"You can't {action} your own request. Ask another approver.")
             elif not (lr.requested_by_id == request.user.id or lr.employee.user_id == request.user.id):
                 raise PermissionDenied("You can only cancel your own requests.")
             if lr.status != LS.PENDING:

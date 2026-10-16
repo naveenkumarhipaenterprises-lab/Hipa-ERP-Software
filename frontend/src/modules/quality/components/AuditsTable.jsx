@@ -19,7 +19,7 @@ const PAGE_SIZE = 10
 const FINDINGS_FIELDS = [{ name: 'findings', label: 'Findings', type: 'textarea', required: true, placeholder: 'What the auditor checked and found' }]
 
 /** Scheduled, completed and cancelled audits; managers complete (with findings) or cancel scheduled ones. */
-export default function AuditsTable({ refreshKey, statuses, canManage }) {
+export default function AuditsTable({ refreshKey, statuses, canManage, onChanged }) {
   const toast = useToast()
   const [status, setStatus] = useState('')
   const [completing, setCompleting] = useState(null)
@@ -60,7 +60,7 @@ export default function AuditsTable({ refreshKey, statuses, canManage }) {
         {canManage && r.can_update && (
           <Button size="sm" variant="ghost" icon={XCircle} className="btn--tone-red" onClick={() => setCancelling(r)} aria-label={`Cancel ${r.audit_type} on ${formatDate(r.date)}`} />
         )}
-        <DeleteRecordButton kind="quality_audit" id={r.id} label={`${r.audit_type} audit${r.date ? ` on ${formatDate(r.date)}` : ''}`} onDeleted={audits.reload} />
+        <DeleteRecordButton kind="quality_audit" id={r.id} label={`${r.audit_type} audit${r.date ? ` on ${formatDate(r.date)}` : ''}`} onDeleted={() => { audits.reload(); onChanged?.() }} />
       </span>
     ),
   })
