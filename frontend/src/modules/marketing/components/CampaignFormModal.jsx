@@ -6,11 +6,15 @@ import { todayISO } from '../../../utils/formatters'
 
 const list = (v) => (Array.isArray(v) ? v : [])
 
-/** Creates a campaign (POST /marketing/campaigns/). Platforms and objectives come from GET /marketing/options/. */
-export default function CampaignFormModal({ open, options, onClose, onCreate }) {
+/**
+ * Creates (POST /marketing/campaigns/) or, with `campaign`, edits (PATCH /marketing/campaigns/<id>/) a campaign.
+ * Platforms and objectives come from GET /marketing/options/.
+ */
+export default function CampaignFormModal({ open, options, campaign, onClose, onSave }) {
   if (!open) return null
+  const title = campaign ? `Edit ${campaign.name}` : 'Create Campaign'
   return (
-    <OptionsGate options={options} title="Create Campaign" onClose={onClose}>
+    <OptionsGate options={options} title={title} onClose={onClose}>
       {(data) => {
         if (list(data.platforms).length === 0) {
           return (
@@ -40,12 +44,15 @@ export default function CampaignFormModal({ open, options, onClose, onCreate }) 
           <FormModal
             open
             onClose={onClose}
-            title="Create Campaign"
-            subtitle="Launch a new marketing campaign"
-            submitLabel="Create Campaign"
-            initialValues={{ start_date: todayISO() }}
+            title={title}
+            subtitle={campaign ? 'Change the details of this campaign' : 'Launch a new marketing campaign'}
+            submitLabel={campaign ? 'Save Changes' : 'Create Campaign'}
+            initialValues={campaign ? {
+              name: campaign.name, platform: campaign.platform_value, objective: campaign.objective, budget: campaign.budget,
+              start_date: campaign.start_date, end_date: campaign.end_date, description: campaign.description ?? '',
+            } : { start_date: todayISO() }}
             fields={fields}
-            onSubmit={(values) => onCreate({ ...values, name: values.name.trim(), description: values.description?.trim() || undefined })}
+            onSubmit={(values) => onSave({ ...values, name: values.name.trim(), description: values.description?.trim() ?? '' })}
           />
         )
       }}

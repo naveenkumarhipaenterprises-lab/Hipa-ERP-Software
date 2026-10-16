@@ -4,6 +4,7 @@ import { marketingApi } from '../../../api/marketingApi'
 import Badge from '../../../components/common/Badge'
 import Button from '../../../components/common/Button'
 import ConfirmDialog from '../../../components/common/ConfirmDialog'
+import DeleteRecordButton from '../../../components/common/DeleteRecordButton'
 import EmptyState from '../../../components/common/EmptyState'
 import ErrorMessage from '../../../components/common/ErrorMessage'
 import Loader from '../../../components/common/Loader'
@@ -68,6 +69,7 @@ function Calendar({ onClose, onSchedule, refreshKey, canManage }) {
                   <span>{[p.platform, p.campaign].filter(Boolean).join(' • ')}</span>
                   {p.is_due && <Badge tone="amber">Due</Badge>}
                 </div>
+                <DeleteRecordButton kind="scheduled_post" id={p.id} label={`${p.platform} post`} onDeleted={posts.reload} />
                 {canManage && p.can_update && (
                   <span className="row-actions">
                     <Button size="sm" variant="soft" icon={CircleCheck} onClick={() => setChange({ post: p, status: 'published' })} aria-label={`Mark the ${p.platform} post published`}>

@@ -86,9 +86,15 @@ export default function MarketingPage() {
       { replace: true },
     )
 
-  const createCampaign = async (values) => {
-    const created = await marketingApi.createCampaign(values)
-    toast.success(`Campaign "${created?.name ?? values.name}" created`)
+  const [editingCampaign, setEditingCampaign] = useState(null)
+  const saveCampaign = async (values) => {
+    if (editingCampaign) {
+      const saved = await marketingApi.updateCampaign(editingCampaign.id, values)
+      toast.success(`Campaign "${saved?.name ?? values.name}" updated`)
+    } else {
+      const created = await marketingApi.createCampaign(values)
+      toast.success(`Campaign "${created?.name ?? values.name}" created`)
+    }
     refresh()
   }
 
@@ -202,6 +208,7 @@ export default function MarketingPage() {
             platforms={platforms}
             canManage={canManage}
             onChanged={refresh}
+            onEdit={setEditingCampaign}
           />
 
           <div className="dash-row">
@@ -250,7 +257,13 @@ export default function MarketingPage() {
         </>
       )}
 
-      <CampaignFormModal open={creatingCampaign} options={options} onClose={() => setCampaignParam(false)} onCreate={createCampaign} />
+      <CampaignFormModal
+        open={creatingCampaign || Boolean(editingCampaign)}
+        options={options}
+        campaign={editingCampaign}
+        onClose={() => { setCampaignParam(false); setEditingCampaign(null) }}
+        onSave={saveCampaign}
+      />
       <SchedulePostModal open={modal === 'post'} options={options} onClose={() => setModal(null)} onSchedule={schedulePost} />
       <MarketingDataModal open={modal === 'data'} options={options} canManage={canManage} onClose={() => setModal(null)} onChanged={refresh} />
       <ContentCalendarModal

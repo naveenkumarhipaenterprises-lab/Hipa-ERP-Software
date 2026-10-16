@@ -2,13 +2,20 @@ import EmptyState from '../../../components/common/EmptyState'
 import FormModal from '../../../components/common/FormModal'
 import Modal from '../../../components/common/Modal'
 import OptionsGate from '../../../components/common/OptionsGate'
+import { marketingApi } from '../../../api/marketingApi'
+import { useApi } from '../../../hooks/useApi'
 import { todayISO } from '../../../utils/formatters'
 
 const list = (v) => (Array.isArray(v) ? v : [])
 
-/** Adds a post to the content calendar (POST /marketing/posts/). */
+/** Adds a post to the content calendar (POST /marketing/posts/), optionally for one of the campaigns. */
 export default function SchedulePostModal({ open, options, onClose, onSchedule }) {
   if (!open) return null
+  return <SchedulePost options={options} onClose={onClose} onSchedule={onSchedule} />
+}
+
+function SchedulePost({ options, onClose, onSchedule }) {
+  const campaigns = useApi(() => marketingApi.listCampaigns({ page_size: 100 }), [])
   return (
     <OptionsGate options={options} title="Schedule Post" onClose={onClose}>
       {(data) => {
@@ -36,6 +43,9 @@ export default function SchedulePostModal({ open, options, onClose, onSchedule }
                 required: true,
                 validate: (v) => (v < todayISO() ? 'Choose today or a future date' : undefined),
               },
+              { name: 'campaign_id', label: 'Campaign (optional)', type: 'select', full: true, placeholder: 'No campaign',
+                options: list(campaigns.data?.results).filter((c) => c.status !== 'Completed')
+                  .map((c) => ({ value: String(c.id), label: `${c.name} (${c.platform})` })) },
               { name: 'caption', label: 'Caption', type: 'textarea', required: true, placeholder: 'Write the post text' },
             ]}
             onSubmit={(values) => onSchedule({ ...values, caption: values.caption.trim() })}

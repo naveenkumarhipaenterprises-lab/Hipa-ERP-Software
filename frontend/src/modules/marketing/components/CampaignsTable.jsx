@@ -1,4 +1,4 @@
-﻿import { Megaphone, Search, Square } from 'lucide-react'
+﻿import { Megaphone, Pencil, Search, Square } from 'lucide-react'
 import { useState } from 'react'
 import { marketingApi } from '../../../api/marketingApi'
 import Badge from '../../../components/common/Badge'
@@ -20,7 +20,7 @@ const list = (v) => (Array.isArray(v) ? v : [])
 const has = (v) => v !== null && v !== undefined && v !== ''
 
 /** Campaigns (server-paginated) with search, status filter and "End campaign" (confirmed). */
-export default function CampaignsTable({ refreshKey, statuses, platforms, canManage, onChanged }) {
+export default function CampaignsTable({ refreshKey, statuses, platforms, canManage, onChanged, onEdit }) {
   const toast = useToast()
   const [search, setSearch] = useState('')
   const [status, setStatus] = useState('')
@@ -64,6 +64,9 @@ export default function CampaignsTable({ refreshKey, statuses, platforms, canMan
     align: 'right',
     render: (r) => (
       <span className="row-actions">
+        {canManage && r.can_edit && onEdit && (
+          <Button variant="ghost" size="sm" icon={Pencil} onClick={() => onEdit(r)} aria-label={`Edit ${r.name}`} />
+        )}
         {canManage && r.can_end === true && (
           <Button variant="ghost" size="sm" icon={Square} className="btn--tone-red" onClick={() => setEnding(r)}>
             End

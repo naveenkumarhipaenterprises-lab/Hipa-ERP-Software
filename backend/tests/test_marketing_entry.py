@@ -108,3 +108,41 @@ class MarketingEntryTests(TestCase):
         self.assertEqual(self.call("get", "metrics/?platform=youtube")["count"], 1)
         self.assertEqual(self.call("get", f"metrics/?date_from={(today() - timedelta(days=7)).isoformat()}")["count"], 1)
         self.assertIn("date_from", self.call("get", "metrics/?date_from=yesterday", expected=400))
+
+
+class CampaignEditAndPostTests(MarketingEntryTests):
+    def campaign(self, platform="instagram"):
+        return self.call("post", "campaigns/", {"name": "TEST Diwali", "platform": platform, "objective": "sales",
+                                               "start_date": today().isoformat(), "end_date": (today() + timedelta(days=10)).isoformat(),
+                                               "budget": 5000}, 201)
+
+    def test_edit_a_campaign(self):
+        c = self.campaign()
+        self.assertTrue(c["can_edit"])
+        res = self.call("patch", f"campaigns/{c['id']}/", {"name": "TEST Diwali Sale", "budget": "7500.50"})
+        self.assertEqual((res["name"], res["budget"], res["platform"]), ("TEST Diwali Sale", 7500.5, "Instagram"))
+        self.assertIn("end_date", self.call("patch", f"campaigns/{c['id']}/", {"end_date": (today() - timedelta(days=1)).isoformat()}, 400))
+        self.assertTrue(AuditLog.objects.filter(action="Edited campaign").exists())
+        seller = client_for(make_user("sales", username="seller2"))
+        self.assertEqual(seller.patch(f"{API}/marketing/campaigns/{c['id']}/", {"name": "x"}, format="json").status_code, 403)
+
+    def test_platform_is_fixed_once_numbers_are_entered(self):
+        c = self.campaign()
+        self.assertEqual(self.call("patch", f"campaigns/{c['id']}/", {"platform": "youtube"})["platform"], "YouTube")  # no numbers yet
+        self.call("patch", f"campaigns/{c['id']}/", {"platform": "instagram"})
+        self.metric(campaign_id=c["id"])
+        err = self.call("patch", f"campaigns/{c['id']}/", {"platform": "youtube"}, 400)
+        self.assertIn("can't change", err["platform"][0])
+
+    def test_a_post_links_to_its_campaign_and_only_a_super_admin_deletes_it(self):
+        from django.utils import timezone
+
+        c = self.campaign()
+        when = (timezone.now() + timedelta(days=2)).isoformat()
+        self.assertIn("campaign_id", self.call("post", "posts/", {"platform": "instagram", "scheduled_for": when, "caption": "TEST",
+                                                                   "campaign_id": 999999}, 400))
+        post = self.call("post", "posts/", {"platform": "youtube", "scheduled_for": when, "caption": "TEST", "campaign_id": c["id"]}, 201)
+        self.assertEqual(post["campaign"], "TEST Diwali")
+        self.assertEqual(self.api.delete(f"{API}/records/scheduled_post/{post['id']}/").status_code, 403)  # Super Admins only
+        admin = client_for(make_user("admin", username="boss2"))
+        self.assertEqual(admin.delete(f"{API}/records/scheduled_post/{post['id']}/").status_code, 204)

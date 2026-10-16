@@ -20,6 +20,7 @@ import { api, cleanParams as clean } from './client'
  * GET /marketing/campaigns/?page=&page_size=&search=&status=
  * { count, results: [{ id, name, platform, start_date, end_date, status, reach, leads, sales, can_end }] }
  * POST /marketing/campaigns/            { name, platform, objective, start_date, end_date, budget, description? }
+ * PATCH /marketing/campaigns/<id>/      same fields (not sent = kept; the platform is fixed once numbers are entered)
  * POST /marketing/campaigns/<id>/end/
  *
  * GET  /marketing/posts/?status=scheduled&page_size=   ->  { count, results: [{ id, platform, scheduled_for, caption, campaign?, status, is_due, can_update }] }
@@ -41,6 +42,7 @@ export const marketingApi = {
   getOptions: () => api.get('/marketing/options/'),
   listCampaigns: (params) => api.get('/marketing/campaigns/', clean(params)),
   createCampaign: (campaign) => api.post('/marketing/campaigns/', campaign),
+  updateCampaign: (id, campaign) => api.patch(`/marketing/campaigns/${id}/`, campaign),
   endCampaign: (id) => api.post(`/marketing/campaigns/${id}/end/`),
   listPosts: (params) => api.get('/marketing/posts/', clean(params)),
   setPostStatus: (id, status) => api.post(`/marketing/posts/${id}/status/`, { status }),

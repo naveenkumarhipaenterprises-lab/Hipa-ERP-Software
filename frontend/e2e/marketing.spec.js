@@ -77,3 +77,52 @@ test('marketing data: a load error is shown, not an empty list', async ({ page }
   await expect(data.getByRole('alert')).toBeVisible()
   await expect(data.getByText('No daily numbers entered yet')).toHaveCount(0)
 })
+
+const CAMPAIGN = { id: 4, name: 'TEST Diwali', platform: 'Instagram', platform_value: 'instagram', objective: 'sales', budget: 5000,
+  description: null, start_date: '2026-10-10', end_date: '2026-10-30', status: 'Active', reach: 0, leads: 0, sales: 0,
+  can_end: true, can_edit: true }
+
+test('a campaign is edited, and a post is scheduled for it', async ({ page }) => {
+  await signIn(page, 'marketing')
+  const calls = await mockApi(page, {
+    ...MARKETING,
+    'GET /api/marketing/options/': { platforms: PLATFORMS, objectives: [{ value: 'sales', label: 'Sales' }], statuses: [] },
+    'GET /api/marketing/campaigns/': { count: 1, results: [CAMPAIGN] },
+    'PATCH /api/marketing/campaigns/4/': { ...CAMPAIGN, name: 'TEST Diwali Sale', budget: 7500 },
+    'POST /api/marketing/posts/': { status: 201, body: { id: 9 } },
+  })
+  await page.goto('/marketing')
+  await page.getByRole('button', { name: 'Edit TEST Diwali' }).click()
+  const form = page.getByRole('dialog', { name: 'Edit TEST Diwali' })
+  await expect(form.getByLabel(/Campaign name/)).toHaveValue('TEST Diwali')
+  await form.getByLabel(/Campaign name/).fill('TEST Diwali Sale')
+  await form.getByLabel(/Budget/).fill('7500')
+  await form.getByRole('button', { name: 'Save Changes' }).click()
+  await expect(page.getByText('Campaign "TEST Diwali Sale" updated')).toBeVisible()
+  expect(calls.find((c) => c.key === 'PATCH /api/marketing/campaigns/4/').body).toMatchObject({ name: 'TEST Diwali Sale', budget: 7500 })
+
+  await page.getByRole('button', { name: 'Create Post' }).first().click()
+  const post = page.getByRole('dialog', { name: 'Schedule Post' })
+  await post.getByLabel(/^Platform/).selectOption('instagram')
+  await post.getByLabel(/^Campaign/).selectOption('4')
+  await post.getByLabel(/^Caption/).fill('TEST Diwali offer')
+  await post.getByRole('button', { name: 'Schedule Post' }).click()
+  await expect(post).toHaveCount(0)
+  expect(calls.find((c) => c.key === 'POST /api/marketing/posts/').body).toMatchObject({ campaign_id: '4', platform: 'instagram' })
+})
+
+test('a Super Admin can delete a scheduled post from the content calendar', async ({ page }) => {
+  await signIn(page, 'admin')
+  const calls = await mockApi(page, {
+    ...MARKETING,
+    'GET /api/marketing/posts/': { count: 1, results: [{ id: 9, platform: 'Instagram', scheduled_for: '2026-10-20T10:00:00+05:30',
+      caption: 'TEST Diwali offer', campaign: 'TEST Diwali', status: 'Scheduled', is_due: false, can_update: true }] },
+    'DELETE /api/records/scheduled_post/9/': { status: 204, body: {} },
+  })
+  await page.goto('/marketing')
+  await page.getByRole('button', { name: 'Content Calendar' }).first().click()
+  await page.getByRole('button', { name: 'Delete Instagram post' }).click()
+  await page.getByRole('dialog', { name: 'Delete Instagram post?' }).getByRole('button', { name: 'Delete' }).click()
+  await expect(page.getByText('Instagram post deleted')).toBeVisible()
+  expect(calls.some((c) => c.key === 'DELETE /api/records/scheduled_post/9/')).toBe(true)
+})

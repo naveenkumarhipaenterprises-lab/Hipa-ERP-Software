@@ -31,9 +31,49 @@ def sums(qs):
 def campaign_row(c, today, editable):
     m = sums(c.metrics.all())
     st = c.status_on(today)
-    return {"id": c.id, "name": c.name, "platform": c.get_platform_display(), "start_date": c.start_date, "end_date": c.end_date,
+    return {"id": c.id, "name": c.name, "platform": c.get_platform_display(), "platform_value": c.platform,
+            "objective": c.objective, "budget": num(c.budget), "description": c.description or None,
+            "start_date": c.start_date, "end_date": c.end_date,
             "status": CS(st).label, "reach": m["reach"], "leads": m["leads"], "sales": num(m["sales_amount"]),
-            "can_end": editable and st != CS.COMPLETED}
+            "can_end": editable and st != CS.COMPLETED, "can_edit": editable}
+
+
+def read_campaign(d, current=None):
+    """Checked campaign fields for create / edit. A campaign with numbers entered keeps its platform."""
+    errors = {}
+    name = str(d.get("name") or "").strip()
+    if not name:
+        errors["name"] = ["Enter the campaign name."]
+    elif len(name) > 150:
+        errors["name"] = ["The campaign name can be at most 150 characters."]
+    values = {}
+    for field, tc in (("platform", Platform), ("objective", Campaign.Objective)):
+        try:
+            values[field] = resolve_choice(tc, d.get(field), field)
+            if not values[field]:
+                errors[field] = [f"Choose the {field}."]
+        except ValidationError as exc:
+            errors.update(exc.detail)
+    if current is not None and values.get("platform") and values["platform"] != current.platform and current.metrics.exists():
+        errors["platform"] = [f"Numbers are already entered for this campaign on {current.get_platform_display()}, "
+                              "so its platform can't change."]
+    start, end = parse_date(str(d.get("start_date") or "")), parse_date(str(d.get("end_date") or ""))
+    if not start:
+        errors["start_date"] = ["Enter the start date (YYYY-MM-DD)."]
+    if not end:
+        errors["end_date"] = ["Enter the end date (YYYY-MM-DD)."]
+    elif start and end < start:
+        errors["end_date"] = ["The end date can't be before the start date."]
+    try:
+        budget = Decimal(str(d.get("budget")))
+        if not budget.is_finite() or budget < 0 or budget.as_tuple().exponent < -2:
+            raise InvalidOperation
+    except (InvalidOperation, ValueError, TypeError):
+        errors["budget"] = ["Enter a budget of 0 or more."]
+    if errors:
+        raise ValidationError(errors)
+    return {"name": name, "platform": values["platform"], "objective": values["objective"], "start_date": start, "end_date": end,
+            "budget": budget, "description": str(d.get("description") or "").strip()}
 
 
 def post_row(p):
@@ -130,38 +170,23 @@ class CampaignsView(MarketingView):
         return self.paginated(qs, lambda c: campaign_row(c, today, editable))
 
     def post(self, request):
-        d = request.data
-        errors = {}
-        name = str(d.get("name") or "").strip()
-        if not name:
-            errors["name"] = ["Enter the campaign name."]
-        for field, tc in (("platform", Platform), ("objective", Campaign.Objective)):
-            try:
-                if not resolve_choice(tc, d.get(field), field):
-                    errors[field] = [f"Choose the {field}."]
-            except ValidationError as exc:
-                errors.update(exc.detail)
-        start, end = parse_date(str(d.get("start_date") or "")), parse_date(str(d.get("end_date") or ""))
-        if not start:
-            errors["start_date"] = ["Enter the start date (YYYY-MM-DD)."]
-        if not end:
-            errors["end_date"] = ["Enter the end date (YYYY-MM-DD)."]
-        elif start and end < start:
-            errors["end_date"] = ["The end date can't be before the start date."]
-        try:
-            budget = Decimal(str(d.get("budget")))
-            if budget < 0 or budget.as_tuple().exponent < -2:
-                raise InvalidOperation
-        except (InvalidOperation, ValueError, TypeError):
-            errors["budget"] = ["Enter a budget of 0 or more."]
-        if errors:
-            raise ValidationError(errors)
-        c = Campaign.objects.create(name=name[:150], platform=resolve_choice(Platform, d["platform"], "platform"),
-                                    objective=resolve_choice(Campaign.Objective, d["objective"], "objective"),
-                                    start_date=start, end_date=end, budget=budget,
-                                    description=str(d.get("description") or "").strip(), created_by=request.user)
+        c = Campaign.objects.create(created_by=request.user, **read_campaign(request.data))
         audit.record(request, "Created campaign", c.name)
         return Response(campaign_row(c, periods.today(), True), status=status.HTTP_201_CREATED)
+
+
+class CampaignDetailView(MarketingView):
+    def patch(self, request, pk):
+        """Fields not sent keep their value."""
+        with transaction.atomic():
+            c = get_object_or_404(Campaign.objects.select_for_update(), pk=pk)
+            current = {"name": c.name, "platform": c.platform, "objective": c.objective, "start_date": c.start_date.isoformat(),
+                       "end_date": c.end_date.isoformat(), "budget": str(c.budget), "description": c.description}
+            for k, v in read_campaign({**current, **{k: request.data.get(k) for k in current if k in request.data}}, c).items():
+                setattr(c, k, v)
+            c.save()
+        audit.record(request, "Edited campaign", c.name)
+        return Response(campaign_row(c, periods.today(), True))
 
 
 class EndCampaignView(MarketingView):
