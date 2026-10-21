@@ -49,10 +49,13 @@ def employee_brief(e):
     return {"id": e.id, "employee_code": e.employee_code, "name": e.name, "department": e.department or None}
 
 
-def employee_row(e):
-    return {**employee_brief(e), "designation": e.designation or None, "email": e.email or None, "phone": e.phone or None,
+def employee_row(e, contacts=True):
+    """contacts=False (people who may only view employees): no e-mail or phone number."""
+    return {**employee_brief(e), "designation": e.designation or None,
+            "email": (e.email or None) if contacts else None, "phone": (e.phone or None) if contacts else None,
             "joining_date": e.joining_date, "status": e.get_status_display(), "status_value": e.status,
-            "user": {"id": e.user_id, "name": e.user.name or e.user.username, "email": e.user.email} if e.user_id else None}
+            "user": {"id": e.user_id, "name": e.user.name or e.user.username, "email": e.user.email if contacts else None}
+            if e.user_id else None}
 
 
 def figures_block(f):
@@ -356,9 +359,11 @@ class EmployeesView(AttendanceView):
     def get(self, request):
         perms.require_any(request.user, ("employee_view", "employee_manage"), "You don't have permission to view employees.")
         qs = employees_qs()
+        contacts = perms.has(request.user, "employee_manage")
         q = self.param("search")
         if q:
-            qs = qs.filter(Q(name__icontains=q) | Q(employee_code__icontains=q) | Q(department__icontains=q) | Q(email__icontains=q))
+            match = Q(name__icontains=q) | Q(employee_code__icontains=q) | Q(department__icontains=q)
+            qs = qs.filter(match | Q(email__icontains=q) if contacts else match)
         st = self.param("status")
         if st:
             if st not in Employee.Status.values:
@@ -366,7 +371,7 @@ class EmployeesView(AttendanceView):
             qs = qs.filter(status=st)
         if self.param("department"):
             qs = qs.filter(department__iexact=self.param("department"))
-        return self.paginated(qs, employee_row)
+        return self.paginated(qs, lambda e: employee_row(e, contacts))
 
     def post(self, request):
         perms.require(request.user, "employee_manage", "You don't have permission to manage employees.")
@@ -378,7 +383,7 @@ class EmployeesView(AttendanceView):
 class EmployeeDetailView(AttendanceView):
     def get(self, request, pk):
         perms.require_any(request.user, ("employee_view", "employee_manage"), "You don't have permission to view employees.")
-        return Response(employee_row(get_object_or_404(employees_qs(), pk=pk)))
+        return Response(employee_row(get_object_or_404(employees_qs(), pk=pk), perms.has(request.user, "employee_manage")))
 
     def patch(self, request, pk):
         perms.require(request.user, "employee_manage", "You don't have permission to manage employees.")
@@ -446,6 +451,25 @@ def read_leave(d):
             "remarks": parsing.text(d, "remarks", 2000)}
 
 
+def check_leave_day(emp, data, exclude=None):
+    """A request can't fall on a holiday or clash with the employee's other pending / approved requests that day:
+    a whole-day request clashes with anything, timed requests only when their times overlap."""
+    day, start, end = data["date"], data["from_time"], data["to_time"]
+    sched = schedule_for([day])
+    if sched.holiday(day):
+        raise ValidationError({"date": [f"{day:%d %b %Y} is a holiday ({holiday_block(sched, day)['name']}): "
+                                        "no leave or permission is needed."]})
+    others = LeaveRequest.objects.filter(employee=emp, date=day, status__in=(LS.PENDING, LS.APPROVED))
+    if exclude is not None:
+        others = others.exclude(pk=exclude.pk)
+    for other in others:
+        timed = start and end and other.from_time and other.to_time
+        if not timed or (start < other.to_time and other.from_time < end):
+            when = f"{other.from_time:%H:%M}–{other.to_time:%H:%M}" if other.from_time and other.to_time else "whole day"
+            raise ValidationError({"date": [f"There is already a {other.get_status_display().lower()} "
+                                            f"{other.get_type_display().lower()} request for this day ({when})."]})
+
+
 def leave_qs():
     return LeaveRequest.objects.select_related("employee", "reviewed_by")
 
@@ -480,23 +504,32 @@ class LeaveView(AttendanceView):
     def post(self, request):
         perms.require(request.user, "leave_apply", "You don't have permission to apply for leave or permission.")
         emp = services.require_employee(request.user)
-        lr = LeaveRequest.objects.create(employee=emp, requested_by=request.user, **read_leave(request.data))
+        data = read_leave(request.data)
+        with transaction.atomic():
+            Employee.objects.select_for_update().get(pk=emp.pk)  # two requests sent at once can't both pass the check
+            check_leave_day(emp, data)
+            lr = LeaveRequest.objects.create(employee=emp, requested_by=request.user, **data)
         audit.record(request, f"Requested {lr.get_type_display().lower()}", f"{emp.name} {lr.date:%d %b %Y}")
         return Response(leave_row(lr, request.user), status=status.HTTP_201_CREATED)
 
 
 class LeaveDetailView(AttendanceView):
     def patch(self, request, pk):
-        lr = get_object_or_404(leave_qs(), pk=pk)
-        if not (lr.requested_by_id == request.user.id or lr.employee.user_id == request.user.id):
-            raise PermissionDenied("You can only change your own requests.")
-        if lr.status != LS.PENDING:
-            raise ValidationError({"detail": f"A {lr.get_status_display().lower()} request can't be changed."})
-        current = {"type": lr.type, "date": lr.date.isoformat(), "from_time": lr.from_time.strftime("%H:%M") if lr.from_time else "",
-                   "to_time": lr.to_time.strftime("%H:%M") if lr.to_time else "", "reason": lr.reason, "remarks": lr.remarks}
-        for k, v in read_leave({**current, **{k: request.data.get(k) for k in current if k in request.data}}).items():
-            setattr(lr, k, v)
-        lr.save()
+        perms.require(request.user, "leave_apply", "You don't have permission to apply for leave or permission.")
+        with transaction.atomic():
+            lr = get_object_or_404(leave_qs().select_for_update(of=("self",)), pk=pk)
+            if not (lr.requested_by_id == request.user.id or lr.employee.user_id == request.user.id):
+                raise PermissionDenied("You can only change your own requests.")
+            if lr.status != LS.PENDING:
+                raise ValidationError({"detail": f"A {lr.get_status_display().lower()} request can't be changed."})
+            current = {"type": lr.type, "date": lr.date.isoformat(), "from_time": lr.from_time.strftime("%H:%M") if lr.from_time else "",
+                       "to_time": lr.to_time.strftime("%H:%M") if lr.to_time else "", "reason": lr.reason, "remarks": lr.remarks}
+            data = read_leave({**current, **{k: request.data.get(k) for k in current if k in request.data}})
+            Employee.objects.select_for_update().get(pk=lr.employee_id)
+            check_leave_day(lr.employee, data, exclude=lr)
+            for k, v in data.items():
+                setattr(lr, k, v)
+            lr.save()
         return Response(leave_row(lr, request.user))
 
 

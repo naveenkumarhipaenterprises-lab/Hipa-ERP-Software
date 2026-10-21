@@ -99,7 +99,8 @@ export const NAV_ITEMS = [
       { tab: 'attendance', label: 'Attendance' },
       { tab: 'employees', label: 'Employees', perms: ['employee_view', 'employee_manage'] },
       { tab: 'leave', label: 'Leave / Permission', perms: ['leave_apply', 'leave_view', 'leave_approve', 'leave_reject'] },
-      { tab: 'calendar', label: 'Calendar', perms: ['calendar_view'] },
+      // Everyone sees their own calendar; other employees' calendars need View Calendar, holidays need Manage Holidays
+      { tab: 'calendar', label: 'Calendar' },
       { tab: 'reports', label: 'Reports', perms: ['report_view', 'report_export'] },
       { tab: 'settings', label: 'Settings', perms: ['settings_view', 'settings_manage', 'holiday_manage'] },
       // Enter or correct someone's attendance (forgot to check in / out, late): Super Admin and Management only

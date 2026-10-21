@@ -222,7 +222,7 @@ test('sections without permission are hidden; check-in / check-out stays', async
   await signIn(page, 'sales')
   const calls = await mockApi(page, TODAY(NO_PERMS, status({ permissions: NO_PERMS })))
   await page.goto('/attendance?tab=employees')
-  await expect(page.getByRole('tab')).toHaveText(['Attendance'])
+  await expect(page.getByRole('tab')).toHaveText(['Attendance', 'Calendar']) // everyone sees their own calendar
   await expect(page.getByRole('button', { name: 'Check In', exact: true })).toBeEnabled()
   expect(calls.some((c) => c.key === 'GET /api/attendance/employees/')).toBe(false)
 })
