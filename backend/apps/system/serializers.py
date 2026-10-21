@@ -33,11 +33,13 @@ def timezones():
 
 class GeneralSettingsSerializer(serializers.ModelSerializer):
     company_name = serializers.CharField(max_length=150)
-    timezone = serializers.CharField(max_length=64)
-    date_format = serializers.ChoiceField(choices=DATE_FORMATS)
-    time_format = serializers.ChoiceField(choices=TIME_FORMATS)
-    currency = serializers.ChoiceField(choices=CURRENCIES)
-    language = serializers.ChoiceField(choices=LANGUAGES)
+    # The portal runs in IST / DD-MM-YYYY / INR, so the screen no longer sends these; when sent they are still checked,
+    # and when left out the saved values stay as they are
+    timezone = serializers.CharField(max_length=64, required=False)
+    date_format = serializers.ChoiceField(choices=DATE_FORMATS, required=False)
+    time_format = serializers.ChoiceField(choices=TIME_FORMATS, required=False)
+    currency = serializers.ChoiceField(choices=CURRENCIES, required=False)
+    language = serializers.ChoiceField(choices=LANGUAGES, required=False)
 
     class Meta:
         model = CompanySettings

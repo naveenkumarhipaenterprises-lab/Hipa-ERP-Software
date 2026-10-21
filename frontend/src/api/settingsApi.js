@@ -26,8 +26,7 @@ import { api, cleanParams as clean, tokenStorage } from './client'
  * POST  /settings/backup/run/       ->  { status }
  *
  * GET  /settings/integrations/                  ->  [{ key, name, description?, connected, connected_at? }]
- * POST /settings/integrations/<key>/connect/    ->  { connected, redirect_url? }   // redirect_url for OAuth-style set-up
- * POST /settings/integrations/<key>/disconnect/
+ *      (status only: e-mail and the AI engine are set up on the server)
  *
  * GET   /settings/security/                       ->  { two_factor_enabled }
  * PATCH /settings/security/                       { two_factor_enabled }
@@ -62,8 +61,6 @@ export const settingsApi = {
   runBackup: () => api.post('/settings/backup/run/'),
 
   getIntegrations: () => api.get('/settings/integrations/'),
-  connectIntegration: (key) => api.post(`/settings/integrations/${key}/connect/`),
-  disconnectIntegration: (key) => api.post(`/settings/integrations/${key}/disconnect/`),
 
   getSecurity: () => api.get('/settings/security/'),
   updateSecurity: (changes) => api.patch('/settings/security/', changes),
