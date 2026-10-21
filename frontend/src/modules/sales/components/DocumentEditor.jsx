@@ -1,4 +1,3 @@
-import { Plus, Trash2 } from 'lucide-react'
 import { useState } from 'react'
 import { Link } from 'react-router-dom'
 import Button from '../../../components/common/Button'
@@ -7,21 +6,18 @@ import ErrorMessage from '../../../components/common/ErrorMessage'
 import Input, { Select, Textarea } from '../../../components/common/Input'
 import Modal from '../../../components/common/Modal'
 import OptionsGate from '../../../components/common/OptionsGate'
-import TotalsSummary from '../../../components/common/TotalsSummary'
-import { formatINR, todayISO } from '../../../utils/formatters'
-import { documentTotals, lineTotals } from '../../../utils/money'
+import { todayISO } from '../../../utils/formatters'
 import { isEmail, isGstin } from '../../../utils/validation'
+import { blankLine, has, linesBody, linesFromItems, linesProblems } from '../lines'
+import ProductLines from './ProductLines'
 
 const list = (v) => (Array.isArray(v) ? v : [])
-const has = (v) => v !== null && v !== undefined && v !== ''
 const PARTY = ['customer_name', 'company_name', 'billing_address', 'shipping_address', 'phone', 'email', 'gstin']
 const addDays = (iso, days) => {
   const d = new Date(`${iso}T00:00:00`)
   d.setDate(d.getDate() + Number(days))
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
 }
-let nextKey = 1
-const blankLine = (gst = '') => ({ key: nextKey++, product_id: '', quantity_kg: '', unit_price: '', discount_pct: '', gst_pct: gst })
 
 /**
  * Create / edit a quotation or a sales invoice: customer details (picked from the customer database or typed),
@@ -69,11 +65,7 @@ function Editor({ kind, title, document: doc, data, onClose, onSave }) {
       terms_conditions: (quotation ? d.quotation_terms : d.invoice_terms) ?? '',
     }
   })
-  const [lines, setLines] = useState(() =>
-    doc ? list(doc.items).map((i) => ({ key: nextKey++, product_id: String(i.product_id), quantity_kg: i.quantity_kg, unit_price: i.unit_price,
-                                        discount_pct: i.discount_pct, gst_pct: i.gst_pct }))
-        : [blankLine(has(d.gst_pct) ? d.gst_pct : '')],
-  )
+  const [lines, setLines] = useState(() => (doc ? linesFromItems(doc.items) : [blankLine(has(d.gst_pct) ? d.gst_pct : '')]))
   const [errors, setErrors] = useState({})
   const [submitError, setSubmitError] = useState(null)
   const [pending, setPending] = useState(false)
@@ -91,9 +83,6 @@ function Editor({ kind, title, document: doc, data, onClose, onSave }) {
     }))
     setErrors((e) => ({ ...e, customer_id: undefined, customer_name: undefined }))
   }
-  const setLine = (key, name, value) => setLines((ls) => ls.map((l) => (l.key === key ? { ...l, [name]: value } : l)))
-  const priceOf = (l) => (has(l.unit_price) ? l.unit_price : products.find((p) => String(p.id) === String(l.product_id))?.price_per_kg ?? 0)
-  const totals = documentTotals(lines.map((l) => ({ quantity: l.quantity_kg, unitPrice: priceOf(l), discountPct: l.discount_pct, gstPct: l.gst_pct })))
 
   const validate = () => {
     const e = {}
@@ -111,18 +100,7 @@ function Editor({ kind, title, document: doc, data, onClose, onSave }) {
       if (form.due_date && form.due_date < (form.invoice_date || today)) e.due_date = "Can't be before the invoice date"
     }
     if (!itemsLocked) {
-      const problems = []
-      const seen = new Set()
-      lines.forEach((l, i) => {
-        const row = `Row ${i + 1}: `
-        if (!l.product_id) problems.push(`${row}choose a product.`)
-        else if (seen.has(l.product_id)) problems.push(`${row}this product is already on another line.`)
-        seen.add(l.product_id)
-        if (!(Number(l.quantity_kg) > 0)) problems.push(`${row}enter a quantity greater than 0.`)
-        if (has(l.unit_price) && Number(l.unit_price) < 0) problems.push(`${row}the unit price can't be negative.`)
-        for (const k of ['discount_pct', 'gst_pct']) if (has(l[k]) && (Number(l[k]) < 0 || Number(l[k]) > 100)) problems.push(`${row}percentages must be 0–100.`)
-      })
-      if (lines.length === 0) problems.push('Add at least one product.')
+      const problems = linesProblems(lines)
       if (problems.length) e.items = problems
     }
     return e
@@ -140,14 +118,7 @@ function Editor({ kind, title, document: doc, data, onClose, onSave }) {
       ...(quotation
         ? { quotation_date: form.quotation_date, valid_until: form.valid_until, delivery_terms: form.delivery_terms }
         : { ...(doc ? {} : { invoice_date: form.invoice_date }), due_date: form.due_date || null }),
-      ...(itemsLocked ? {} : {
-        items: lines.map((l) => ({
-          product_id: l.product_id, quantity_kg: Number(l.quantity_kg),
-          ...(has(l.unit_price) ? { unit_price: Number(l.unit_price) } : {}),
-          ...(has(l.discount_pct) ? { discount_pct: Number(l.discount_pct) } : {}),
-          ...(has(l.gst_pct) ? { gst_pct: Number(l.gst_pct) } : {}),
-        })),
-      }),
+      ...(itemsLocked ? {} : { items: linesBody(lines) }),
     }
     setPending(true)
     setSubmitError(null)
@@ -218,61 +189,9 @@ function Editor({ kind, title, document: doc, data, onClose, onSave }) {
           </>
         )}
 
-        <div className="form-grid__full stack">
-          <h3 className="doc-section">Products</h3>
-          {itemsLocked && <p className="muted">This invoice was made from a sales order, so its products can't change.</p>}
-          {errors.items && <ErrorMessage message={list(errors.items).join(' ')} />}
-          <div className="lines">
-            <table>
-              <thead>
-                <tr>
-                  <th>Product</th>
-                  <th className="num">Quantity (kg)</th>
-                  <th className="num">Unit price (₹)</th>
-                  <th className="num">Discount %</th>
-                  <th className="num">GST %</th>
-                  <th className="num">Amount</th>
-                  <th><span className="sr-only">Remove</span></th>
-                </tr>
-              </thead>
-              <tbody>
-                {lines.map((l, i) => {
-                  const product = products.find((p) => String(p.id) === String(l.product_id))
-                  const t = lineTotals(l.quantity_kg, priceOf(l), l.discount_pct, l.gst_pct)
-                  return (
-                    <tr key={l.key}>
-                      <td style={{ minWidth: 220 }}>
-                        <Select aria-label={`Product, row ${i + 1}`} value={l.product_id} disabled={itemsLocked} placeholder="Select product"
-                                onChange={(e) => setLine(l.key, 'product_id', e.target.value)}
-                                options={products.map((p) => ({ value: String(p.id), label: p.name }))} />
-                      </td>
-                      <td><Input aria-label={`Quantity, row ${i + 1}`} type="number" min="0" step="any" inputMode="decimal" value={l.quantity_kg} disabled={itemsLocked} onChange={(e) => setLine(l.key, 'quantity_kg', e.target.value)} /></td>
-                      <td><Input aria-label={`Unit price, row ${i + 1}`} type="number" min="0" step="any" inputMode="decimal" value={l.unit_price} disabled={itemsLocked}
-                                 placeholder={product ? String(product.price_per_kg) : ''} onChange={(e) => setLine(l.key, 'unit_price', e.target.value)} /></td>
-                      <td><Input aria-label={`Discount percent, row ${i + 1}`} type="number" min="0" max="100" step="any" inputMode="decimal" value={l.discount_pct} disabled={itemsLocked} placeholder="0" onChange={(e) => setLine(l.key, 'discount_pct', e.target.value)} /></td>
-                      <td><Input aria-label={`GST percent, row ${i + 1}`} type="number" min="0" max="100" step="any" inputMode="decimal" value={l.gst_pct} disabled={itemsLocked} placeholder="0" onChange={(e) => setLine(l.key, 'gst_pct', e.target.value)} /></td>
-                      <td className="num lines__amount">{formatINR(t.total)}</td>
-                      <td>
-                        {!itemsLocked && (
-                          <Button size="sm" variant="ghost" icon={Trash2} aria-label={`Remove row ${i + 1}`} disabled={lines.length === 1}
-                                  onClick={() => setLines((ls) => ls.filter((x) => x.key !== l.key))} />
-                        )}
-                      </td>
-                    </tr>
-                  )
-                })}
-              </tbody>
-            </table>
-          </div>
-          {!itemsLocked && (
-            <div>
-              <Button size="sm" variant="soft" icon={Plus} onClick={() => setLines((ls) => [...ls, blankLine(has(d.gst_pct) ? d.gst_pct : '')])}>
-                Add Product
-              </Button>
-            </div>
-          )}
-          <TotalsSummary totals={totals} totalLabel="Grand Total" />
-        </div>
+        <ProductLines lines={lines} onChange={setLines} products={products} defaultGst={has(d.gst_pct) ? d.gst_pct : ''}
+                      locked={itemsLocked} lockedNote="This invoice was made from a sales order, so its products can't change."
+                      errors={errors.items} />
 
         <h3 className="doc-section form-grid__full">Terms</h3>
         {field('payment_terms', 'Payment terms', { className: quotation ? '' : 'form-grid__full' })}

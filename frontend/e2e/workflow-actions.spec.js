@@ -92,6 +92,26 @@ test('a shipment is marked delivered with its quality result', async ({ page }) 
   expect(sent(calls, 'POST /api/supply-chain/shipments/1/status/')).toMatchObject({ status: 'delivered', quality_passed: 'true' })
 })
 
+test('a shipment in transit is edited: quantity and expected arrival', async ({ page }) => {
+  await signIn(page, 'supply_chain')
+  const calls = await mockApi(page, {
+    ...SHELL,
+    ...SUPPLY_SHELL,
+    'GET /api/supply-chain/shipments/': { count: 1, results: [{ id: 1, shipment_number: 'TEST-SH-1', supplier: 'TEST Farms', item: 'TEST Raw Chilli',
+      quantity: 20, unit: 'kg', destination: 'TEST Godown', dispatched_on: '2026-10-01', eta: '2026-10-25', status: 'In Transit', can_update: true }] },
+    'PATCH /api/supply-chain/shipments/1/': { id: 1, shipment_number: 'TEST-SH-1', status: 'In Transit' },
+  })
+  await page.goto('/supply-chain')
+  await page.getByRole('button', { name: 'Track Shipments' }).click()
+  await page.getByRole('button', { name: 'Edit TEST-SH-1' }).click()
+  const form = page.getByRole('dialog', { name: 'Edit TEST-SH-1' })
+  await form.getByLabel(/^Quantity/).fill('25')
+  await form.getByLabel(/^Expected arrival/).fill('2026-10-28')
+  await form.getByRole('button', { name: 'Save' }).click()
+  await expect(page.getByText('TEST-SH-1 updated')).toBeVisible()
+  expect(sent(calls, 'PATCH /api/supply-chain/shipments/1/')).toEqual({ quantity: 25, destination: 'TEST Godown', dispatched_on: '2026-10-01', eta: '2026-10-28' })
+})
+
 test('a shipment saved without a purchase is linked to its purchase', async ({ page }) => {
   await signIn(page, 'supply_chain')
   const unlinked = { id: 2, shipment_number: 'TEST-SH-2', supplier: 'TEST Farms', item: 'TEST Raw Pepper', quantity: 20, unit: 'kg',

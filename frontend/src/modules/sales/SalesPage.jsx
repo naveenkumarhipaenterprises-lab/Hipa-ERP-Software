@@ -141,7 +141,7 @@ export default function SalesPage() {
         {tab === 'quotations' && <QuotationsPanel options={options} canManage={canManage} refreshKey={refreshKey} onChanged={refresh} />}
         {tab === 'orders' && (
           <OrdersPanel range={range} product={product} rangeLabel={rangeLabel} refreshKey={refreshKey} statuses={options.data?.statuses}
-                       canManage={canManage} onChanged={refresh} />
+                       options={options} canManage={canManage} onChanged={refresh} />
         )}
         {tab === 'invoices' && (
           <InvoicesPanel options={options} canManage={canManage} canReceive={canReceive} refreshKey={refreshKey} onChanged={refresh}

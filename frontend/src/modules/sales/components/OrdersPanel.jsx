@@ -1,4 +1,4 @@
-﻿import { ArrowRightCircle, Eye, ReceiptText, Search, ShoppingCart, Truck, XCircle } from 'lucide-react'
+﻿import { ArrowRightCircle, Eye, Pencil, ReceiptText, Search, ShoppingCart, Truck, XCircle } from 'lucide-react'
 import { useState } from 'react'
 import { salesApi } from '../../../api/salesApi'
 import Badge from '../../../components/common/Badge'
@@ -21,6 +21,7 @@ import DeleteRecordButton from '../../../components/common/DeleteRecordButton'
 import { useAuth } from '../../../hooks/useAuth'
 import { DELIVERY_MANAGERS, DELIVERY_VIEWERS, hasAnyRole } from '../../../utils/constants'
 import DeliveryDetailsModal from '../../supplyChain/components/DeliveryDetailsModal'
+import OrderEditor from './OrderEditor'
 
 const PAGE_SIZE = 10
 const has = (v) => v !== null && v !== undefined && v !== ''
@@ -30,7 +31,7 @@ const has = (v) => v !== null && v !== undefined && v !== ''
  * Cancelling is offered only where the backend marks the order `can_cancel`; the status moves forward
  * one step at a time to the backend's `next_status`.
  */
-export default function OrdersPanel({ range, product, rangeLabel, refreshKey, statuses, canManage, onChanged }) {
+export default function OrdersPanel({ range, product, rangeLabel, refreshKey, statuses, options, canManage, onChanged }) {
   const toast = useToast()
   const [search, setSearch] = useState('')
   const [status, setStatus] = useState('')
@@ -38,6 +39,7 @@ export default function OrdersPanel({ range, product, rangeLabel, refreshKey, st
   const [invoicing, setInvoicing] = useState(null)
   const [viewing, setViewing] = useState(null)
   const [advancing, setAdvancing] = useState(null)
+  const [editing, setEditing] = useState(null)
   const [delivery, setDelivery] = useState(null) // order id whose delivery details are open
   const { user } = useAuth()
   // Delivery status uses the same rule as Supply Chain -> Customer Deliveries
@@ -93,6 +95,9 @@ export default function OrdersPanel({ range, product, rangeLabel, refreshKey, st
         <Button variant="ghost" size="sm" icon={Eye} onClick={() => setViewing(r)} aria-label={`View order ${r.order_number ?? r.id}`} />
         {canSeeDelivery && r.delivery_status && (
           <Button variant="ghost" size="sm" icon={Truck} onClick={() => setDelivery(r.id)} aria-label={`Delivery details of ${r.order_number ?? r.id}`} />
+        )}
+        {canManage && r.can_edit === true && (
+          <Button variant="ghost" size="sm" icon={Pencil} onClick={() => setEditing(r)} aria-label={`Edit order ${r.order_number ?? r.id}`} />
         )}
         {canManage && r.next_status && (
           <Button variant="ghost" size="sm" icon={ArrowRightCircle} onClick={() => setAdvancing(r)} aria-label={`Mark ${r.order_number ?? r.id} ${r.next_status.label}`} />
@@ -192,6 +197,14 @@ export default function OrdersPanel({ range, product, rangeLabel, refreshKey, st
         cancelLabel="Back"
       />
       <OrderDetail order={viewing} onClose={() => setViewing(null)} />
+      {editing && (
+        <OrderEditor order={editing} options={options} onClose={() => setEditing(null)}
+                     onSaved={(saved) => {
+                       toast.success(`Order ${saved.order_number ?? editing.order_number} updated`)
+                       if (onChanged) onChanged()
+                       else orders.reload()
+                     }} />
+      )}
       <DeliveryDetailsModal orderId={delivery} canManage={canManageDelivery} onClose={() => setDelivery(null)}
                             onChanged={() => (onChanged ? onChanged() : orders.reload())} />
     </Card>

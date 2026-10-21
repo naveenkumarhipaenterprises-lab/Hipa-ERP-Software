@@ -217,19 +217,47 @@ class ShipmentsView(SupplyView):
         quantity = parsing.decimal(d, "quantity", errors, places=3, positive=True,
                                    default=(purchase.quantity - purchase.received_quantity) if purchase else None,
                                    message="Enter the quantity shipped.")
-        destination = parsing.text(d, "destination", 120, required=True, errors=errors)
-        dispatched_on = parsing.date(d, "dispatched_on", errors, required=False, label="dispatch date") or periods.today()
-        eta = parsing.date(d, "eta", errors, label="expected arrival date")
-        if dispatched_on > periods.today():
-            errors["dispatched_on"] = ["The dispatch date can't be in the future."]
-        if eta and eta < dispatched_on:
-            errors["eta"] = ["The expected arrival can't be before the dispatch date."]
+        destination, dispatched_on, eta = read_route(d, errors)
         if errors:
             raise ValidationError(errors)
         s = Shipment.objects.create(supplier=supplier, purchase=purchase, material=material, product=product, quantity=quantity,
                                     unit=unit, destination=destination, dispatched_on=dispatched_on, eta=eta)
         audit.record(request, "Created shipment", f"{s.shipment_number} from {supplier.name}")
         return Response(shipment_row(s), status=status.HTTP_201_CREATED)
+
+
+def read_route(d, errors):
+    """destination, dispatch date (today when empty) and expected arrival, checked together."""
+    destination = parsing.text(d, "destination", 120, required=True, errors=errors)
+    dispatched_on = parsing.date(d, "dispatched_on", errors, required=False, label="dispatch date") or periods.today()
+    eta = parsing.date(d, "eta", errors, label="expected arrival date")
+    if dispatched_on > periods.today():
+        errors["dispatched_on"] = ["The dispatch date can't be in the future."]
+    if eta and eta < dispatched_on:
+        errors["eta"] = ["The expected arrival can't be before the dispatch date."]
+    return destination, dispatched_on, eta
+
+
+class ShipmentDetailView(SupplyView):
+    def patch(self, request, pk):
+        """{quantity?, destination?, dispatched_on?, eta?} until the shipment is delivered. Supplier, item, unit and
+        purchase stay as recorded; the status changes through /status/. Fields not sent keep their value."""
+        errors = {}
+        with transaction.atomic():
+            s = get_object_or_404(Shipment.objects.select_for_update(of=("self",)), pk=pk)
+            if s.status == Sh.DELIVERED:
+                raise ValidationError({"detail": f"{s.shipment_number} is delivered, so it can't be changed."})
+            current = {"quantity": str(s.quantity), "destination": s.destination, "dispatched_on": s.dispatched_on.isoformat(),
+                       "eta": s.eta.isoformat()}
+            d = {**current, **{k: request.data.get(k) for k in current if k in request.data}}
+            quantity = parsing.decimal(d, "quantity", errors, places=3, positive=True, message="Enter the quantity shipped.")
+            destination, dispatched_on, eta = read_route(d, errors)
+            if errors:
+                raise ValidationError(errors)
+            s.quantity, s.destination, s.dispatched_on, s.eta = quantity, destination, dispatched_on, eta
+            s.save(update_fields=["quantity", "destination", "dispatched_on", "eta"])
+        audit.record(request, "Edited shipment", s.shipment_number)
+        return Response(shipment_row(Shipment.objects.select_related("supplier", "purchase", "material", "product").get(pk=pk)))
 
 
 def linkable_purchases(s):

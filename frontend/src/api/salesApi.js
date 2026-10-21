@@ -45,6 +45,8 @@ export const salesApi = {
   listOrders: (params) => api.get('/sales/orders/', clean(params)),
   getOrder: (id) => api.get(`/sales/orders/${id}/`),
   createOrder: (order) => api.post('/sales/orders/', order),
+  /** PATCH { order_date?, notes?, items? }: a pending order that isn't invoiced (stock is rebalanced by the server). */
+  updateOrder: (id, changes) => api.patch(`/sales/orders/${id}/`, changes),
   // Moves the order one step forward: Pending -> Processing -> In Transit -> Delivered (row.next_status)
   setOrderStatus: (id, status) => api.post(`/sales/orders/${id}/status/`, { status }),
   cancelOrder: (id) => api.post(`/sales/orders/${id}/cancel/`),

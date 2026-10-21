@@ -1,8 +1,9 @@
-import { CircleCheck, Clock, Link2, Search, Truck } from 'lucide-react'
+import { CircleCheck, Clock, Link2, Pencil, Search, Truck } from 'lucide-react'
 import { useState } from 'react'
 import { supplyChainApi } from '../../../api/supplyChainApi'
 import Button from '../../../components/common/Button'
 import ErrorMessage from '../../../components/common/ErrorMessage'
+import FormModal from '../../../components/common/FormModal'
 import { Select } from '../../../components/common/Input'
 import Modal from '../../../components/common/Modal'
 import Table from '../../../components/common/Table'
@@ -29,6 +30,7 @@ function Shipments({ statuses, canManage, onChanged, onClose }) {
   const toast = useToast()
   const [change, setChange] = useState(null) // { shipment, status }
   const [linking, setLinking] = useState(null) // shipment
+  const [editing, setEditing] = useState(null) // shipment
   const [search, setSearch] = useState('')
   const [status, setStatus] = useState('')
   const query = useDebouncedValue(search.trim())
@@ -51,10 +53,20 @@ function Shipments({ statuses, canManage, onChanged, onClose }) {
     onChanged?.()
   }
 
+  const saveEdit = async (values) => {
+    const s = await supplyChainApi.updateShipment(editing.id, values)
+    toast.success(`${s.shipment_number} updated`)
+    shipments.reload()
+    onChanged?.()
+  }
+
   const columns = [...SHIPMENT_COLUMNS, {
         key: 'actions', sticky: true, align: 'right', header: <span className="sr-only">Actions</span>,
         render: (r) => (
           <span className="row-actions">
+            {canManage && r.can_update && (
+              <Button size="sm" variant="ghost" icon={Pencil} onClick={() => setEditing(r)} aria-label={`Edit ${r.shipment_number}`} />
+            )}
             {canManage && r.can_link_purchase && (
               <Button size="sm" variant="ghost" icon={Link2} onClick={() => setLinking(r)} aria-label={`Link ${r.shipment_number} to a purchase`} />
             )}
@@ -103,6 +115,22 @@ function Shipments({ statuses, canManage, onChanged, onClose }) {
       )}
       <ShipmentStatusModal change={change} onClose={() => setChange(null)} onSubmit={updateStatus} />
       <LinkPurchaseModal shipment={linking} onClose={() => setLinking(null)} onSubmit={linkPurchase} />
+      <FormModal
+        open={Boolean(editing)}
+        onClose={() => setEditing(null)}
+        title={editing ? `Edit ${editing.shipment_number}` : ''}
+        subtitle={editing ? `${editing.item} from ${editing.supplier}. Supplier, item and purchase stay as recorded.` : ''}
+        initialValues={editing ? { quantity: editing.quantity, destination: editing.destination, dispatched_on: editing.dispatched_on,
+                                   eta: editing.eta } : {}}
+        fields={[
+          { name: 'quantity', label: `Quantity${editing?.unit ? ` (${editing.unit})` : ''}`, type: 'number', required: true, min: 0.001 },
+          { name: 'destination', label: 'Destination', required: true },
+          { name: 'dispatched_on', label: 'Dispatched on', type: 'date', required: true },
+          { name: 'eta', label: 'Expected arrival', type: 'date', required: true },
+        ]}
+        submitLabel="Save"
+        onSubmit={saveEdit}
+      />
     </Modal>
   )
 }

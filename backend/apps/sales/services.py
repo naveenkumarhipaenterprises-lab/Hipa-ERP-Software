@@ -199,6 +199,15 @@ def create_order(*, customer, order_date, lines, notes, user, quotation=None):
     return order
 
 
+def replace_order_lines(order, lines, user):
+    """A pending order's products change: the old quantities go back into stock, the new ones come out
+    (refused, with nothing changed, when there isn't enough stock). Call inside a transaction with the order locked."""
+    stock_in(lines_of(order), source=StockMovement.Source.SALE_CANCEL, reference=order.order_number, user=user)
+    set_lines(order, SalesOrderItem, "order", lines)
+    stock_out(lines, source=StockMovement.Source.SALE, reference=order.order_number, user=user)
+    return order
+
+
 @transaction.atomic
 def quotation_to_order(quotation, user, order_date=None):
     q = SalesQuotation.objects.select_for_update(of=("self",)).get(pk=quotation.pk)

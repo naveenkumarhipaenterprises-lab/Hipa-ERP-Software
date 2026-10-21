@@ -8,6 +8,7 @@ urlpatterns = [
     path("supplier-performance/", views.SupplierPerformanceView.as_view()),
     path("options/", views.OptionsView.as_view()),
     path("shipments/", views.ShipmentsView.as_view()),
+    path("shipments/<int:pk>/", views.ShipmentDetailView.as_view()),
     path("shipments/<int:pk>/status/", views.ShipmentStatusView.as_view()),
     path("shipments/<int:pk>/purchase/", views.ShipmentPurchaseView.as_view()),
     # Customer deliveries: keyed by the sales order id

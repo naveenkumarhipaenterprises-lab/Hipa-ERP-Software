@@ -77,3 +77,32 @@ test('an order moves to its next status after confirming', async ({ page }) => {
   await expect(page.getByText('Order TEST-1 marked In Transit')).toBeVisible()
   expect(calls.find((c) => c.key === 'POST /api/sales/orders/1/status/').body).toEqual({ status: 'in_transit' })
 })
+
+test('a pending order is edited: products, quantities and GST, with the stock note shown', async ({ page }) => {
+  await signIn(page, 'sales')
+  const row = { id: 3, order_number: 'TEST-3', customer: 'TEST Buyer', product: 'TEST Chilli', status: 'Pending', can_edit: true, can_cancel: true }
+  const calls = await mockApi(page, {
+    ...SHELL,
+    'GET /api/sales/options/': { ...TEST_OPTIONS, products: [{ id: 21, name: 'TEST Chilli', price_per_kg: 300 }, { id: 22, name: 'TEST Turmeric', price_per_kg: 250 }],
+      defaults: { gst_pct: 5 } },
+    'GET /api/sales/orders/': { count: 1, results: [row] },
+    'GET /api/sales/orders/3/': { ...row, date: '2026-10-01', notes: null,
+      items: [{ product_id: 21, product: 'TEST Chilli', quantity_kg: 10, unit_price: 300, discount_pct: 0, gst_pct: 0 }] },
+    'PATCH /api/sales/orders/3/': { ...row, order_number: 'TEST-3' },
+  })
+  await page.goto('/sales?tab=orders')
+  await page.getByRole('button', { name: 'Edit order TEST-3' }).click()
+  const form = page.getByRole('dialog', { name: 'Edit Order TEST-3' })
+  await expect(form.getByText(/Changing products or quantities updates the stock/)).toBeVisible()
+  await form.getByLabel('Quantity, row 1').fill('8')
+  await form.getByRole('button', { name: 'Add Product' }).click()
+  await form.getByLabel('Product, row 2').selectOption('22')
+  await form.getByLabel('Quantity, row 2').fill('4')
+  await form.getByRole('button', { name: 'Save Order' }).click()
+  await expect(page.getByText('Order TEST-3 updated')).toBeVisible()
+  expect(calls.find((c) => c.key === 'PATCH /api/sales/orders/3/').body).toEqual({
+    order_date: '2026-10-01', notes: '',
+    items: [{ product_id: '21', quantity_kg: 8, unit_price: 300, discount_pct: 0, gst_pct: 0 },
+            { product_id: '22', quantity_kg: 4, gst_pct: 5 }], // a new line starts with the default GST
+  })
+})

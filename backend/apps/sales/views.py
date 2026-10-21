@@ -45,6 +45,7 @@ def order_row(o):
         "invoice_id": invoice.id if invoice else None,
         "invoice_number": invoice.invoice_number if invoice else None,
         "can_cancel": o.status in SalesOrder.CANCELLABLE and invoice is None,
+        "can_edit": o.status == St.PENDING and invoice is None,
         "can_invoice": o.status != St.CANCELLED and invoice is None,
         "next_status": ({"value": nxt, "label": St(nxt).label} if (nxt := SalesOrder.NEXT_STATUS.get(o.status)) else None),
         **delivery_fields(o),
@@ -204,7 +205,7 @@ class OrdersView(SalesView):
 
     def post(self, request):
         """Body: customer_id, order_date, notes and either items[] (several products, with discount / GST)
-        or the single-product fields product_id + quantity_kg (price from the product, no discount or GST)."""
+        or the single-product fields product_id + quantity_kg (price from the product, the default sales GST)."""
         d = request.data
         errors = {}
         customer = Customer.objects.filter(pk=d.get("customer_id"), status=Customer.Status.ACTIVE).first() if str(d.get("customer_id", "")).isdigit() else None
@@ -225,12 +226,8 @@ class OrdersView(SalesView):
                 errors["quantity_kg"] = ["Enter a quantity greater than 0 (up to 3 decimals)."]
             if product and "quantity_kg" not in errors:
                 lines = [{"product": product, "quantity_kg": qty, "unit_price": product.price_per_kg,
-                          "discount_pct": Decimal("0"), "gst_pct": Decimal("0")}]
-        order_date = parse_date(str(d.get("order_date") or ""))
-        if not order_date:
-            errors["order_date"] = ["Enter the order date (YYYY-MM-DD)."]
-        elif order_date > periods.today():
-            errors["order_date"] = ["The order date can't be in the future."]
+                          "discount_pct": Decimal("0"), "gst_pct": BillingSettings.load().default_sales_gst_pct or Decimal("0")}]
+        order_date = read_order_date(d, errors)
         if errors:
             raise ValidationError(errors)
 
@@ -251,13 +248,54 @@ def item_row(i):
             "amount": num(i.total)}
 
 
+def read_order_date(d, errors):
+    order_date = parse_date(str(d.get("order_date") or ""))
+    if not order_date:
+        errors["order_date"] = ["Enter the order date (YYYY-MM-DD)."]
+    elif order_date > periods.today():
+        errors["order_date"] = ["The order date can't be in the future."]
+    return order_date
+
+
+def order_detail(pk):
+    o = get_object_or_404(orders_qs(), pk=pk)
+    row = order_row(o)
+    row["notes"] = o.notes or None
+    row["items"] = [item_row(i) for i in o.items.all()]
+    return row
+
+
 class OrderDetailView(SalesView):
     def get(self, request, pk):
-        o = get_object_or_404(orders_qs(), pk=pk)
-        row = order_row(o)
-        row["notes"] = o.notes or None
-        row["items"] = [item_row(i) for i in o.items.all()]
-        return Response(row)
+        return Response(order_detail(pk))
+
+    def patch(self, request, pk):
+        """{order_date?, notes?, items?}: only a pending order that isn't invoiced. New products / quantities put the
+        old quantities back into stock and take the new ones out. The customer can't change: cancel and re-create."""
+        d = request.data
+        errors = {}
+        lines = services.read_lines(d, errors) if "items" in d else None
+        order_date = read_order_date(d, errors) if "order_date" in d else None
+        with transaction.atomic():
+            order = get_object_or_404(SalesOrder.objects.select_for_update(of=("self",)), pk=pk)
+            if order.status != St.PENDING:
+                raise ValidationError({"detail": f"A {order.get_status_display().lower()} order can't be edited."})
+            invoice = services.active_invoice(sales_order=order)
+            if invoice:
+                raise ValidationError({"detail": f"This order is invoiced as {invoice.invoice_number}, so it can't be edited."})
+            if str(d.get("customer_id", order.customer_id)) != str(order.customer_id):
+                errors["customer_id"] = ["The customer of an order can't change. Cancel it and create a new order."]
+            if errors:
+                raise ValidationError(errors)
+            if lines is not None:
+                services.replace_order_lines(order, lines, request.user)
+            if order_date:
+                order.order_date = order_date
+            if "notes" in d:
+                order.notes = str(d.get("notes") or "").strip()[:500]
+            order.save()
+        audit.record(request, "Edited sales order", order.order_number)
+        return Response(order_detail(pk))
 
 
 class OrderToInvoiceView(SalesView):
