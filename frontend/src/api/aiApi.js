@@ -1,4 +1,4 @@
-import { api, cleanParams as clean } from './client'
+import { LONG_REQUEST, api, cleanParams as clean } from './client'
 
 /**
  * AI Assistant endpoints (Django REST API -> AI engine).
@@ -19,6 +19,6 @@ import { api, cleanParams as clean } from './client'
 export const aiApi = {
   getStatus: () => api.get('/ai/status/'),
   getHome: () => api.get('/ai/home/'),
-  ask: ({ file, ...body }) => (file ? api.upload('/ai/chat/', file, 'file', body) : api.post('/ai/chat/', clean(body))),
+  ask: ({ file, ...body }) => (file ? api.upload('/ai/chat/', file, 'file', body, LONG_REQUEST) : api.post('/ai/chat/', clean(body), LONG_REQUEST)),
   getConversation: (id) => api.get(`/ai/conversations/${id}/`),
 }

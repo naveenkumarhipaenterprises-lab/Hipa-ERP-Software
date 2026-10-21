@@ -9,7 +9,7 @@ import { formatNumber } from '../../../utils/formatters'
 const MAX_BYTES = 5 * 1024 * 1024
 
 /**
- * Uploads a CSV to POST /customers/import/. The backend parses and validates it;
+ * Uploads a CSV or Excel (.xlsx) file to POST /customers/import/. The backend parses and validates it;
  * this dialog only checks the file type and size, then shows the server's summary.
  */
 export default function ImportCustomersModal({ open, onClose, onImported }) {
@@ -29,9 +29,9 @@ function ImportDialog({ onClose, onImported }) {
     const f = e.target.files?.[0] ?? null
     setResult(null)
     setError('')
-    if (f && !/\.csv$/i.test(f.name)) {
+    if (f && !/\.(csv|xlsx)$/i.test(f.name)) {
       setFile(null)
-      setError('Please choose a .csv file.')
+      setError('Please choose a .csv or .xlsx file.')
       return
     }
     if (f && f.size > MAX_BYTES) {
@@ -132,10 +132,10 @@ function ImportDialog({ onClose, onImported }) {
           <ErrorMessage message={templateError} />
 
           {/* Input comes first so its keyboard focus can highlight the label (input:focus-visible + .file-drop) */}
-          <input id={inputId} type="file" accept=".csv,text/csv" className="sr-only" onChange={pick} disabled={pending} />
+          <input id={inputId} type="file" accept=".csv,text/csv,.xlsx" className="sr-only" onChange={pick} disabled={pending} />
           <label htmlFor={inputId} className={`file-drop ${file ? 'file-drop--chosen' : ''}`}>
             <FileSpreadsheet size={26} aria-hidden />
-            <span>{file ? file.name : 'Choose a CSV file'}</span>
+            <span>{file ? file.name : 'Choose a CSV or Excel (.xlsx) file'}</span>
             <small>{file ? `${formatNumber(Math.ceil(file.size / 1024))} KB` : 'Maximum 5 MB'}</small>
           </label>
           <ErrorMessage message={error} />

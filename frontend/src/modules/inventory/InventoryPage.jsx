@@ -1,5 +1,5 @@
 ﻿import { BarChart3, ClipboardList, Download, IndianRupee, Package, PackageMinus, PackagePlus, Plus, TriangleAlert } from 'lucide-react'
-import { useState } from 'react'
+import { useCallback, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { inventoryApi } from '../../api/inventoryApi'
 import DonutChart from '../../components/charts/DonutChart'
@@ -56,6 +56,10 @@ export default function InventoryPage() {
   const [modal, setModal] = useState(null) // 'add' | 'in' | 'out'
   const [refreshKey, setRefreshKey] = useState(0)
   const [downloading, setDownloading] = useState(false)
+  const listFilters = useRef({}) // search / status / active of the product list, for the export
+  const setListFilters = useCallback((filters) => {
+    listFilters.current = filters
+  }, [])
 
   const canManage = hasAnyRole(user, STOCK_MANAGERS)
   const [deletingMove, setDeletingMove] = useState(null) // a wrong hand-entered movement a Super Admin is deleting
@@ -94,7 +98,7 @@ export default function InventoryPage() {
   const downloadReport = async () => {
     setDownloading(true)
     try {
-      await inventoryApi.exportItems()
+      await inventoryApi.exportItems(listFilters.current)
     } catch (err) {
       toast.error(err.message)
     } finally {
@@ -202,7 +206,7 @@ export default function InventoryPage() {
       {/* When the overview fails its banner covers the page; Retry reloads the table too */}
       {!failed && (
         <div className="grid-main-side">
-          <InventoryItemsTable refreshKey={refreshKey} statuses={options.data?.statuses} canManage={canManage} onChanged={refresh} />
+          <InventoryItemsTable refreshKey={refreshKey} statuses={options.data?.statuses} canManage={canManage} onChanged={refresh} onFiltersChange={setListFilters} />
           <div className="stack">
             <Card title="Low Stock Alerts">
               {loading ? <div className="skeleton skeleton--list" aria-label="Loading" /> : <LowStockAlerts items={data?.low_stock} />}

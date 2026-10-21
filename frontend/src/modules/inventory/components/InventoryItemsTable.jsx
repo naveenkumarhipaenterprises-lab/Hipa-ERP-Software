@@ -1,5 +1,5 @@
 ﻿import { Eye, Package, Pencil, Search } from 'lucide-react'
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { inventoryApi } from '../../../api/inventoryApi'
 import Badge from '../../../components/common/Badge'
 import Button from '../../../components/common/Button'
@@ -38,7 +38,7 @@ const EDIT_FIELDS = [
 ]
 
 /** Product inventory list: server-side search, status filter and pagination, with a details view and editing. */
-export default function InventoryItemsTable({ refreshKey, statuses, canManage, onChanged }) {
+export default function InventoryItemsTable({ refreshKey, statuses, canManage, onChanged, onFiltersChange }) {
   const toast = useToast()
   const [search, setSearch] = useState('')
   const [status, setStatus] = useState('')
@@ -47,6 +47,11 @@ export default function InventoryItemsTable({ refreshKey, statuses, canManage, o
   const [active, setActive] = useState('true')
   const query = useDebouncedValue(search.trim())
   const [page, setPage] = usePageReset(JSON.stringify([query, status, active]))
+
+  // The page's "Download Report" exports the same products this list shows
+  useEffect(() => {
+    onFiltersChange?.({ search: query, status, active })
+  }, [onFiltersChange, query, status, active])
 
   const items = useApi(() => inventoryApi.listItems({ page, page_size: PAGE_SIZE, search: query, status, active }), [page, query, status, active, refreshKey])
   const rows = Array.isArray(items.data?.results) ? items.data.results : []

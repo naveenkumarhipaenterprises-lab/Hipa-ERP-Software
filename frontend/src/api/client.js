@@ -59,14 +59,22 @@ client.interceptors.response.use(
 
 /** Turns axios / DRF errors into one readable message. */
 const UNREACHABLE = 'Cannot reach the server. Please check that the HIPA MASALA backend is running and try again.'
+const TOO_SLOW = 'The server is taking too long to answer. Please try again in a moment.'
 const FALLBACK = 'Something went wrong. Please try again.'
+
+/** For slow requests (AI answers, reports, imports): config to pass as the last argument of an api call. */
+export const LONG_REQUEST = { timeout: 120000 }
 
 function toApiError(error) {
   const status = error.response?.status
   const data = error.response?.data
+  const hasDetail = Boolean(data && typeof data === 'object' && !(data instanceof Blob) && data.detail)
   let message = FALLBACK
-  // No response, or a gateway error from the dev proxy / web server = backend down
-  if (!error.response || [502, 503, 504].includes(status)) message = UNREACHABLE
+  // A timeout (ours, or the hosting's 504) is not the same as a backend that is down
+  if (error.code === 'ECONNABORTED' || error.code === 'ETIMEDOUT' || (status === 504 && !hasDetail)) message = TOO_SLOW
+  // No response, or a gateway error from the dev proxy / web server = backend down; the backend's own
+  // 503s (e.g. "the AI engine could not answer") carry a detail message, which is shown instead
+  else if (!error.response || ([502, 503].includes(status) && !hasDetail)) message = UNREACHABLE
   else if (data instanceof Blob) message = status === 404 ? 'This file is not available yet.' : FALLBACK
   else if (typeof data === 'string' && data.trim() && data.length < 200) message = data.trim()
   else if (data?.detail) message = String(data.detail)
@@ -91,23 +99,23 @@ export const cleanParams = (params) =>
  * error state. There is no fallback data.
  */
 export const api = {
-  get: async (url, params) => (await client.get(url, { params })).data,
-  post: async (url, body) => (await client.post(url, body)).data,
+  get: async (url, params, config) => (await client.get(url, { params, ...config })).data,
+  post: async (url, body, config) => (await client.post(url, body, config)).data,
   put: async (url, body) => (await client.put(url, body)).data,
   patch: async (url, body) => (await client.patch(url, body)).data,
   delete: async (url) => (await client.delete(url)).data,
   /** Sends a file as multipart/form-data (e.g. CSV imports), with optional extra form fields. */
-  upload: async (url, file, field = 'file', extra = {}) => {
+  upload: async (url, file, field = 'file', extra = {}, config) => {
     const form = new FormData()
     form.append(field, file)
     for (const [k, v] of Object.entries(cleanParams(extra))) form.append(k, typeof v === 'boolean' ? String(v) : v)
-    return (await client.post(url, form, { headers: { 'Content-Type': 'multipart/form-data' } })).data
+    return (await client.post(url, form, { headers: { 'Content-Type': 'multipart/form-data' }, ...config })).data
   },
   /** Fetches a generated file (e.g. a quotation PDF) as a Blob, for previewing or printing in the browser. */
   blob: async (url, params) => (await client.get(url, { params, responseType: 'blob' })).data,
   /** Saves a file the backend generates (reports, exports). Uses the server's filename when it sends one. */
-  download: async (url, params, fallbackName) => {
-    const res = await client.get(url, { params, responseType: 'blob' })
+  download: async (url, params, fallbackName, config) => {
+    const res = await client.get(url, { params, responseType: 'blob', ...config })
     const match = /filename\*?=(?:UTF-8'')?"?([^";]+)"?/i.exec(res.headers['content-disposition'] ?? '')
     const name = match ? decodeURIComponent(match[1]) : fallbackName
     const href = URL.createObjectURL(res.data)

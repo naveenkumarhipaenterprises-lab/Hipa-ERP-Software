@@ -1,4 +1,4 @@
-import { api, cleanParams as clean } from './client'
+import { LONG_REQUEST, api, cleanParams as clean } from './client'
 
 /**
  * Customer endpoints (Django REST API).
@@ -40,6 +40,6 @@ export const customersApi = {
   update: (id, changes) => api.patch(`/customers/${id}/`, changes),
   exportList: (params) => api.download('/customers/export/', clean(params), 'hipa-customers.csv'),
   downloadTemplate: () => api.download('/customers/import/template/', {}, 'hipa-customers-template.csv'),
-  importFile: (file) => api.upload('/customers/import/', file),
+  importFile: (file) => api.upload('/customers/import/', file, 'file', {}, LONG_REQUEST),
   sendOffer: (offer) => api.post('/customers/offers/', offer),
 }

@@ -19,7 +19,7 @@
  * { count, results: [{ id, product, stock_kg, min_stock_kg, reorder_level_kg, price_per_kg, stock_value, status, is_active, updated_at }] }
  *
  * GET /inventory/movements/?item=&page_size=   ->  { count, results: [movement] }
- * GET /inventory/items/export/                  ->  CSV file of all items
+ * GET /inventory/items/export/?search=&status=&active=  ->  CSV file of the items the list shows
  *
  * POST /inventory/items/      { product_name, opening_stock_kg, price_per_kg, min_stock_kg, reorder_level_kg }
  * POST /inventory/movements/  { item_id, type: 'in' | 'out', quantity_kg, note? }
@@ -35,5 +35,5 @@ export const inventoryApi = {
   recordMovement: (movement) => api.post('/inventory/movements/', movement),
   // Super Admin only: deletes a wrong hand-entered movement and puts the stock back
   deleteMovement: (id) => api.delete(`/inventory/movements/${id}/`),
-  exportItems: () => api.download('/inventory/items/export/', {}, 'hipa-inventory-report.csv'),
+  exportItems: (filters) => api.download('/inventory/items/export/', clean(filters), 'hipa-inventory-report.csv'),
 }

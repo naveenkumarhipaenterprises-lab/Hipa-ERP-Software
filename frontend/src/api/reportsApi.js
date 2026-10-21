@@ -1,4 +1,4 @@
-import { api, cleanParams as clean } from './client'
+import { LONG_REQUEST, api, cleanParams as clean } from './client'
 
 /**
  * Report endpoints (Django REST API).
@@ -26,8 +26,8 @@ export const reportsApi = {
   getOverview: ({ range }) => api.get('/reports/overview/', clean({ range })),
   getPreview: ({ type, range }) => api.get('/reports/preview/', clean({ type, range })),
   exportPreview: ({ type, range, format }) =>
-    api.download('/reports/export/', clean({ type, range, format }), `hipa-${type}-report.${format === 'xlsx' ? 'xlsx' : format}`),
+    api.download('/reports/export/', clean({ type, range, format }), `hipa-${type}-report.${format === 'xlsx' ? 'xlsx' : format}`, LONG_REQUEST),
   list: (params) => api.get('/reports/', clean(params)),
-  generate: (report) => api.post('/reports/', report),
-  download: (report) => api.download(`/reports/${report.id}/download/`, {}, `hipa-report-${report.id}.${report.format || 'pdf'}`),
+  generate: (report) => api.post('/reports/', report, LONG_REQUEST),
+  download: (report) => api.download(`/reports/${report.id}/download/`, {}, `hipa-report-${report.id}.${report.format || 'pdf'}`, LONG_REQUEST),
 }

@@ -1,6 +1,6 @@
 import { AxiosError } from 'axios'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import client, { api, cleanParams, tokenStorage } from './client'
+import client, { LONG_REQUEST, api, cleanParams, tokenStorage } from './client'
 
 // Replaces axios's network layer inside these tests only: nothing leaves the test process
 let respond
@@ -37,6 +37,32 @@ describe('api client', () => {
     await expect(api.get('/x/')).rejects.toThrow(/Cannot reach the server/)
     respond = (config) => reply(502, '', config)
     await expect(api.get('/x/')).rejects.toThrow(/Cannot reach the server/)
+  })
+
+  it('says "taking too long" for a timeout or a 504, not "cannot reach the server"', async () => {
+    respond = (config) => {
+      throw new AxiosError('timeout of 20000ms exceeded', 'ECONNABORTED', config)
+    }
+    await expect(api.get('/x/')).rejects.toThrow(/taking too long/)
+    respond = (config) => reply(504, '', config)
+    await expect(api.get('/x/')).rejects.toThrow(/taking too long/)
+  })
+
+  it("shows the backend's own 503 message (e.g. the AI engine) instead of 'cannot reach the server'", async () => {
+    respond = (config) => reply(503, { detail: 'The AI engine could not answer right now.' }, config)
+    await expect(api.post('/ai/chat/', {})).rejects.toThrow('The AI engine could not answer right now.')
+  })
+
+  it('lets slow requests wait longer than the default', async () => {
+    let timeout
+    respond = (config) => {
+      timeout = config.timeout
+      return reply(200, {}, config)
+    }
+    await api.get('/x/')
+    expect(timeout).toBe(20000)
+    await api.post('/ai/chat/', {}, LONG_REQUEST)
+    expect(timeout).toBe(LONG_REQUEST.timeout)
   })
 
   it('uses the DRF "detail" message, or the first field error, and keeps the field errors', async () => {

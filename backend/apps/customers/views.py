@@ -172,9 +172,15 @@ class ImportTemplateView(CustomersModuleView):
         return csv_response("hipa-customers-template.csv", TEMPLATE_HEADER, [])
 
 
+MAX_IMPORT_BYTES = 5 * 1024 * 1024
+MAX_IMPORT_ROWS = 5000
+
+
 def read_rows(upload):
     """Rows of dicts from an uploaded CSV or Excel file, keyed by lower-case header."""
     name = (upload.name or "").lower()
+    if upload.size > MAX_IMPORT_BYTES:
+        raise ValidationError({"file": ["The file is larger than 5 MB. Split it into smaller files."]})
     if name.endswith((".xlsx", ".xlsm")):
         from openpyxl import load_workbook
 
@@ -200,6 +206,8 @@ class ImportView(CustomersModuleView):
         if not upload:
             raise ValidationError({"file": ["Choose a file to import."]})
         rows = read_rows(upload)
+        if len(rows) > MAX_IMPORT_ROWS:
+            raise ValidationError({"file": [f"The file has more than {MAX_IMPORT_ROWS:,} rows. Split it into smaller files."]})
         if rows and not {"name", "type", "city"} <= set(rows[0].keys()):
             raise ValidationError({"file": ["The file must have the columns: " + ", ".join(TEMPLATE_HEADER)]})
 
