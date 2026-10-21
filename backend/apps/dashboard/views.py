@@ -107,11 +107,14 @@ class SummaryView(ModuleAPIView):
             data["supplier_performance"] = supplier_performance(today - timedelta(days=180))[:5]
             data["low_stock_materials"] = low_stock_materials()[:5]
         if can_read(user, "inventory"):
-            low = [p for p in Product.objects.filter(is_active=True) if p.stock_status != Product.StockStatus.IN_STOCK]
+            # Not "In Stock" (Product.stock_status): out, at or below the minimum, or at or below the reorder level
+            low = (Product.objects.filter(is_active=True)
+                   .filter(Q(stock_kg__lte=0) | Q(stock_kg__lte=F("min_stock_kg")) | Q(stock_kg__lte=F("reorder_level_kg")))
+                   .order_by(F("stock_kg") - F("reorder_level_kg"), "name")[:5])
             data["low_stock"] = [
                 {"id": p.id, "product": p.name, "stock_kg": num(p.stock_kg), "reorder_level_kg": num(p.reorder_level_kg),
                  "status": Product.StockStatus(p.stock_status).label}
-                for p in sorted(low, key=lambda p: p.stock_kg - p.reorder_level_kg)[:5]
+                for p in low
             ]
         data["upcoming"] = upcoming(user, today)
         return Response(data)

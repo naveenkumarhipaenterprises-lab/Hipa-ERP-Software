@@ -28,8 +28,16 @@ def sums(qs):
     return {f: agg[f] or 0 for f in METRIC_FIELDS}
 
 
+def with_totals(qs):
+    """Each campaign's entered numbers added up in the same query (the list would otherwise ask once per row)."""
+    return qs.annotate(**{f"total_{f}": Sum(f"metrics__{f}") for f in METRIC_FIELDS})
+
+
 def campaign_row(c, today, editable):
-    m = sums(c.metrics.all())
+    if hasattr(c, "total_reach"):
+        m = {f: getattr(c, f"total_{f}") or 0 for f in METRIC_FIELDS}
+    else:
+        m = sums(c.metrics.all())
     st = c.status_on(today)
     return {"id": c.id, "name": c.name, "platform": c.get_platform_display(), "platform_value": c.platform,
             "objective": c.objective, "budget": num(c.budget), "description": c.description or None,
@@ -167,7 +175,7 @@ class CampaignsView(MarketingView):
         elif st == CS.ACTIVE:
             qs = qs.filter(ended_on__isnull=True, start_date__lte=today, end_date__gte=today)
         editable = can_write(request.user, "marketing")
-        return self.paginated(qs, lambda c: campaign_row(c, today, editable))
+        return self.paginated(with_totals(qs), lambda c: campaign_row(c, today, editable))
 
     def post(self, request):
         c = Campaign.objects.create(created_by=request.user, **read_campaign(request.data))
