@@ -337,7 +337,8 @@ class LoginActivityView(ModuleMixin, generics.GenericAPIView):
     def get(self, request):
         page = self.paginate_queryset(LoginActivity.objects.select_related("user"))
         rows = [
-            {"id": a.id, "user": (a.user.name or a.user.username) if a.user else a.username_attempted,
+            # The text typed for an unknown account isn't shown: it may be a mistyped password
+            {"id": a.id, "user": (a.user.name or a.user.username) if a.user else "Unknown account",
              "device": device_of(a.user_agent), "ip": a.ip, "location": None, "time": a.created_at, "success": a.success}
             for a in page
         ]

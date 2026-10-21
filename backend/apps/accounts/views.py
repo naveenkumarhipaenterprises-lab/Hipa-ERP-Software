@@ -18,6 +18,8 @@ from rest_framework.views import APIView
 from rest_framework_simplejwt.exceptions import TokenError
 from rest_framework_simplejwt.tokens import RefreshToken
 
+from services import audit
+
 from .authentication import TOKEN_VERSION_CLAIM
 from .models import LoginActivity, User
 from .serializers import (
@@ -107,6 +109,7 @@ class LogoutView(APIView):
 
     def post(self, request):
         request.user.revoke_tokens()
+        audit.record(request, "Signed out (all devices)", request.user.username)
         refresh = request.data.get("refresh") if hasattr(request.data, "get") else None
         if refresh:
             try:
@@ -141,9 +144,8 @@ class ForgotPasswordView(APIView):
                     [user.email],
                 )
             except Exception:
+                # Logged for the administrator only: a different answer here would reveal that the account exists
                 log.exception("Could not send password reset e-mail")
-                return Response({"detail": "The reset e-mail could not be sent. Please try again later."},
-                                status=status.HTTP_503_SERVICE_UNAVAILABLE)
         return Response({"detail": "If an account exists for that e-mail, a reset link has been sent."})
 
 
@@ -174,6 +176,7 @@ class ResetPasswordView(APIView):
         user.set_password(data.validated_data["password"])
         user.save(update_fields=["password", "updated_at"])
         user.revoke_tokens()  # whoever was using the old password is signed out
+        audit.record(request, "Reset password with an e-mail link", user.username)
         return Response({"detail": "Your password has been reset. You can now sign in."})
 
 
@@ -187,4 +190,5 @@ class ChangePasswordView(APIView):
         request.user.save(update_fields=["password", "updated_at"])
         # Other devices are signed out; this one gets new tokens so it stays signed in
         request.user.revoke_tokens()
+        audit.record(request, "Changed own password", request.user.username)
         return Response({"detail": "Password changed.", **tokens_for(request.user)})
