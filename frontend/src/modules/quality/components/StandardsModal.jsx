@@ -11,6 +11,15 @@ import { useApi } from '../../../hooks/useApi'
 import { useToast } from '../../../hooks/useToast'
 
 const list = (v) => (Array.isArray(v) ? v : [])
+const has = (v) => v !== null && v !== undefined && v !== ''
+
+/** "0 – 10", "≥ 2", "≤ 10" or "Not checked" from a standard's optional lowest / highest values. */
+function checkRange(s) {
+  if (has(s.min_value) && has(s.max_value)) return `${s.min_value} – ${s.max_value}`
+  if (has(s.min_value)) return `≥ ${s.min_value}`
+  if (has(s.max_value)) return `≤ ${s.max_value}`
+  return 'Not checked'
+}
 
 /**
  * Acceptance limits applied to batches (GET /quality/standards/). The quality team adds and edits them here
@@ -54,7 +63,8 @@ function Standards({ options, canManage, onClose }) {
           columns={[
             { key: 'parameter', header: 'Parameter' },
             { key: 'limit', header: 'Limit' },
-            { key: 'applies_to', header: 'Applies to', render: (r) => r.applies_to || 'All products' },
+            { key: 'check', header: 'Readings checked', render: (r) => <span className={has(r.min_value) || has(r.max_value) ? '' : 'muted'}>{checkRange(r)}</span> },
+            { key: 'applies_to', header: 'Applies to', render: (r) => r.applies_to || 'All items' },
             ...(canManage ? [{
               key: 'actions', align: 'right', header: <span className="sr-only">Actions</span>,
               render: (r) => (
@@ -75,9 +85,13 @@ function Standards({ options, canManage, onClose }) {
         fields={[
           { name: 'parameter', label: 'Parameter', required: true, placeholder: 'e.g. Moisture' },
           { name: 'limit', label: 'Limit', required: true, placeholder: 'e.g. ≤ 10%' },
-          { name: 'product_id', label: 'Applies to', type: 'select', full: true, placeholder: 'All products', options: products },
+          { name: 'min_value', label: 'Lowest acceptable value', type: 'number', placeholder: 'e.g. 0',
+            hint: 'Optional. With a lowest and/or highest value, test readings are checked automatically.' },
+          { name: 'max_value', label: 'Highest acceptable value', type: 'number', placeholder: 'e.g. 10' },
+          { name: 'product_id', label: 'Applies to', type: 'select', full: true, placeholder: 'All items', options: products },
         ]}
-        initialValues={s ? { parameter: s.parameter, limit: s.limit, product_id: s.product_id ? String(s.product_id) : '' } : {}}
+        initialValues={s ? { parameter: s.parameter, limit: s.limit, product_id: s.product_id ? String(s.product_id) : '',
+                             min_value: s.min_value ?? '', max_value: s.max_value ?? '' } : {}}
         submitLabel="Save"
         onSubmit={save}
       />

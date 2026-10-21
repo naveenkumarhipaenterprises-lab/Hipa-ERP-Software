@@ -197,7 +197,7 @@ test('quality standards are added on screen', async ({ page }) => {
     'GET /api/quality/options/': { pending_receipts: [], products: [{ id: 21, name: 'TEST Chilli' }], materials: [], results: [], audit_types: [] },
     'GET /api/quality/standards/': () => standards,
     'POST /api/quality/standards/': () => {
-      standards = [{ id: 1, parameter: 'Moisture', limit: '≤ 10%', product_id: 21, applies_to: 'TEST Chilli' }]
+      standards = [{ id: 1, parameter: 'Moisture', limit: '≤ 10%', min_value: null, max_value: 10, product_id: 21, applies_to: 'TEST Chilli' }]
       return { status: 201, body: standards[0] }
     },
   })
@@ -209,11 +209,14 @@ test('quality standards are added on screen', async ({ page }) => {
   const form = page.getByRole('dialog', { name: 'Add Standard' })
   await form.getByLabel(/^Parameter/).fill('Moisture')
   await form.getByLabel(/^Limit/).fill('≤ 10%')
+  await form.getByLabel(/^Highest acceptable value/).fill('10')
   await form.getByLabel(/^Applies to/).selectOption('21')
   await form.getByRole('button', { name: 'Save' }).click()
   await expect(page.getByText('Moisture added')).toBeVisible()
   await expect(win.getByRole('cell', { name: 'TEST Chilli' })).toBeVisible()
-  expect(calls.find((c) => c.key === 'POST /api/quality/standards/').body).toEqual({ parameter: 'Moisture', limit: '≤ 10%', product_id: '21' })
+  await expect(win.getByRole('cell', { name: '≤ 10', exact: true })).toBeVisible() // readings are checked against it
+  expect(calls.find((c) => c.key === 'POST /api/quality/standards/').body)
+    .toEqual({ parameter: 'Moisture', limit: '≤ 10%', min_value: '', max_value: 10, product_id: '21' })
 })
 
 test('tax & billing settings start empty and save', async ({ page }) => {

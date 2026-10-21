@@ -83,6 +83,7 @@ export default function QualityPage() {
   const saveTest = async (values) => {
     const test = await qualityApi.createTest(values)
     toast.success(test?.product ? `Result saved for ${test.product}${test.batch_number ? ` lot ${test.batch_number}` : ''}` : 'Test result saved')
+    if (test?.outside_standard?.length) toast.info(`Outside the quality standard: ${test.outside_standard.join(', ')}. Check the result.`)
     refresh()
   }
 

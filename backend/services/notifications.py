@@ -27,6 +27,7 @@ CATALOGUE = {
     "purchase_recommendations": ("Purchase recommendations", "When the daily analysis finds items that need buying soon", "purchase"),
     "invoice_overdue": ("Overdue invoices", "When a sales invoice passes its due date unpaid", "sales"),
     "quality_failures":("Quality test failures", "When a quality test fails or is put on hold", "quality"),
+    "certification_expiry": ("Certificate expiry", "When a certification is within 60 days of expiry, and when it expires", "quality"),
     "shipment_delays": ("Shipment delays", "When a supplier shipment is marked delayed", "supply_chain"),
     "report_ready": ("Reports ready", "When a report you generated is ready", "reports"),
 }

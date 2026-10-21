@@ -1,5 +1,6 @@
 import re
 from datetime import timedelta
+from decimal import Decimal, InvalidOperation
 
 from django.db import transaction
 from django.http import HttpResponse
@@ -14,7 +15,7 @@ from rest_framework.response import Response
 from apps.ai_assistant import insights
 from apps.core import parsing, periods
 from apps.core.files import csv_response
-from apps.core.metrics import choices, kpi, label_choices, ratio_pct, resolve_choice
+from apps.core.metrics import choices, kpi, label_choices, num, ratio_pct, resolve_choice
 from apps.core.views import ModuleAPIView
 from apps.inventory.models import Product
 from apps.purchase.models import GoodsReceipt, RawMaterial
@@ -28,12 +29,40 @@ MAX_READINGS = 50
 NUMBER = re.compile(r"^-?(\d+(\.\d+)?|\.\d+)$")  # 8, 8.5, -2.25, .5
 
 
-def test_row(t):
+def standard_limits():
+    """{(parameter in lower case, product id or None for all items): standard} for standards with a number to check."""
+    return {(s.parameter.lower(), s.product_id): s for s in QualityStandard.objects.all()
+            if s.min_value is not None or s.max_value is not None}
+
+
+def checked_readings(t, limits):
+    """Each reading with the standard it is checked against: the product's own one, else the one for all items.
+    within_standard is True / False, or None when there is no number to compare."""
+    out = []
+    for r in t.readings or []:
+        key = str(r.get("parameter", "")).strip().lower()
+        s = (limits.get((key, t.product_id)) if t.product_id else None) or limits.get((key, None))
+        within = None
+        if s:
+            try:
+                value = Decimal(str(r.get("value")))
+            except InvalidOperation:
+                value = None
+            if value is not None:
+                within = (s.min_value is None or value >= s.min_value) and (s.max_value is None or value <= s.max_value)
+        out.append({**r, "standard": s.limit if s else None, "within_standard": within})
+    return out
+
+
+def test_row(t, limits=None):
     grn = t.goods_receipt
+    checks = checked_readings(t, standard_limits() if limits is None else limits)
     return {"id": t.id, "batch_number": t.batch_number or None, "product": t.item.name,
             "item_type": "product" if t.product_id else "material", "goods_receipt_id": t.goods_receipt_id,
             "grn_number": grn.grn_number if grn else None, "test_date": t.test_date, "parameters": t.parameters,
-            "readings": t.readings, "result": t.get_result_display(), "status": t.status, "notes": t.notes or None}
+            "readings": t.readings, "checks": checks,
+            "outside_standard": [r["parameter"] for r in checks if r["within_standard"] is False],
+            "result": t.get_result_display(), "status": t.status, "notes": t.notes or None}
 
 
 def certification_status(c, today):
@@ -207,7 +236,8 @@ def filtered_tests(params, period=None):
 
 class TestsView(QualityView):
     def get(self, request):
-        return self.paginated(filtered_tests(request.query_params), test_row)
+        limits = standard_limits()
+        return self.paginated(filtered_tests(request.query_params), lambda t: test_row(t, limits))
 
     def post(self, request):
         d = request.data
@@ -279,6 +309,8 @@ class TestDetailView(QualityView):
 
 def standard_row(s):
     return {"id": s.id, "parameter": s.parameter, "limit": s.limit, "product_id": s.product_id,
+            "min_value": num(s.min_value) if s.min_value is not None else None,
+            "max_value": num(s.max_value) if s.max_value is not None else None,
             "applies_to": s.product.name if s.product else "All products"}
 
 
@@ -291,6 +323,12 @@ def read_standard(d, current=None):
         if len(str(d.get(field) or "").strip()) > 120:
             errors[field] = [f"The {label} can be at most 120 characters."]
     product = parsing.record(d, "product_id", Product.objects.all(), errors, required=False, message="Choose a valid product.")
+    bounds = {}
+    for name in ("min_value", "max_value"):
+        bounds[name] = parsing.decimal(d, name, errors, places=3, minimum=Decimal("-999999999"), maximum=Decimal("999999999"),
+                                       required=False, message="Enter a number (up to 3 decimals), or leave it empty.")
+    if bounds["min_value"] is not None and bounds["max_value"] is not None and bounds["min_value"] > bounds["max_value"]:
+        errors["max_value"] = ["The highest value can't be below the lowest value."]
     if parameter and not errors:
         clash = QualityStandard.objects.filter(parameter__iexact=parameter, product=product)
         if current is not None:
@@ -299,11 +337,12 @@ def read_standard(d, current=None):
             errors["parameter"] = [f"{parameter} already has a limit for {product.name if product else 'all products'}. Edit that one."]
     if errors:
         raise ValidationError(errors)
-    return {"parameter": parameter, "limit": limit, "product": product}
+    return {"parameter": parameter, "limit": limit, "product": product, **bounds}
 
 
 class StandardsView(QualityView):
-    """GET: the acceptance limits. POST {parameter, limit, product_id?}: a new one (no product = all products)."""
+    """GET: the acceptance limits. POST {parameter, limit, product_id?, min_value?, max_value?}: a new one
+    (no product = all items). With a min and/or max value, test readings of that parameter are checked against it."""
 
     def get(self, request):
         return Response([standard_row(s) for s in QualityStandard.objects.select_related("product")])
@@ -318,7 +357,9 @@ class StandardDetailView(QualityView):
     def patch(self, request, pk):
         """Fields not sent keep their value."""
         s = get_object_or_404(QualityStandard.objects.select_related("product"), pk=pk)
-        current = {"parameter": s.parameter, "limit": s.limit, "product_id": s.product_id or ""}
+        current = {"parameter": s.parameter, "limit": s.limit, "product_id": s.product_id or "",
+                   "min_value": "" if s.min_value is None else str(s.min_value),
+                   "max_value": "" if s.max_value is None else str(s.max_value)}
         for k, v in read_standard({**current, **{k: request.data.get(k) for k in current if k in request.data}}, s).items():
             setattr(s, k, v)
         s.save()

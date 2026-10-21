@@ -35,7 +35,9 @@ const sendForm = async (method, url, form) =>
  *      readings: [{ parameter, value }] (value = decimal number as text); parameters = the same pairs as one line
  * POST  /quality/tests/      { goods_receipt_id | product_id | material_id, batch_number?, test_date, result, readings, notes? }
  * PATCH /quality/tests/<id>/ { readings }   (changes only the Parameter + Value rows)
- * GET  /quality/standards/  ->  [{ id, parameter, limit, product_id, applies_to }]   POST { parameter, limit, product_id? }
+ * GET  /quality/standards/  ->  [{ id, parameter, limit, min_value, max_value, product_id, applies_to }]
+ *      POST { parameter, limit, product_id?, min_value?, max_value? }  (with a min / max, test readings are checked;
+ *      test rows then carry checks: [{ parameter, value, standard, within_standard }] and outside_standard: [parameter])
  * PATCH /quality/standards/<id>/   (one limit per parameter + product, or all products; delete: Super Admin)
  * GET  /quality/certifications/   ->  [certification]      POST (multipart) -> certification
  *      certification: { id, name, issuing_authority, certificate_number, category, category_value, issue_date, valid_until,

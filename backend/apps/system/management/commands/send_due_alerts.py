@@ -3,6 +3,7 @@ Daily reminders from real records (run by scripts/daily_tasks.py). Each alert is
   - purchases past their expected receipt date and not fully received  -> supplier_delays
   - scheduled supplier payments due within 2 days or overdue            -> supplier_payment_due
   - sales invoices past their due date with a balance                   -> invoice_overdue
+  - certifications within 60 days of expiry, and again once expired     -> certification_expiry
 """
 from datetime import timedelta
 
@@ -21,10 +22,11 @@ def once(key, title, message, link, type="warning"):
 
 
 class Command(BaseCommand):
-    help = "Send reminders for late supplier deliveries, supplier payments due and overdue invoices."
+    help = "Send reminders for late supplier deliveries, supplier payments due, overdue invoices and expiring certificates."
 
     def handle(self, *args, **options):
         from apps.purchase.models import Purchase, SupplierPayment
+        from apps.quality.models import Certification
         from apps.sales.models import SalesInvoice
 
         t = today()
@@ -44,4 +46,12 @@ class Command(BaseCommand):
                 sent += once("invoice_overdue", f"Invoice {inv.invoice_number} is overdue",
                              f"{inv.customer_name}: ₹{inv.balance:,.2f} was due {inv.due_date:%d %b %Y}.", "/sales?tab=invoices",
                              type="error")
+        # Same 60 days as the "Expiring Soon" status; the date is in the title, so a renewed certificate is reminded again
+        for c in Certification.objects.filter(status=Certification.Status.ACTIVE, valid_until__lte=t + timedelta(days=60)):
+            if c.valid_until < t:
+                sent += once("certification_expiry", f"{c.name} certificate expired on {c.valid_until:%d %b %Y}",
+                             "Renew it and upload the new certificate in Quality → Certifications.", "/quality", type="error")
+            else:
+                sent += once("certification_expiry", f"{c.name} certificate expires on {c.valid_until:%d %b %Y}",
+                             "Plan the renewal; the new certificate can be uploaded in Quality → Certifications.", "/quality")
         self.stdout.write(f"send_due_alerts: {sent} alert(s) sent")

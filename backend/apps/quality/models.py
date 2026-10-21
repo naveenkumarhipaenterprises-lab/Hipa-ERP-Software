@@ -62,6 +62,9 @@ class QualityTest(models.Model):
 class QualityStandard(models.Model):
     parameter = models.CharField(max_length=120)
     limit = models.CharField(max_length=120, help_text="e.g. ≤ 10% moisture")
+    # Optional numbers that test readings of this parameter are checked against; `limit` stays the text people read
+    min_value = models.DecimalField("lowest acceptable reading", max_digits=12, decimal_places=3, null=True, blank=True)
+    max_value = models.DecimalField("highest acceptable reading", max_digits=12, decimal_places=3, null=True, blank=True)
     product = models.ForeignKey(Product, null=True, blank=True, on_delete=models.CASCADE, related_name="quality_standards",
                                 help_text="Leave empty if it applies to all products")
 

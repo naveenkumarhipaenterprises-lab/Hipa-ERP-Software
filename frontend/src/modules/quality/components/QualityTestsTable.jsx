@@ -41,6 +41,7 @@ export default function QualityTestsTable({ refreshKey, results, canManage = fal
   const saveReadings = async ({ readings }) => {
     const updated = await qualityApi.updateTestReadings(editing.id, cleanReadings(readings))
     toast.success('Parameters saved')
+    if (updated?.outside_standard?.length) toast.info(`Outside the quality standard: ${updated.outside_standard.join(', ')}. Check the result.`)
     setViewing(updated)
     tests.reload()
   }
@@ -91,7 +92,12 @@ export default function QualityTestsTable({ refreshKey, results, canManage = fal
             { key: 'batch_number', header: 'Lot / Batch', render: (r) => r.batch_number || '—' },
             { key: 'grn_number', header: 'GRN', render: (r) => r.grn_number || '—' },
             { key: 'test_date', header: 'Test Date', render: (r) => <span className="nowrap">{r.test_date ? formatDate(r.test_date) : '—'}</span> },
-            { key: 'parameters', header: 'Parameters', render: (r) => <span className="cell-clip">{r.parameters || '—'}</span> },
+            { key: 'parameters', header: 'Parameters', render: (r) => (
+              <span className="cell-clip">
+                {r.parameters || '—'}
+                {r.outside_standard?.length > 0 && <> <Badge tone="red">Outside standard</Badge></>}
+              </span>
+            ) },
             { key: 'result', header: 'Result', render: (r) => (r.result ? <Badge>{r.result}</Badge> : '—') },
             { key: 'status', header: 'Status', render: (r) => (r.status ? <Badge>{r.status}</Badge> : '—') },
             { key: 'actions', sticky: true, align: 'right', header: <span className="sr-only">Actions</span>,
@@ -110,7 +116,13 @@ export default function QualityTestsTable({ refreshKey, results, canManage = fal
             <dd>
               {viewing.readings?.length ? (
                 <ul className="plain-list">
-                  {viewing.readings.map((r) => <li key={r.parameter}>{r.parameter}: <strong>{r.value}</strong></li>)}
+                  {(viewing.checks?.length ? viewing.checks : viewing.readings).map((r) => (
+                    <li key={r.parameter}>
+                      {r.parameter}: <strong>{r.value}</strong>
+                      {r.standard && <span className="muted"> (standard {r.standard})</span>}
+                      {r.within_standard === false && <> <Badge tone="red">Outside standard</Badge></>}
+                    </li>
+                  ))}
                 </ul>
               ) : viewing.parameters || '—'}
               {canManage && (
