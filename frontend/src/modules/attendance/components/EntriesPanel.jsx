@@ -14,6 +14,7 @@ import { useToast } from '../../../hooks/useToast'
 import { todayISO } from '../../../utils/formatters'
 import NoPermission from '../NoPermission'
 import { clock, day, list } from '../shared'
+import LocationLink from './LocationLink'
 
 const hhmm = (iso) => (iso ? iso.slice(11, 16) : '')
 
@@ -79,6 +80,8 @@ export default function EntriesPanel({ options, refreshKey, onChanged }) {
             { key: 'employee', header: 'Employee', render: (x) => <span><strong>{x.employee.name}</strong> <span className="muted">{x.employee.employee_code}</span></span> },
             { key: 'check_in_at', header: 'Check-in', render: (x) => clock(x.check_in_at) },
             { key: 'check_out_at', header: 'Check-out', render: (x) => clock(x.check_out_at) },
+            { key: 'check_in_location', header: 'Check-in location', render: (x) => <LocationLink compact location={x.check_in_location} manual={Boolean(x.entered_by)} /> },
+            { key: 'check_out_location', header: 'Check-out location', render: (x) => (x.check_out_at ? <LocationLink compact location={x.check_out_location} manual={Boolean(x.entered_by)} /> : '—') },
             { key: 'entered_by', header: 'Entered', render: (x) => (x.entered_by ? <Badge tone="amber">{`By ${x.entered_by}`}</Badge> : <Badge>Self</Badge>) },
             { key: 'note', header: 'Reason', render: (x) => x.note || '—' },
             {

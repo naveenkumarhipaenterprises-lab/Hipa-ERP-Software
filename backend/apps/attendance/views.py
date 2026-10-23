@@ -20,13 +20,13 @@ from rest_framework.response import Response
 
 from apps.accounts.models import User
 from apps.core import parsing
-from apps.core.roles import ATTENDANCE_MANAGERS, Role, has_any_role, role_of
+from apps.core.roles import ATTENDANCE_MANAGERS, has_any_role
 from apps.core.views import ModuleAPIView
 from services import audit
 from services.exporters import MIME, export
 
 from . import permissions as perms
-from . import reports, services, window
+from . import location, reports, services, window
 from .models import WEEKDAYS, AttendanceRecord, AttendanceSettings, Employee, LeaveRequest, OfficeHoliday
 from .services import (ABSENT, DAY_LABELS, LEAVE, OFFICE_HOLIDAY, approved_permissions, current_employees, duration_label,
                        employee_of, figures, record_status, schedule_for)
@@ -74,6 +74,7 @@ def holiday_block(sched, day):
 def record_row(r, w, sched, permissions=()):
     return {"id": r.id, "attendance_date": r.attendance_date, "employee": employee_brief(r.employee),
             "check_in_at": iso(r.check_in_at), "check_out_at": iso(r.check_out_at),
+            "check_in_location": location.block(r, "check_in"), "check_out_location": location.block(r, "check_out"),
             "entered_by": (r.entered_by.name or r.entered_by.username) if r.entered_by_id else None, "note": r.note or None,
             **figures_block(figures(r, permissions, sched)), "holiday": holiday_block(sched, r.attendance_date),
             "status": record_status(r, w)}
@@ -145,6 +146,7 @@ def status_payload(user):
         "check_in_for": w.checkin_date if w.is_open else None,
         "can_check_out": can_out,
         "checkout_until": iso(w.checkout_deadline(to_close.attendance_date)) if to_close else None,
+        "location_required": s.require_location,
         "permissions": flags,
     }
 
@@ -156,13 +158,14 @@ class StatusView(AttendanceView):
 
 class CheckInView(AttendanceView):
     def post(self, request):
-        services.check_in(request.user)  # the time is the server's; nothing from the request is used
+        # The time is the server's; only the device's GPS location is taken from the request
+        services.check_in(request.user, request.data)
         return Response(status_payload(request.user), status=status.HTTP_201_CREATED)
 
 
 class CheckOutView(AttendanceView):
     def post(self, request):
-        services.check_out(request.user)
+        services.check_out(request.user, request.data)
         return Response(status_payload(request.user))
 
 
@@ -226,8 +229,6 @@ class RecordsView(AttendanceView):
         require_attendance_manager(request.user)
         d, errors = request.data, {}
         emp = parsing.record(d, "employee_id", current_employees(), errors, message="Choose an employee.")
-        if emp and emp.user_id == request.user.id and role_of(request.user) != Role.ADMIN:
-            raise PermissionDenied("You can't enter or correct your own attendance. Ask a Super Admin or another manager.")
         current = None
         if d.get("record_id") not in (None, ""):
             current = parsing.record(d, "record_id", AttendanceRecord.objects.all(), errors, message="This record no longer exists.")
@@ -620,6 +621,7 @@ def settings_payload(s):
     start, end = (datetime.combine(date.min, t) for t in (s.work_start, s.work_end))
     return {**{name: getattr(s, name).strftime("%H:%M") for name in SETTING_TIMES},
             "weekly_holiday": s.weekly_holiday, "weekly_holiday_label": dict(WEEKDAYS)[s.weekly_holiday],
+            "require_location": s.require_location,
             "scheduled_duration": duration_label(end - start),
             "timezone": "Asia/Kolkata (IST)", "updated_at": iso(s.updated_at)}
 
@@ -645,15 +647,20 @@ class SettingsView(AttendanceView):
                 errors["close_time"] = ["The close time must differ from the open time."]
             if values["work_end"] <= values["work_start"]:
                 errors["work_end"] = ["The working hours must end after they start."]
+        require_location = s.require_location
+        if "require_location" in request.data:
+            raw = request.data.get("require_location")
+            require_location = raw if isinstance(raw, bool) else str(raw).strip().lower() in ("true", "1", "yes", "on")
         if errors:
             raise ValidationError(errors)
         for name, value in values.items():
             setattr(s, name, value)
         s.weekly_holiday = int(weekly)
+        s.require_location = require_location
         s.save()
         audit.record(request, "Changed attendance settings",
                      f"open {s.open_time:%H:%M}, close {s.close_time:%H:%M}, working hours {s.work_start:%H:%M}–{s.work_end:%H:%M}, "
-                     f"weekly holiday {dict(WEEKDAYS)[s.weekly_holiday]}")
+                     f"weekly holiday {dict(WEEKDAYS)[s.weekly_holiday]}, location {'required' if s.require_location else 'optional'}")
         return Response(settings_payload(s))
 
 
@@ -778,6 +785,9 @@ class DashboardView(AttendanceView):
                 continue
             rows.append({"employee": employee_brief(emp), "date": day, "record_id": rec.id if rec else None,
                          "check_in_at": iso(rec.check_in_at) if rec else None, "check_out_at": iso(rec.check_out_at) if rec else None,
+                         "check_in_location": location.block(rec, "check_in"),
+                         "check_out_location": location.block(rec, "check_out"),
+                         "entered_by": (rec.entered_by.name or rec.entered_by.username) if rec and rec.entered_by_id else None,
                          **figures_block(entry["figures"]), "permission_times": permission_times(leaves),
                          "statuses": statuses, "labels": [DAY_LABELS[s] for s in statuses],
                          "record_status": record_status(rec, w) if rec else None})

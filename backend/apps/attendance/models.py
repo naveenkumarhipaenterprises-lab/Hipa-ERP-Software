@@ -42,6 +42,8 @@ class AttendanceSettings(SingletonModel):
     work_start = models.TimeField(default=time(9, 0))
     work_end = models.TimeField(default=time(17, 30))
     weekly_holiday = models.PositiveSmallIntegerField(choices=WEEKDAYS, default=6)
+    # Check-in and check-out need the device's GPS location (the employee must allow location access)
+    require_location = models.BooleanField(default=True)
     updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:
@@ -101,6 +103,16 @@ class AttendanceRecord(models.Model):
     entered_by = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.SET_NULL,
                                    related_name="+")
     note = models.CharField(max_length=200, blank=True)
+    # Where the employee was when they checked in / out: the device's GPS fix (accuracy in metres) and the street
+    # address looked up from it on the server. Empty for manual entries and records from before locations were kept.
+    check_in_latitude = models.DecimalField(max_digits=9, decimal_places=6, null=True, blank=True)
+    check_in_longitude = models.DecimalField(max_digits=9, decimal_places=6, null=True, blank=True)
+    check_in_accuracy = models.PositiveIntegerField(null=True, blank=True)
+    check_in_address = models.CharField(max_length=300, blank=True)
+    check_out_latitude = models.DecimalField(max_digits=9, decimal_places=6, null=True, blank=True)
+    check_out_longitude = models.DecimalField(max_digits=9, decimal_places=6, null=True, blank=True)
+    check_out_accuracy = models.PositiveIntegerField(null=True, blank=True)
+    check_out_address = models.CharField(max_length=300, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 

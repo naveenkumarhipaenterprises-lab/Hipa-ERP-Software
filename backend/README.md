@@ -54,6 +54,7 @@ To regenerate `supabase/schema.sql` after adding migrations: `python scripts/exp
 | `JWT_ACCESS_MINUTES` | | Access-token lifetime (default 480 = one working day). Logout, password change and password reset end the user's sessions on every device straight away |
 | `LOGIN_THROTTLE_RATE`, `AI_CHAT_THROTTLE_RATE` | | Failed sign-ins per IP (default `10/min`, also applied to `/admin/` sign-in) and AI chat messages per user (default `20/min`). The counters are kept in the shared `django_cache` table in Supabase (created by migration `core 0001`), so every server process, including Vercel's, counts together |
 | `NUM_PROXIES` | | Only behind a reverse proxy: how many. Unset = `X-Forwarded-For` is ignored, since anyone can fake it. On Vercel it defaults to 1 (Vercel sets that header itself) |
+| `ATTENDANCE_GEOCODER`, `ATTENDANCE_GEOCODER_CONTACT` | | Street address for each attendance check-in / check-out location. Default `nominatim` (OpenStreetMap, free, no key; set `ATTENDANCE_GEOCODER_CONTACT` to your e-mail as their usage policy asks). `off` keeps only the GPS coordinates and map link |
 | `PSYCOPG_IMPL` | | Postgres driver. On Windows with PostgreSQL's client tools installed it defaults to `python` (uses PostgreSQL's own `libpq.dll`); set `binary` to use the bundled driver instead |
 
 `.env` holds secrets: never commit or share it. `.gitignore` already excludes it.

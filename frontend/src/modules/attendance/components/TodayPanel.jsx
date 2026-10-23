@@ -1,4 +1,4 @@
-import { Clock, LogIn, LogOut } from 'lucide-react'
+import { Clock, LogIn, LogOut, MapPin } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { attendanceApi } from '../../../api/attendanceApi'
 import Badge from '../../../components/common/Badge'
@@ -10,7 +10,9 @@ import Loader from '../../../components/common/Loader'
 import Table from '../../../components/common/Table'
 import { useApi } from '../../../hooks/useApi'
 import { useToast } from '../../../hooks/useToast'
+import { getDeviceLocation } from '../../../utils/geolocation'
 import { clock, day, list, whichDay } from '../shared'
+import LocationLink from './LocationLink'
 
 const received = (data) => ({ ...data, receivedAt: Date.now() })
 
@@ -19,7 +21,8 @@ const IST_CLOCK = new Intl.DateTimeFormat('en-IN', { timeZone: 'Asia/Kolkata', h
 /**
  * The employee's own attendance. Check-In open / closed, the times and the buttons all come from the server
  * (GET /attendance/status/); the clock only counts on from the server time between refreshes. Check-out is
- * available at any time for an open record (until 09:20 AM the next morning).
+ * available at any time for an open record (until 09:20 AM the next morning). Each check-in / check-out sends the
+ * device's GPS location, which the server keeps with the record (required unless turned off in Settings).
  */
 export default function TodayPanel() {
   const toast = useToast()
@@ -29,6 +32,7 @@ export default function TodayPanel() {
   const history = useApi(() => attendanceApi.listHistory({ page_size: 10 }), [historyKey])
   const [now, setNow] = useState(() => Date.now())
   const [busy, setBusy] = useState(false)
+  const [locating, setLocating] = useState(false)
   const [confirmingOut, setConfirmingOut] = useState(false) // check-out always asks first: it can't be undone
   const s = status.data
   const reload = status.reload
@@ -45,7 +49,17 @@ export default function TodayPanel() {
   const act = async (kind) => {
     setBusy(true)
     try {
-      const next = kind === 'in' ? await attendanceApi.checkIn() : await attendanceApi.checkOut()
+      let location = null
+      setLocating(true)
+      try {
+        location = await getDeviceLocation()
+      } catch (err) {
+        if (s?.location_required !== false) throw err // the server would refuse it anyway; say why here
+      } finally {
+        setLocating(false)
+      }
+      const body = location ? { location } : {}
+      const next = kind === 'in' ? await attendanceApi.checkIn(body) : await attendanceApi.checkOut(body)
       status.setData(received(next))
       setHistoryKey((k) => k + 1)
       toast.success(kind === 'in' ? `Checked in at ${clock(next.record?.check_in_at)}` : `Checked out at ${clock(next.record?.check_out_at)}`)
@@ -117,6 +131,8 @@ export default function TodayPanel() {
               <div><dt>Scheduled Working Hours</dt><dd className="attendance-time">{r?.scheduled_duration ?? s.scheduled_duration ?? '—'}</dd></div>
               <div><dt>Actual Check-In</dt><dd className="attendance-time">{clock(r?.check_in_at)}</dd></div>
               <div><dt>Actual Check-Out</dt><dd className="attendance-time">{clock(r?.check_out_at)}</dd></div>
+              {r && <div><dt>Check-In Location</dt><dd><LocationLink location={r.check_in_location} manual={Boolean(r.entered_by)} /></dd></div>}
+              {r?.check_out_at && <div><dt>Check-Out Location</dt><dd><LocationLink location={r.check_out_location} manual={Boolean(r.entered_by)} /></dd></div>}
               <div><dt>Total Duration</dt><dd className="attendance-time">{r?.total_duration ?? '—'}</dd></div>
               <div><dt>Approved Permission Duration</dt><dd className="attendance-time">{r?.permission_duration ?? '—'}</dd></div>
               <div><dt>Actual Working Hours</dt><dd className="attendance-time">{r?.working_duration ?? '—'}</dd></div>
@@ -132,6 +148,10 @@ export default function TodayPanel() {
               ) : !r ? (
                 <Button icon={LogIn} size="lg" disabled>Check In</Button>
               ) : null}
+              {locating && <small className="muted attendance-location-note"><MapPin size={14} aria-hidden /> Getting your location…</small>}
+              {!locating && (s.can_check_in || s.can_check_out) && s.location_required && (
+                <small className="muted attendance-location-note"><MapPin size={14} aria-hidden /> Your location is recorded when you check in and out. Allow location access when asked.</small>
+              )}
               {s.can_check_out && s.checkout_until && (
                 <small className="muted">Check-out available until {whichDay(s.checkout_until, s.server_time).toLowerCase()} {clock(s.checkout_until)}.</small>
               )}
@@ -158,6 +178,8 @@ export default function TodayPanel() {
               { key: 'scheduled_duration', header: 'Scheduled', render: (x) => x.scheduled_duration ?? '—' },
               { key: 'check_in_at', header: 'Check-In', render: (x) => clock(x.check_in_at) },
               { key: 'check_out_at', header: 'Check-Out', render: (x) => clock(x.check_out_at) },
+              { key: 'check_in_location', header: 'Check-In Location', render: (x) => <LocationLink compact location={x.check_in_location} manual={Boolean(x.entered_by)} /> },
+              { key: 'check_out_location', header: 'Check-Out Location', render: (x) => (x.check_out_at ? <LocationLink compact location={x.check_out_location} manual={Boolean(x.entered_by)} /> : '—') },
               { key: 'total_duration', header: 'Total Duration', render: (x) => x.total_duration ?? '—' },
               { key: 'permission_duration', header: 'Approved Permission', render: (x) => x.permission_duration ?? '—' },
               { key: 'working_duration', header: 'Working Hours', render: (x) => x.working_duration ?? '—' },
@@ -171,7 +193,7 @@ export default function TodayPanel() {
         onClose={() => setConfirmingOut(false)}
         onConfirm={() => act('out')}
         title="Check out now?"
-        message={`Your check-out will be recorded now${serverNow ? ` (${IST_CLOCK.format(serverNow).toUpperCase()} IST)` : ''} and your work day ends. You can't check in again for this work day. Are you sure?`}
+        message={`Your check-out will be recorded now${serverNow ? ` (${IST_CLOCK.format(serverNow).toUpperCase()} IST)` : ''}${s.location_required ? ' with your current location' : ''} and your work day ends. You can't check in again for this work day. Are you sure?`}
         confirmLabel="Yes, Check Out"
         cancelLabel="No, Stay Checked In"
       />

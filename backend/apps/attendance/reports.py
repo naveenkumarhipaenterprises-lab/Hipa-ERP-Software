@@ -4,6 +4,7 @@ from datetime import timedelta
 
 from apps.reports.builders import col
 
+from . import location
 from .models import LeaveRequest
 from .services import (ABSENT, DAY_LABELS, LEAVE, NOT_CHECKED_OUT, OFFICE_HOLIDAY, PERMISSION, PRESENT, WEEKLY_HOLIDAY, days,
                        duration_label, picture)
@@ -41,6 +42,7 @@ def build(kind, start, end, employees, status=None):
             office = sched.holidays.get(d)
             rows.append({"date": d, "employee_code": emp.employee_code, "employee": emp.name, "department": emp.department or None,
                          "check_in": clock(rec.check_in_at) if rec else None, "check_out": clock(rec.check_out_at) if rec else None,
+                         "check_in_location": location.label(rec, "check_in"), "check_out_location": location.label(rec, "check_out"),
                          "scheduled": duration_label(f["scheduled"]), "total": duration_label(f["total"]), "permission": duration_label(f["permission"]),
                          "working": duration_label(f["working"]),
                          "status": ", ".join(DAY_LABELS[s] + (f" ({office.name})" if s == OFFICE_HOLIDAY and office else "")
@@ -48,6 +50,7 @@ def build(kind, start, end, employees, status=None):
     return {"title": title(kind, start, end), "table": {
         "columns": [col("date", "Date", "date"), col("employee_code", "Employee ID"), col("employee", "Employee"),
                     col("department", "Department"), col("check_in", "Check-In"), col("check_out", "Check-Out"),
+                    col("check_in_location", "Check-In Location"), col("check_out_location", "Check-Out Location"),
                     col("scheduled", "Scheduled Hours"), col("total", "Total Duration"), col("permission", "Approved Permission"), col("working", "Working Hours"),
                     col("status", "Status")],
         "rows": rows}}

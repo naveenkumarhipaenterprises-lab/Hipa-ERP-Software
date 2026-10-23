@@ -258,6 +258,15 @@ GEMINI_API_KEY = env("GEMINI_API_KEY", "").strip()
 GEMINI_MODEL = env("GEMINI_MODEL", "gemini-3.8-flash").strip() or "gemini-3.8-flash"
 GEMINI_TIMEOUT_SECONDS = int(env("GEMINI_TIMEOUT_SECONDS", "60"))
 
+# --- Attendance locations ------------------------------------------------------
+# Check-in / check-out store the device's GPS position; the server looks up the street address from it.
+# "nominatim" = OpenStreetMap's free service (no key; about one lookup a second), "off" = keep coordinates only.
+ATTENDANCE_GEOCODER = env("ATTENDANCE_GEOCODER", "nominatim").strip().lower()
+ATTENDANCE_GEOCODER_URL = env("ATTENDANCE_GEOCODER_URL", "https://nominatim.openstreetmap.org/reverse").strip()
+# Nominatim asks every app to say who it is; an e-mail lets them reach you instead of blocking the server
+ATTENDANCE_GEOCODER_CONTACT = env("ATTENDANCE_GEOCODER_CONTACT", "").strip()
+ATTENDANCE_GEOCODER_TIMEOUT_SECONDS = float(env("ATTENDANCE_GEOCODER_TIMEOUT_SECONDS", "4"))
+
 # --- Production hardening ------------------------------------------------------
 if not DEBUG:
     SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
