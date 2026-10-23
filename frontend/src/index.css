@@ -1198,3 +1198,16 @@ code {
 .location-link--compact .location-link__text { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .attendance-facts dd .location-link { font-weight: 500; }
 .attendance-location-note { display: flex; align-items: center; gap: 6px; }
+
+/* Employee photo & documents (Attendance -> Employees -> folder icon) */
+.employee-files { display: flex; gap: 20px; align-items: flex-start; flex-wrap: wrap; }
+.employee-files__photo { display: flex; flex-direction: column; align-items: center; gap: 8px; }
+.employee-files__photo img { width: 112px; height: 112px; border-radius: 12px; object-fit: cover; border: 1px solid var(--border, #e2e8f0); }
+.employee-files__nophoto { width: 112px; height: 112px; border-radius: 12px; border: 1px dashed var(--border, #cbd5e1);
+  display: flex; align-items: center; justify-content: center; color: var(--muted, #64748b); font-size: 0.85rem; }
+.employee-files__docs { flex: 1; min-width: 260px; display: flex; flex-direction: column; gap: 10px; }
+.employee-files__head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.employee-files__list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.employee-files__list li { display: flex; align-items: center; gap: 10px; padding: 8px 10px; border: 1px solid var(--border, #e2e8f0); border-radius: 10px; }
+.employee-files__name { flex: 1; display: flex; flex-direction: column; min-width: 0; }
+.employee-files__name strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

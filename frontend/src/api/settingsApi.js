@@ -53,6 +53,7 @@ export const settingsApi = {
   updateUser: (id, changes) => api.patch(`/settings/users/${id}/`, changes),
   // Super Admin only: sets another person's password and signs them out everywhere
   setUserPassword: (id, password) => api.post(`/settings/users/${id}/password/`, { password }),
+  deleteUser: (id) => api.delete(`/settings/users/${id}/`),
 
   getNotifications: () => api.get('/settings/notifications/'),
   setNotification: (key, enabled) => api.patch('/settings/notifications/', { key, enabled }),

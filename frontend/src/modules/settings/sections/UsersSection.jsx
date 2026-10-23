@@ -1,4 +1,4 @@
-﻿import { Search, UserPlus, Users } from 'lucide-react'
+﻿import { Search, Trash2, UserPlus, Users } from 'lucide-react'
 import { useState } from 'react'
 import { settingsApi } from '../../../api/settingsApi'
 import Badge from '../../../components/common/Badge'
@@ -37,6 +37,7 @@ export default function UsersSection({ options }) {
   const [rolesFor, setRolesFor] = useState(null) // user whose extra roles are open
   const [addingEmployee, setAddingEmployee] = useState(false)
   const [passwordFor, setPasswordFor] = useState(null) // user whose password a Super Admin is setting
+  const [deletingUser, setDeletingUser] = useState(null) // user a Super Admin is deleting
   const [refreshKey, setRefreshKey] = useState(0)
   const query = useDebouncedValue(search.trim())
   const [page, setPage] = usePageReset(query)
@@ -112,6 +113,12 @@ export default function UsersSection({ options }) {
     }
     await settingsApi.updateUser(editing.id, changes)
     toast.success(`${changes.name} updated`)
+    refresh()
+  }
+
+  const confirmDelete = async () => {
+    await settingsApi.deleteUser(deletingUser.id)
+    toast.success(`${deletingUser.name || deletingUser.email} deleted`)
     refresh()
   }
 
@@ -223,6 +230,10 @@ export default function UsersSection({ options }) {
                       Edit
                     </Button>
                   )}
+                  {iAmSuperAdmin && !isMe(r) && !lockedForMe(r) && (
+                    <Button size="sm" variant="ghost" icon={Trash2} className="btn--tone-red" onClick={() => setDeletingUser(r)}
+                            aria-label={`Delete ${r.name || r.email}`} />
+                  )}
                 </span>
               ),
             },
@@ -254,6 +265,16 @@ export default function UsersSection({ options }) {
       <ExtraRolesModal key={`roles-${rolesFor?.id}`} user={rolesFor} roles={roles} onClose={() => setRolesFor(null)} onSave={saveExtraRoles} />
       <AttendancePermissionsModal key={permsFor?.id} user={permsFor} permissions={attendancePermissions}
                                   onClose={() => setPermsFor(null)} onSave={saveAttendancePermissions} />
+      <ConfirmDialog
+        open={Boolean(deletingUser)}
+        onClose={() => setDeletingUser(null)}
+        onConfirm={confirmDelete}
+        danger
+        title="Delete this user?"
+        message={deletingUser && `${deletingUser.name || deletingUser.email} will be deleted and can no longer log in. Their attendance and leave history is kept. This cannot be undone — to block access temporarily, deactivate them instead (Edit → Status).`}
+        confirmLabel="Delete"
+        cancelLabel="Keep"
+      />
       <ConfirmDialog
         open={Boolean(confirming)}
         onClose={() => {
