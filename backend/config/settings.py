@@ -271,6 +271,9 @@ ATTENDANCE_GEOCODER_URL = env("ATTENDANCE_GEOCODER_URL", "https://nominatim.open
 # Nominatim asks every app to say who it is; an e-mail lets them reach you instead of blocking the server
 ATTENDANCE_GEOCODER_CONTACT = env("ATTENDANCE_GEOCODER_CONTACT", "").strip()
 ATTENDANCE_GEOCODER_TIMEOUT_SECONDS = float(env("ATTENDANCE_GEOCODER_TIMEOUT_SECONDS", "4"))
+# A required location must be exact: a fix rougher than this many metres (e.g. Android's "Approximate
+# location", usually 1-3 km) is refused. GPS is ~5-50 m; desktop Wi-Fi positioning is usually well under 500 m.
+ATTENDANCE_MAX_ACCURACY_METERS = int(env("ATTENDANCE_MAX_ACCURACY_METERS", "500"))
 
 # --- Production hardening ------------------------------------------------------
 if not DEBUG:
