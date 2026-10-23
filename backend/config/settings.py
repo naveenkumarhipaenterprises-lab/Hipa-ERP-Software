@@ -258,6 +258,11 @@ GEMINI_API_KEY = env("GEMINI_API_KEY", "").strip()
 GEMINI_MODEL = env("GEMINI_MODEL", "gemini-3.8-flash").strip() or "gemini-3.8-flash"
 GEMINI_TIMEOUT_SECONDS = int(env("GEMINI_TIMEOUT_SECONDS", "60"))
 
+# --- Database migrations at start-up --------------------------------------------
+# Vercel's build can't reach the database, so on Vercel new migrations are applied when the server starts
+# (apps/core/automigrate.py). Elsewhere run `python manage.py migrate` as usual.
+AUTO_MIGRATE = env_bool("AUTO_MIGRATE", bool(os.environ.get("VERCEL")))
+
 # --- Attendance locations ------------------------------------------------------
 # Check-in / check-out store the device's GPS position; the server looks up the street address from it.
 # "nominatim" = OpenStreetMap's free service (no key; about one lookup a second), "off" = keep coordinates only.
