@@ -32,6 +32,7 @@ const status = (over = {}) => ({
   employee: { id: 1, employee_code: 'TEST-001', name: 'TEST Worker', department: null },
   work_date: '2026-10-08', office_hours: '9:00 AM – 5:30 PM', scheduled_duration: '08h 30m', holiday: null,
   record: null, can_check_in: true, check_in_for: '2026-10-08', can_check_out: false, checkout_until: null, permissions: OWN_ONLY,
+  location_required: true,
   ...over,
 })
 
@@ -76,8 +77,40 @@ test('morning check-in: the server sets the time and check-out is available stra
   await expect(page.getByText('Checked in at 08:25 AM')).toBeVisible()
   await expect(page.getByRole('button', { name: 'Check Out / Logout' })).toBeEnabled()
   await expect(page.getByText('Check-out available until tomorrow 09:20 AM.')).toBeVisible()
-  expect(calls.find((c) => c.key === 'POST /api/attendance/check-in/').body).toBeFalsy() // no time sent from the browser
+  // Only the device's location is sent; never a time from the browser
+  expect(calls.find((c) => c.key === 'POST /api/attendance/check-in/').body).toEqual({ location: { latitude: 11.341036, longitude: 77.717164, accuracy: 12 } })
   expect(calls.some((c) => c.key === 'GET /api/attendance/dashboard/')).toBe(false) // no View All permission
+})
+
+const HERE = { latitude: 11.341036, longitude: 77.717164, accuracy: 12, address: 'TEST Street, Erode, Tamil Nadu, India',
+  map_url: 'https://www.google.com/maps/search/?api=1&query=11.341036,77.717164' }
+
+test('check-in records where the employee is and shows it with a map link', async ({ page }) => {
+  await signIn(page, 'sales')
+  await mockApi(page, {
+    ...TODAY(OWN_ONLY),
+    'POST /api/attendance/check-in/': status({ can_check_in: false, can_check_out: true, record: { ...RECORD, check_in_location: HERE },
+      checkout_until: '2026-10-09T09:20:00+05:30' }),
+  })
+  await page.goto('/attendance')
+  await expect(page.getByText('Your location is recorded when you check in and out.')).toBeVisible()
+  await page.getByRole('button', { name: 'Check In', exact: true }).click()
+  const link = page.getByRole('link', { name: /TEST Street, Erode/ })
+  await expect(link).toHaveAttribute('href', HERE.map_url)
+  await expect(page.getByText('±12 m')).toBeVisible()
+})
+
+test('check-in without location access says how to allow it and sends nothing', async ({ page, context }) => {
+  await context.clearPermissions()
+  await page.addInitScript(() => {
+    navigator.geolocation.getCurrentPosition = (_ok, fail) => fail({ code: 1 })
+  })
+  await signIn(page, 'sales')
+  const calls = await mockApi(page, TODAY(OWN_ONLY))
+  await page.goto('/attendance')
+  await page.getByRole('button', { name: 'Check In', exact: true }).click()
+  await expect(page.getByText(/Location access is blocked/)).toBeVisible()
+  expect(calls.some((c) => c.key === 'POST /api/attendance/check-in/')).toBe(false)
 })
 
 test('evening check-out shows scheduled hours, approved permission and actual working hours', async ({ page }) => {

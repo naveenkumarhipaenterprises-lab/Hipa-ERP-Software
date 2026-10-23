@@ -5,14 +5,17 @@ import Badge from '../../../components/common/Badge'
 import Button from '../../../components/common/Button'
 import Card from '../../../components/common/Card'
 import ErrorMessage from '../../../components/common/ErrorMessage'
-import Input, { Select } from '../../../components/common/Input'
+import Input, { Select, Toggle } from '../../../components/common/Input'
 import Loader from '../../../components/common/Loader'
 import { useApi } from '../../../hooks/useApi'
 import { useToast } from '../../../hooks/useToast'
 import NoPermission from '../NoPermission'
 import { clock, list } from '../shared'
 
-/** Check-In window, office hours and the weekly holiday. Viewing needs View Settings; changing needs Modify Settings. */
+/**
+ * Check-In window, office hours, the weekly holiday and whether check-in / check-out needs the device's location.
+ * Viewing needs View Settings; changing needs Modify Settings.
+ */
 export default function SettingsPanel({ options, onChanged }) {
   const toast = useToast()
   const canView = Boolean(options.data?.permissions?.settings_view || options.data?.permissions?.settings_manage)
@@ -27,7 +30,7 @@ export default function SettingsPanel({ options, onChanged }) {
   if (settings.error && !s) return <ErrorMessage message={settings.error.message} onRetry={settings.reload} />
   if (!s) return <Loader label="Loading settings…" />
 
-  const v = draft ?? { open_time: s.open_time, close_time: s.close_time, work_start: s.work_start, work_end: s.work_end, weekly_holiday: String(s.weekly_holiday) }
+  const v = draft ?? { open_time: s.open_time, close_time: s.close_time, work_start: s.work_start, work_end: s.work_end, weekly_holiday: String(s.weekly_holiday), require_location: s.require_location }
   const weekdays = list(options.data?.weekdays).map((d) => ({ value: String(d.value), label: d.label }))
   const weeklyLabel = weekdays.find((d) => d.value === v.weekly_holiday)?.label ?? s.weekly_holiday_label
   const overnight = v.close_time <= v.open_time
@@ -65,11 +68,16 @@ export default function SettingsPanel({ options, onChanged }) {
                   options={weekdays} onChange={(e) => setDraft({ ...v, weekly_holiday: e.target.value })} />
           <Input label="Timezone" value={s.timezone} disabled readOnly />
         </div>
+        <Toggle label="Require GPS location for check-in and check-out" checked={Boolean(v.require_location)} disabled={!canEdit}
+                onChange={(on) => setDraft({ ...v, require_location: on })} />
         <div className="attendance-rule" aria-label="Current rule">
           <p><Badge tone="blue">OFFICE HOURS</Badge> {clock(v.work_start)} – {clock(v.work_end)}: the scheduled working hours; approved permission is deducted only inside them</p>
           <p><Badge tone="green">CHECK-IN OPEN</Badge> {clock(v.open_time)} → {clock(v.close_time)}{overnight ? ' next day' : ''}</p>
           <p><Badge tone="red">CHECK-IN CLOSED</Badge> {clock(v.close_time)} → {clock(v.open_time)}: check-out stays available for an open record until {clock(v.close_time)} the next morning</p>
           <p><Badge tone="gray">WEEKLY HOLIDAY</Badge> {weeklyLabel}: never counted as absent; office holidays are added in Calendar</p>
+          <p><Badge tone={v.require_location ? 'green' : 'gray'}>LOCATION</Badge> {v.require_location
+            ? 'Employees must allow location access: every check-in and check-out records where they are (address and map link).'
+            : 'Location is recorded when the device shares it, but check-in still works without it.'}</p>
           <p className="muted">This automatically repeats every day. Nobody is checked out automatically. The server's clock (IST) decides; the browser's time is never used.</p>
         </div>
         {canEdit ? (

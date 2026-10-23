@@ -110,7 +110,7 @@ class CustomerImportTests(Base):
 
 
 class ManualAttendanceEntryTests(Base):
-    """Manual entries: not for your own attendance, evening check-ins on the right day, corrections move the record."""
+    """Manual entries: managers may enter their own attendance, evening check-ins on the right day, corrections move the record."""
 
     def setUp(self):
         super().setUp()
@@ -128,14 +128,15 @@ class ManualAttendanceEntryTests(Base):
     def entry(self, **extra):
         return {"employee_id": self.emp.pk, "date": str(self.day), "check_in": "09:45", "check_out": "17:40", "note": "TEST", **extra}
 
-    def test_managers_cannot_enter_their_own_attendance(self):
-        from apps.attendance.models import Employee
+    def test_managers_can_enter_their_own_attendance(self):
+        from apps.attendance.models import AttendanceRecord, Employee
 
         boss = make_user("management", username="boss")
         own = Employee.objects.create(employee_code="T-B", name="TEST Boss", user=boss)
         res = client_for(boss).post(self.url, self.entry(employee_id=own.pk), format="json")
-        self.assertEqual(res.status_code, 403)
-        self.assertEqual(client_for(boss).post(self.url, self.entry(), format="json").status_code, 201)  # someone else: fine
+        self.assertEqual(res.status_code, 201, res.data)
+        self.assertEqual(AttendanceRecord.objects.get(employee=own).entered_by, boss)  # still marked as a manual entry
+        self.assertEqual(client_for(boss).post(self.url, self.entry(), format="json").status_code, 201)  # someone else too
 
     def test_an_evening_check_in_belongs_to_the_evening_before(self):
         res = self.api.post(self.url, self.entry(check_in="18:00", check_out="17:30"), format="json")

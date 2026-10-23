@@ -1187,3 +1187,14 @@ code {
   .attendance-calendar { gap: 3px; }
   .attendance-calendar__cell { min-height: 46px; padding: 4px; }
 }
+
+/* Attendance: where someone checked in / out, linking to the map */
+.location-link { display: inline-flex; align-items: flex-start; gap: 4px; color: var(--green-700); text-decoration: none; font-weight: 500; max-width: 100%; }
+.location-link:hover .location-link__text { text-decoration: underline; }
+.location-link svg { flex: none; margin-top: 2px; }
+.location-link__text { overflow-wrap: anywhere; }
+.location-link__accuracy { font-weight: 400; white-space: nowrap; font-size: 0.85em; margin-top: 1px; }
+.location-link--compact { max-width: 240px; }
+.location-link--compact .location-link__text { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.attendance-facts dd .location-link { font-weight: 500; }
+.attendance-location-note { display: flex; align-items: center; gap: 6px; }
