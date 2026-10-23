@@ -677,6 +677,22 @@ class LocationTests(AttendanceBase):
         self.assertIsNone(res.data["record"]["check_in_location"])
         self.assertTrue(self.admin_api.patch(f"{API}/attendance/settings/", {"require_location": True}, format="json").data["require_location"])
 
+    def test_an_approximate_location_is_refused(self):
+        for rough in (501, 2000, None):
+            body = {"location": {"latitude": 11.341036, "longitude": 77.717164, "accuracy": rough}}
+            res = self.api.post(f"{API}/attendance/check-in/", body, format="json")
+            self.assertEqual(res.status_code, 400, rough)
+            self.assertIn("approximate", res.data["detail"])
+        self.assertFalse(AttendanceRecord.objects.exists())
+        exact = {"location": {"latitude": 11.341036, "longitude": 77.717164, "accuracy": 500}}  # at the limit: fine
+        self.assertEqual(self.api.post(f"{API}/attendance/check-in/", exact, format="json").status_code, 201)
+
+    def test_a_rough_location_is_kept_when_location_is_optional(self):
+        self.admin_api.patch(f"{API}/attendance/settings/", {"require_location": False}, format="json")
+        body = {"location": {"latitude": 11.341036, "longitude": 77.717164, "accuracy": 2000}}
+        res = self.api.post(f"{API}/attendance/check-in/", body, format="json")
+        self.assertEqual((res.status_code, res.data["record"]["check_in_location"]["accuracy"]), (201, 2000))
+
     def test_address_lookup_failure_keeps_the_coordinates(self):
         with mock.patch("apps.attendance.location.urllib.request.urlopen", side_effect=OSError("down")):
             res = self.api.post(f"{API}/attendance/check-in/", HERE, format="json")

@@ -56,6 +56,7 @@ To regenerate `supabase/schema.sql` after adding migrations: `python scripts/exp
 | `NUM_PROXIES` | | Only behind a reverse proxy: how many. Unset = `X-Forwarded-For` is ignored, since anyone can fake it. On Vercel it defaults to 1 (Vercel sets that header itself) |
 | `AUTO_MIGRATE` | | Apply new database migrations when the server starts. On by default on Vercel (its build can't reach the database), off elsewhere; set `false` to turn it off |
 | `ATTENDANCE_GEOCODER`, `ATTENDANCE_GEOCODER_CONTACT` | | Street address for each attendance check-in / check-out location. Default `nominatim` (OpenStreetMap, free, no key; set `ATTENDANCE_GEOCODER_CONTACT` to your e-mail as their usage policy asks). `off` keeps only the GPS coordinates and map link |
+| `ATTENDANCE_MAX_ACCURACY_METERS` | | A required location must be exact: a fix rougher than this many metres is refused (default 500, which blocks Android's "Approximate location") |
 | `PSYCOPG_IMPL` | | Postgres driver. On Windows with PostgreSQL's client tools installed it defaults to `python` (uses PostgreSQL's own `libpq.dll`); set `binary` to use the bundled driver instead |
 
 `.env` holds secrets: never commit or share it. `.gitignore` already excludes it.

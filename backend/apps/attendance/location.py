@@ -18,6 +18,8 @@ log = logging.getLogger(__name__)
 
 REQUIRED = ("Turn on location and allow this app to use it, then try again. "
             "Your location is recorded with every check-in and check-out.")
+IMPRECISE = ("Your location is only approximate. Choose \"Precise\" / turn on exact location (GPS) for this "
+             "app in your device's location settings, then try again.")
 MAX_ADDRESS = 300
 MAX_ACCURACY = 1_000_000  # metres; anything worse is not a position
 
@@ -64,6 +66,10 @@ def read(data, required):
             errors["accuracy"] = ["Send the accuracy in metres."]
     if errors:
         raise ValidationError({"location": errors, "detail": "The location from this device isn't valid. Try again."})
+    # When location is required, it must be the exact position: an "approximate location" fix (rounded to the
+    # neighbourhood, usually 1-3 km) is refused, so nobody can check in with a vague place.
+    if required and (accuracy is None or accuracy > settings.ATTENDANCE_MAX_ACCURACY_METERS):
+        raise ValidationError({"location": [IMPRECISE], "detail": IMPRECISE})
     return Location(lat, lng, accuracy)
 
 
