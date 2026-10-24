@@ -22,6 +22,7 @@ import { api, cleanParams as clean } from './client'
  * GET  /attendance/options/    -> { permissions, leave_types, leave_statuses, employee_statuses, day_statuses, report_types,
  *                                   weekdays, departments, employees, users }
  * Employees  GET/POST /attendance/employees/  ·  GET/PATCH/DELETE /attendance/employees/<id>/   (delete keeps history)
+ * Files      GET/POST /attendance/employees/<id>/files/  ·  GET/DELETE .../files/<fid>/   (photo + documents)
  * Leave      GET/POST /attendance/leave/?scope=all&status=  ·  PATCH /attendance/leave/<id>/  ·  POST .../<id>/approve|reject|cancel/
  * Calendar   GET /attendance/calendar/?month=YYYY-MM&employee=   -> { month, employee, days, holidays }
  * Holidays   GET/POST /attendance/holidays/?year=  ·  PATCH/DELETE /attendance/holidays/<id>/   { name, date, description }
@@ -47,6 +48,13 @@ export const attendanceApi = {
   createEmployee: (body) => api.post('/attendance/employees/', body),
   updateEmployee: (id, body) => api.patch(`/attendance/employees/${id}/`, body),
   deleteEmployee: (id) => api.delete(`/attendance/employees/${id}/`),
+
+  // Employee photo and documents (stored on the employee's record)
+  listEmployeeFiles: (id) => api.get(`/attendance/employees/${id}/files/`),
+  uploadEmployeeFile: (id, file, kind) => api.upload(`/attendance/employees/${id}/files/`, file, 'file', { kind }),
+  getEmployeeFile: (id, fid) => api.blob(`/attendance/employees/${id}/files/${fid}/`),
+  downloadEmployeeFile: (id, fid, name) => api.download(`/attendance/employees/${id}/files/${fid}/`, {}, name),
+  deleteEmployeeFile: (id, fid) => api.delete(`/attendance/employees/${id}/files/${fid}/`),
 
   listLeave: (params) => api.get('/attendance/leave/', clean(params)),
   createLeave: (body) => api.post('/attendance/leave/', body),
