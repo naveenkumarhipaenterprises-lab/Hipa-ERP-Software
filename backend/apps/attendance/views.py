@@ -27,7 +27,7 @@ from services.exporters import MIME, export
 
 from . import permissions as perms
 from . import location, reports, services, window
-from .models import WEEKDAYS, AttendanceRecord, AttendanceSettings, Employee, LeaveRequest, OfficeHoliday
+from .models import WEEKDAYS, AttendanceRecord, AttendanceSettings, Employee, EmployeeFile, LeaveRequest, OfficeHoliday
 from .services import (ABSENT, DAY_LABELS, LEAVE, OFFICE_HOLIDAY, approved_permissions, current_employees, duration_label,
                        employee_of, figures, record_status, schedule_for)
 
@@ -401,6 +401,86 @@ class EmployeeDetailView(AttendanceView):
         e.deleted_at, e.status, e.user = timezone.now(), Employee.Status.INACTIVE, None
         e.save(update_fields=["deleted_at", "status", "user", "updated_at"])
         audit.record(request, "Deleted employee", f"{e.employee_code} {e.name}")
+        return Response(status=status.HTTP_204_NO_CONTENT)
+
+
+# --- Employee photo and documents -----------------------------------------------------------------
+
+MAX_FILE_MB = 5
+MAX_DOCUMENTS = 20
+# What may be uploaded, by file extension; the stored content type comes from here, never from the client
+FILE_TYPES = {"jpg": "image/jpeg", "jpeg": "image/jpeg", "png": "image/png", "webp": "image/webp",
+              "pdf": "application/pdf", "doc": "application/msword",
+              "docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+              "xls": "application/vnd.ms-excel",
+              "xlsx": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"}
+PHOTO_TYPES = {"jpg", "jpeg", "png", "webp"}
+
+
+def file_row(f):
+    return {"id": f.id, "kind": f.kind, "name": f.name, "content_type": f.content_type, "size": f.size,
+            "uploaded_by": f.uploaded_by.name or f.uploaded_by.username if f.uploaded_by_id else None,
+            "uploaded_at": iso(f.created_at)}
+
+
+def employee_for_files(request, pk, manage):
+    """The employee whose files are asked for. Managers (employee_view / employee_manage) reach everyone;
+    every employee reaches their own photo and documents."""
+    e = get_object_or_404(employees_qs(), pk=pk)
+    if e.user_id == request.user.id:
+        return e
+    codes = ("employee_manage",) if manage else ("employee_view", "employee_manage")
+    perms.require_any(request.user, codes, "You don't have permission to " + ("manage" if manage else "view") + " employee files.")
+    return e
+
+
+class EmployeeFilesView(AttendanceView):
+    def get(self, request, pk):
+        e = employee_for_files(request, pk, manage=False)
+        return Response({"results": [file_row(f) for f in e.files.defer("data")]})
+
+    def post(self, request, pk):
+        e = employee_for_files(request, pk, manage=True)
+        upload = request.FILES.get("file")
+        if not upload:
+            raise ValidationError({"file": ["Choose a file to upload."]})
+        kind = request.data.get("kind", EmployeeFile.Kind.DOCUMENT)
+        if kind not in EmployeeFile.Kind.values:
+            raise ValidationError({"kind": ["Use photo or document."]})
+        ext = upload.name.rsplit(".", 1)[-1].lower() if "." in upload.name else ""
+        allowed = PHOTO_TYPES if kind == EmployeeFile.Kind.PHOTO else FILE_TYPES
+        if ext not in allowed:
+            raise ValidationError({"file": [("A photo must be a JPG, PNG or WEBP image." if kind == EmployeeFile.Kind.PHOTO
+                                             else "Allowed files: JPG, PNG, WEBP, PDF, Word (DOC/DOCX), Excel (XLS/XLSX).")]})
+        if upload.size > MAX_FILE_MB * 1024 * 1024:
+            raise ValidationError({"file": [f"The file is too big. The limit is {MAX_FILE_MB} MB."]})
+        if kind == EmployeeFile.Kind.DOCUMENT and e.files.filter(kind=kind).count() >= MAX_DOCUMENTS:
+            raise ValidationError({"file": [f"At most {MAX_DOCUMENTS} documents per employee. Delete one first."]})
+        name = re.sub(r"[\r\n\t\"\\]", "", upload.name).strip()[:150] or f"file.{ext}"
+        with transaction.atomic():
+            if kind == EmployeeFile.Kind.PHOTO:  # one photo per employee: a new one replaces it
+                e.files.filter(kind=EmployeeFile.Kind.PHOTO).delete()
+            f = EmployeeFile.objects.create(employee=e, kind=kind, name=name, content_type=FILE_TYPES[ext],
+                                            size=upload.size, data=upload.read(), uploaded_by=request.user)
+        audit.record(request, "Uploaded employee " + ("photo" if kind == EmployeeFile.Kind.PHOTO else "document"),
+                     f"{e.employee_code} {e.name}: {name}")
+        return Response(file_row(f), status=status.HTTP_201_CREATED)
+
+
+class EmployeeFileDetailView(AttendanceView):
+    def get(self, request, pk, fid):
+        e = employee_for_files(request, pk, manage=False)
+        f = get_object_or_404(e.files, pk=fid)
+        response = HttpResponse(bytes(f.data), content_type=f.content_type)
+        disposition = "inline" if f.content_type.startswith("image/") or f.content_type == "application/pdf" else "attachment"
+        response["Content-Disposition"] = f'{disposition}; filename="{f.name}"'
+        return response
+
+    def delete(self, request, pk, fid):
+        e = employee_for_files(request, pk, manage=True)
+        f = get_object_or_404(e.files, pk=fid)
+        audit.record(request, "Deleted employee file", f"{e.employee_code} {e.name}: {f.name}")
+        f.delete()
         return Response(status=status.HTTP_204_NO_CONTENT)
 
 

@@ -8,6 +8,7 @@ from django.core.mail import send_mail
 from django.db import transaction
 from django.db.models import Q
 from django.shortcuts import get_object_or_404
+from django.utils import timezone
 from django.utils.encoding import force_bytes
 from django.utils.http import urlsafe_base64_encode
 from rest_framework import generics, status
@@ -212,6 +213,28 @@ class UserDetailView(SettingsView):
         if changes:
             audit.record(request, f"Updated user ({', '.join(changes)})"[:200], user.email)
         return Response(s.UserRowSerializer(user).data)
+
+
+    def delete(self, request, pk):
+        """Deletes the login entirely. The linked employee record leaves the employee list, but their attendance
+        and leave history are kept (records that point at the login keep their data; the link is just cleared)."""
+        user = get_object_or_404(User, pk=pk)
+        me = request.user
+        if user.pk == me.pk:
+            raise ValidationError({"detail": "You can't delete your own account."})
+        if user.effective_role == Role.ADMIN and not me.is_owner:
+            raise PermissionDenied("Only the owner can add or change Super Admin accounts.")
+        if user.is_superuser:
+            raise ValidationError({"detail": "This account is a Django superuser; remove it in the admin site."})
+        label = f"{user.name} <{user.email}>"
+        with transaction.atomic():
+            emp = getattr(user, "employee", None)
+            if emp:
+                emp.deleted_at, emp.status, emp.user = timezone.now(), emp.Status.INACTIVE, None
+                emp.save(update_fields=["deleted_at", "status", "user", "updated_at"])
+            user.delete()
+        audit.record(request, "Deleted user", label)
+        return Response(status=status.HTTP_204_NO_CONTENT)
 
 
 class UserPasswordView(SettingsView):

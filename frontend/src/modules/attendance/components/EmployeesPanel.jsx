@@ -1,4 +1,4 @@
-import { Eye, Pencil, Plus, Trash2, Users } from 'lucide-react'
+import { Eye, FolderOpen, Pencil, Plus, Trash2, Users } from 'lucide-react'
 import { Fragment, useState } from 'react'
 import { attendanceApi } from '../../../api/attendanceApi'
 import Badge from '../../../components/common/Badge'
@@ -12,6 +12,7 @@ import Modal from '../../../components/common/Modal'
 import Table from '../../../components/common/Table'
 import { usePagedList } from '../../../hooks/usePagedList'
 import { useToast } from '../../../hooks/useToast'
+import EmployeeFilesModal from './EmployeeFilesModal'
 import NoPermission from '../NoPermission'
 import { day, list } from '../shared'
 import { useAuth } from '../../../hooks/useAuth'
@@ -46,6 +47,7 @@ export default function EmployeesPanel({ options, refreshKey, onChanged }) {
   const o = options.data ?? {}
   const [form, setForm] = useState(null) // { employee? }
   const [viewing, setViewing] = useState(null)
+  const [filesFor, setFilesFor] = useState(null) // employee whose photo / documents are open
   const [deleting, setDeleting] = useState(null)
   const l = usePagedList(attendanceApi.listEmployees, { status: '', department: '' }, refreshKey)
 
@@ -100,6 +102,7 @@ export default function EmployeesPanel({ options, refreshKey, onChanged }) {
               render: (e) => (
                 <span className="row-actions">
                   <Button size="sm" variant="ghost" icon={Eye} onClick={() => setViewing(e)} aria-label={`View ${e.name}`} />
+                  <Button size="sm" variant="ghost" icon={FolderOpen} onClick={() => setFilesFor(e)} aria-label={`Photo and documents of ${e.name}`} />
                   {canManage && <Button size="sm" variant="ghost" icon={Pencil} onClick={() => setForm({ employee: e })} aria-label={`Edit ${e.name}`} />}
                   {canManage && canDelete && <Button size="sm" variant="ghost" icon={Trash2} className="btn--tone-red" onClick={() => setDeleting(e)} aria-label={`Delete ${e.name}`} />}
                 </span>
@@ -134,6 +137,7 @@ export default function EmployeesPanel({ options, refreshKey, onChanged }) {
           </dl>
         </Modal>
       )}
+      {filesFor && <EmployeeFilesModal employee={filesFor} canManage={canManage} canDelete={canDelete} onClose={() => setFilesFor(null)} />}
       <ConfirmDialog
         open={Boolean(deleting)}
         onClose={() => setDeleting(null)}

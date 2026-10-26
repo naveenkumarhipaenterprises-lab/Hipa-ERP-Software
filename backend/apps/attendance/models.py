@@ -179,3 +179,28 @@ class OfficeHoliday(models.Model):
 
     def __str__(self):
         return f"{self.date} {self.name}"
+
+
+class EmployeeFile(models.Model):
+    """A file kept on an employee's record: their photo or a document (ID proof, certificate, contract …).
+    Stored in the database so no separate file storage is needed; uploads are limited to a few MB each."""
+
+    class Kind(models.TextChoices):
+        PHOTO = "photo", "Photo"
+        DOCUMENT = "document", "Document"
+
+    employee = models.ForeignKey(Employee, on_delete=models.CASCADE, related_name="files")
+    kind = models.CharField(max_length=10, choices=Kind.choices, default=Kind.DOCUMENT)
+    name = models.CharField(max_length=150)
+    content_type = models.CharField(max_length=100)
+    size = models.PositiveIntegerField()
+    data = models.BinaryField()
+    uploaded_by = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.SET_NULL, related_name="+")
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["-created_at", "-id"]
+        default_permissions = ()
+
+    def __str__(self):
+        return f"{self.employee} {self.name}"
