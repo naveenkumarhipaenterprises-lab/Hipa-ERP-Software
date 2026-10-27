@@ -259,8 +259,8 @@ DEFAULT_FROM_EMAIL = env("DEFAULT_FROM_EMAIL", "HIPA MASALA <no-reply@localhost>
 # --- AI engine: Google Gemini (optional; the AI Assistant reports "not connected" until set) ---
 # The key stays on the server; the React app only talks to /api/v1/ai/.
 GEMINI_API_KEY = env("GEMINI_API_KEY", "").strip()
-GEMINI_MODEL = env("GEMINI_MODEL", "gemini-3.8-flash").strip() or "gemini-3.8-flash"
-GEMINI_TIMEOUT_SECONDS = int(env("GEMINI_TIMEOUT_SECONDS", "60"))
+GEMINI_MODEL = env("GEMINI_MODEL", "gemini-3.5-flash").strip() or "gemini-3.5-flash"
+GEMINI_TIMEOUT_SECONDS = int(env("GEMINI_TIMEOUT_SECONDS", "30"))
 
 # --- Production hardening ------------------------------------------------------
 if not DEBUG:
