@@ -155,6 +155,10 @@ def _database_from_url(url):
 
 DATABASES = {"default": _database_from_url(env("SUPABASE_DB_URL", required=True))}
 
+# Vercel's build step cannot reach Supabase, so migrations run once when the first
+# runtime function starts. Set AUTO_MIGRATE=false to manage migrations manually.
+AUTO_MIGRATE = env_bool("AUTO_MIGRATE", bool(os.environ.get("VERCEL")))
+
 # Supabase project API settings (Supabase → Project Settings → API). The backend reaches the
 # database through SUPABASE_DB_URL; these are for Supabase services such as Storage.
 SUPABASE_URL = env("SUPABASE_URL", "")
