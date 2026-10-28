@@ -36,6 +36,20 @@ class ManualAttendanceTests(TestCase):
         self.assertEqual(res.data["note"], "Forgot to check in")
         self.assertTrue(AuditLog.objects.filter(action__startswith="Entered attendance").exists())
 
+    def test_management_enters_attendance_for_themselves(self):
+        mgmt_user = make_user("management", username="test_mgmt_self")
+        mgmt_emp = Employee.objects.create(employee_code="M01", name="TEST Mgmt Self", user=mgmt_user)
+        res = client_for(mgmt_user).post(self.url, {"employee_id": mgmt_emp.pk, "date": str(self.day),
+                                                     "check_in": "09:30", "check_out": "17:30",
+                                                     "note": "Self manual entry"}, format="json")
+        self.assertEqual(res.status_code, 201, res.data)
+        r = AttendanceRecord.objects.get(employee=mgmt_emp, attendance_date=self.day)
+        self.assertEqual(r.check_in_at.astimezone(window.IST).strftime("%H:%M"), "09:30")
+        self.assertEqual(r.check_out_at.astimezone(window.IST).strftime("%H:%M"), "17:30")
+        self.assertEqual(r.status, AttendanceRecord.Status.COMPLETED)
+        self.assertEqual(res.data["entered_by"], mgmt_user.name)
+        self.assertTrue(AuditLog.objects.filter(action__startswith="Entered attendance").exists())
+
     def test_correcting_an_existing_day_updates_it(self):
         api = client_for(make_user("admin"))
         api.post(self.url, self.entry(check_out=""), format="json")
