@@ -9,7 +9,7 @@ from datetime import datetime, timedelta
 from django.db import IntegrityError, transaction
 from rest_framework.exceptions import ValidationError
 
-from . import window
+from . import location, window
 from .models import AttendanceRecord, AttendanceSettings, Employee, LeaveRequest, OfficeHoliday
 
 DAY = timedelta(days=1)
@@ -164,9 +164,17 @@ def open_record(emp, w, lock=False):
     return next((r for r in qs if w.can_still_check_out(r)), None)
 
 
+def device_location(data):
+    """Where the employee is (with its street address), read once the other checks have passed."""
+    return location.with_address(location.read(data or {}, AttendanceSettings.load().require_location))
+
+
 @transaction.atomic
-def check_in(user):
-    """Any signed-in user linked to an active employee, for themselves, while the Check-In window is open."""
+def check_in(user, data=None):
+    """
+    Any signed-in user linked to an active employee, for themselves, while the Check-In window is open.
+    data: the request body, with the device's GPS location (required unless turned off in Settings).
+    """
     w = window.state()
     if not w.is_open:
         raise ValidationError({"detail": window.closed_message(w)})
@@ -174,9 +182,14 @@ def check_in(user):
     taken = f"You have already checked in for {w.checkin_date:%d %b %Y}."
     if AttendanceRecord.objects.filter(employee=emp, attendance_date=w.checkin_date).exists():
         raise ValidationError({"detail": taken})
+    at = window.now()  # the moment of the request, before the address lookup
+    loc = device_location(data)
     try:
         with transaction.atomic():
-            return AttendanceRecord.objects.create(employee=emp, attendance_date=w.checkin_date, check_in_at=window.now())
+            record = AttendanceRecord(employee=emp, attendance_date=w.checkin_date, check_in_at=at)
+            location.save(record, "check_in", loc)
+            record.save()
+            return record
     except IntegrityError:
         if AttendanceRecord.objects.filter(employee=emp, attendance_date=w.checkin_date).exists():
             raise ValidationError({"detail": taken})
@@ -184,7 +197,7 @@ def check_in(user):
 
 
 @transaction.atomic
-def check_out(user):
+def check_out(user, data=None):
     """
     Any signed-in user linked to an active employee, for their own open record only: at any time (also while
     Check-In is closed), until 09:20 AM the morning after its work day.
@@ -194,9 +207,11 @@ def check_out(user):
     record = open_record(emp, w, lock=True)
     if record is None:
         raise ValidationError({"detail": "You have no open check-in to check out."})
-    record.check_out_at = window.now()
+    at = window.now()
+    loc = device_location(data)
+    record.check_out_at = at
     record.status = AttendanceRecord.Status.COMPLETED
-    record.save(update_fields=["check_out_at", "status", "updated_at"])
+    record.save(update_fields=["check_out_at", "status", "updated_at", *location.save(record, "check_out", loc)])
     return record
 
 
@@ -231,7 +246,7 @@ def picture(employees, start, end):
     sched = schedule_between(start, end)
     ids = [e.id for e in employees]
     records = {(r.employee_id, r.attendance_date): r
-               for r in AttendanceRecord.objects.filter(employee_id__in=ids, attendance_date__range=(start, end))}
+               for r in AttendanceRecord.objects.select_related("entered_by").filter(employee_id__in=ids, attendance_date__range=(start, end))}
     leaves = defaultdict(list)
     for lr in LeaveRequest.objects.filter(employee_id__in=ids, date__range=(start, end), status=LeaveRequest.Status.APPROVED):
         leaves[(lr.employee_id, lr.date)].append(lr)

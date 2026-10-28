@@ -16,10 +16,8 @@ export default function Login() {
     <>
       <title>Login | HIPA MASALA</title>
       <div className="auth__card-head">
-        <Logo size={150} />
-        <h1>
-          Welcome <span className="auth__accent">Back!</span>
-        </h1>
+        <Logo />
+        <h1>Welcome <span className="text-brand">Back!</span></h1>
         <p>Login to access your HIPA MASALA portal</p>
       </div>
 

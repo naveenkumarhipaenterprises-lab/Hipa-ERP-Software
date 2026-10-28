@@ -20,14 +20,14 @@ from rest_framework.response import Response
 
 from apps.accounts.models import User
 from apps.core import parsing
-from apps.core.roles import ATTENDANCE_MANAGERS, Role, has_any_role, role_of
+from apps.core.roles import ATTENDANCE_MANAGERS, has_any_role
 from apps.core.views import ModuleAPIView
 from services import audit
 from services.exporters import MIME, export
 
 from . import permissions as perms
-from . import reports, services, window
-from .models import WEEKDAYS, AttendanceRecord, AttendanceSettings, Employee, LeaveRequest, OfficeHoliday
+from . import location, reports, services, window
+from .models import WEEKDAYS, AttendanceRecord, AttendanceSettings, Employee, EmployeeFile, LeaveRequest, OfficeHoliday
 from .services import (ABSENT, DAY_LABELS, LEAVE, OFFICE_HOLIDAY, approved_permissions, current_employees, duration_label,
                        employee_of, figures, record_status, schedule_for)
 
@@ -77,6 +77,7 @@ def holiday_block(sched, day):
 def record_row(r, w, sched, permissions=()):
     return {"id": r.id, "attendance_date": r.attendance_date, "employee": employee_brief(r.employee),
             "check_in_at": iso(r.check_in_at), "check_out_at": iso(r.check_out_at),
+            "check_in_location": location.block(r, "check_in"), "check_out_location": location.block(r, "check_out"),
             "entered_by": (r.entered_by.name or r.entered_by.username) if r.entered_by_id else None, "note": r.note or None,
             **figures_block(figures(r, permissions, sched)), "holiday": holiday_block(sched, r.attendance_date),
             "status": record_status(r, w)}
@@ -154,6 +155,7 @@ def status_payload(user):
         "check_in_for": w.checkin_date if w.is_open else None,
         "can_check_out": can_out,
         "checkout_until": iso(w.checkout_deadline(to_close.attendance_date)) if to_close else None,
+        "location_required": s.require_location,
         "permissions": flags,
     }
 
@@ -165,9 +167,9 @@ class StatusView(AttendanceView):
 
 class CheckInView(AttendanceView):
     def post(self, request):
-        # The time is the server's; nothing from the request is used
+        # The time is the server's; only the device's GPS location is taken from the request
         try:
-            services.check_in(request.user)
+            services.check_in(request.user, request.data)
         except ValidationError as exc:
             # A double-click, retry, or second browser tab can reach the API
             # after the first request has already created the record. Return
@@ -184,7 +186,7 @@ class CheckInView(AttendanceView):
 
 class CheckOutView(AttendanceView):
     def post(self, request):
-        services.check_out(request.user)
+        services.check_out(request.user, request.data)
         return Response(status_payload(request.user))
 
 
@@ -248,8 +250,6 @@ class RecordsView(AttendanceView):
         require_attendance_manager(request.user)
         d, errors = request.data, {}
         emp = parsing.record(d, "employee_id", current_employees(), errors, message="Choose an employee.")
-        if emp and emp.user_id == request.user.id and role_of(request.user) != Role.ADMIN:
-            raise PermissionDenied("You can't enter or correct your own attendance. Ask a Super Admin or another manager.")
         current = None
         if d.get("record_id") not in (None, ""):
             current = parsing.record(d, "record_id", AttendanceRecord.objects.all(), errors, message="This record no longer exists.")
@@ -424,6 +424,86 @@ class EmployeeDetailView(AttendanceView):
         e.deleted_at, e.status, e.user = timezone.now(), Employee.Status.INACTIVE, None
         e.save(update_fields=["deleted_at", "status", "user", "updated_at"])
         audit.record(request, "Deleted employee", f"{e.employee_code} {e.name}")
+        return Response(status=status.HTTP_204_NO_CONTENT)
+
+
+# --- Employee photo and documents -----------------------------------------------------------------
+
+MAX_FILE_MB = 5
+MAX_DOCUMENTS = 20
+# What may be uploaded, by file extension; the stored content type comes from here, never from the client
+FILE_TYPES = {"jpg": "image/jpeg", "jpeg": "image/jpeg", "png": "image/png", "webp": "image/webp",
+              "pdf": "application/pdf", "doc": "application/msword",
+              "docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+              "xls": "application/vnd.ms-excel",
+              "xlsx": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"}
+PHOTO_TYPES = {"jpg", "jpeg", "png", "webp"}
+
+
+def file_row(f):
+    return {"id": f.id, "kind": f.kind, "name": f.name, "content_type": f.content_type, "size": f.size,
+            "uploaded_by": f.uploaded_by.name or f.uploaded_by.username if f.uploaded_by_id else None,
+            "uploaded_at": iso(f.created_at)}
+
+
+def employee_for_files(request, pk, manage):
+    """The employee whose files are asked for. Managers (employee_view / employee_manage) reach everyone;
+    every employee reaches their own photo and documents."""
+    e = get_object_or_404(employees_qs(), pk=pk)
+    if e.user_id == request.user.id:
+        return e
+    codes = ("employee_manage",) if manage else ("employee_view", "employee_manage")
+    perms.require_any(request.user, codes, "You don't have permission to " + ("manage" if manage else "view") + " employee files.")
+    return e
+
+
+class EmployeeFilesView(AttendanceView):
+    def get(self, request, pk):
+        e = employee_for_files(request, pk, manage=False)
+        return Response({"results": [file_row(f) for f in e.files.defer("data")]})
+
+    def post(self, request, pk):
+        e = employee_for_files(request, pk, manage=True)
+        upload = request.FILES.get("file")
+        if not upload:
+            raise ValidationError({"file": ["Choose a file to upload."]})
+        kind = request.data.get("kind", EmployeeFile.Kind.DOCUMENT)
+        if kind not in EmployeeFile.Kind.values:
+            raise ValidationError({"kind": ["Use photo or document."]})
+        ext = upload.name.rsplit(".", 1)[-1].lower() if "." in upload.name else ""
+        allowed = PHOTO_TYPES if kind == EmployeeFile.Kind.PHOTO else FILE_TYPES
+        if ext not in allowed:
+            raise ValidationError({"file": [("A photo must be a JPG, PNG or WEBP image." if kind == EmployeeFile.Kind.PHOTO
+                                             else "Allowed files: JPG, PNG, WEBP, PDF, Word (DOC/DOCX), Excel (XLS/XLSX).")]})
+        if upload.size > MAX_FILE_MB * 1024 * 1024:
+            raise ValidationError({"file": [f"The file is too big. The limit is {MAX_FILE_MB} MB."]})
+        if kind == EmployeeFile.Kind.DOCUMENT and e.files.filter(kind=kind).count() >= MAX_DOCUMENTS:
+            raise ValidationError({"file": [f"At most {MAX_DOCUMENTS} documents per employee. Delete one first."]})
+        name = re.sub(r"[\r\n\t\"\\]", "", upload.name).strip()[:150] or f"file.{ext}"
+        with transaction.atomic():
+            if kind == EmployeeFile.Kind.PHOTO:  # one photo per employee: a new one replaces it
+                e.files.filter(kind=EmployeeFile.Kind.PHOTO).delete()
+            f = EmployeeFile.objects.create(employee=e, kind=kind, name=name, content_type=FILE_TYPES[ext],
+                                            size=upload.size, data=upload.read(), uploaded_by=request.user)
+        audit.record(request, "Uploaded employee " + ("photo" if kind == EmployeeFile.Kind.PHOTO else "document"),
+                     f"{e.employee_code} {e.name}: {name}")
+        return Response(file_row(f), status=status.HTTP_201_CREATED)
+
+
+class EmployeeFileDetailView(AttendanceView):
+    def get(self, request, pk, fid):
+        e = employee_for_files(request, pk, manage=False)
+        f = get_object_or_404(e.files, pk=fid)
+        response = HttpResponse(bytes(f.data), content_type=f.content_type)
+        disposition = "inline" if f.content_type.startswith("image/") or f.content_type == "application/pdf" else "attachment"
+        response["Content-Disposition"] = f'{disposition}; filename="{f.name}"'
+        return response
+
+    def delete(self, request, pk, fid):
+        e = employee_for_files(request, pk, manage=True)
+        f = get_object_or_404(e.files, pk=fid)
+        audit.record(request, "Deleted employee file", f"{e.employee_code} {e.name}: {f.name}")
+        f.delete()
         return Response(status=status.HTTP_204_NO_CONTENT)
 
 
@@ -675,6 +755,7 @@ def settings_payload(s):
     start, end = (datetime.combine(date.min, t) for t in (s.work_start, s.work_end))
     return {**{name: getattr(s, name).strftime("%H:%M") for name in SETTING_TIMES},
             "weekly_holiday": s.weekly_holiday, "weekly_holiday_label": dict(WEEKDAYS)[s.weekly_holiday],
+            "require_location": s.require_location,
             "scheduled_duration": duration_label(end - start),
             "timezone": "Asia/Kolkata (IST)", "updated_at": iso(s.updated_at)}
 
@@ -700,15 +781,20 @@ class SettingsView(AttendanceView):
                 errors["close_time"] = ["The close time must differ from the open time."]
             if values["work_end"] <= values["work_start"]:
                 errors["work_end"] = ["The working hours must end after they start."]
+        require_location = s.require_location
+        if "require_location" in request.data:
+            raw = request.data.get("require_location")
+            require_location = raw if isinstance(raw, bool) else str(raw).strip().lower() in ("true", "1", "yes", "on")
         if errors:
             raise ValidationError(errors)
         for name, value in values.items():
             setattr(s, name, value)
         s.weekly_holiday = int(weekly)
+        s.require_location = require_location
         s.save()
         audit.record(request, "Changed attendance settings",
                      f"open {s.open_time:%H:%M}, close {s.close_time:%H:%M}, working hours {s.work_start:%H:%M}–{s.work_end:%H:%M}, "
-                     f"weekly holiday {dict(WEEKDAYS)[s.weekly_holiday]}")
+                     f"weekly holiday {dict(WEEKDAYS)[s.weekly_holiday]}, location {'required' if s.require_location else 'optional'}")
         return Response(settings_payload(s))
 
 
@@ -833,6 +919,9 @@ class DashboardView(AttendanceView):
                 continue
             rows.append({"employee": employee_brief(emp), "date": day, "record_id": rec.id if rec else None,
                          "check_in_at": iso(rec.check_in_at) if rec else None, "check_out_at": iso(rec.check_out_at) if rec else None,
+                         "check_in_location": location.block(rec, "check_in"),
+                         "check_out_location": location.block(rec, "check_out"),
+                         "entered_by": (rec.entered_by.name or rec.entered_by.username) if rec and rec.entered_by_id else None,
                          **figures_block(entry["figures"]), "permission_times": permission_times(leaves),
                          "statuses": statuses, "labels": [DAY_LABELS[s] for s in statuses],
                          "record_status": record_status(rec, w) if rec else None})

@@ -12,6 +12,8 @@ urlpatterns = [
     path("options/", views.OptionsView.as_view()),
     path("employees/", views.EmployeesView.as_view()),
     path("employees/<int:pk>/", views.EmployeeDetailView.as_view()),
+    path("employees/<int:pk>/files/", views.EmployeeFilesView.as_view()),
+    path("employees/<int:pk>/files/<int:fid>/", views.EmployeeFileDetailView.as_view()),
     path("leave/", views.LeaveView.as_view()),
     path("leave/<int:pk>/", views.LeaveDetailView.as_view()),
     path("leave/<int:pk>/<str:action>/", views.LeaveActionView.as_view()),

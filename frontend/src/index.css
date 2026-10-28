@@ -1019,28 +1019,30 @@ code {
 /* =========================================================
    Auth
    ========================================================= */
-/* The sunrise spice-farm photo fills the screen (public/images/login-background.jpg); until it is added, a warm
-   sky-to-field colour wash shows in its place. The form sits in a frosted-glass card on the right. */
 .auth {
+  position: relative;
   min-height: 100vh; min-height: 100dvh;
-  display: flex; align-items: center; justify-content: space-between; gap: 32px;
-  padding: 56px clamp(24px, 8vw, 150px);
-  background:
-    url('/images/login-background.jpg') left center / cover no-repeat,
-    linear-gradient(180deg, #f6c98a 0%, #f3a95f 26%, #c9b46a 44%, #6f9a4a 62%, #3f6e2c 100%);
-  overflow-x: hidden;
+  display: flex; justify-content: flex-end; align-items: stretch;
+  background-color: #233a22;
+  background-size: cover; background-position: center; background-repeat: no-repeat;
 }
-.auth__brand { align-self: flex-start; margin-top: -6px; flex-shrink: 0; }
-.auth__brand .logo { width: clamp(150px, 12vw, 215px); height: auto; filter: drop-shadow(0 6px 18px rgba(0, 0, 0, 0.18)); }
+.auth__brand { position: absolute; top: 26px; left: clamp(16px, 4vw, 44px); z-index: 1; filter: drop-shadow(0 10px 24px rgba(25, 35, 20, 0.35)); }
+.auth__panel {
+  position: relative;
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  width: min(620px, 100%);
+  padding: 96px clamp(16px, 4.5vw, 64px) 40px;
+}
+.auth__lang { position: absolute; top: 22px; right: 28px; z-index: 2; }
 .auth__card {
-  width: 100%; max-width: 600px;
-  padding: 34px clamp(24px, 3.6vw, 64px) 30px;
-  border-radius: 28px;
-  background: rgba(255, 255, 255, 0.62);
-  border: 1px solid rgba(255, 255, 255, 0.8);
-  box-shadow: 0 24px 60px rgba(40, 30, 10, 0.22);
-  -webkit-backdrop-filter: blur(16px) saturate(1.15);
-  backdrop-filter: blur(16px) saturate(1.15);
+  width: 100%; max-width: 440px;
+  background: rgba(255, 255, 255, 0.66);
+  -webkit-backdrop-filter: blur(18px) saturate(1.25);
+  backdrop-filter: blur(18px) saturate(1.25);
+  border: 1px solid rgba(255, 255, 255, 0.65);
+  border-radius: 24px;
+  padding: 34px 34px 28px;
+  box-shadow: 0 28px 70px rgba(20, 34, 18, 0.35);
   display: flex; flex-direction: column; gap: 18px;
 }
 .auth__card-head { display: flex; flex-direction: column; align-items: center; text-align: center; gap: 6px; }
@@ -1066,6 +1068,7 @@ code {
 .pw-rules svg { opacity: 0.35; }
 .pw-rules__met { color: var(--green-600); }
 .pw-rules__met svg { opacity: 1; }
+
 .login-form { display: flex; flex-direction: column; gap: 16px; }
 .login-form__row { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; }
 /* Login fields show their name as the placeholder, as in the design; the label stays for screen readers */
@@ -1102,8 +1105,8 @@ code {
   .app-main { margin-left: 0; }
   .topbar__menu { display: inline-grid; }
   .topbar__user-text, .topbar__caret, .topbar__kbd { display: none; }
-  /* Tablet: the card is centred over the photo and carries the only logo */
-  .auth { justify-content: center; padding: 40px 24px; }
+  .auth { justify-content: center; }
+  .auth__panel { width: 100%; }
   .auth__brand { display: none; }
 }
 
@@ -1189,3 +1192,27 @@ code {
   .attendance-calendar { gap: 3px; }
   .attendance-calendar__cell { min-height: 46px; padding: 4px; }
 }
+
+/* Attendance: where someone checked in / out, linking to the map */
+.location-link { display: inline-flex; align-items: flex-start; gap: 4px; color: var(--green-700); text-decoration: none; font-weight: 500; max-width: 100%; }
+.location-link:hover .location-link__text { text-decoration: underline; }
+.location-link svg { flex: none; margin-top: 2px; }
+.location-link__text { overflow-wrap: anywhere; }
+.location-link__accuracy { font-weight: 400; white-space: nowrap; font-size: 0.85em; margin-top: 1px; }
+.location-link--compact { max-width: 240px; }
+.location-link--compact .location-link__text { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.attendance-facts dd .location-link { font-weight: 500; }
+.attendance-location-note { display: flex; align-items: center; gap: 6px; }
+
+/* Employee photo & documents (Attendance -> Employees -> folder icon) */
+.employee-files { display: flex; gap: 20px; align-items: flex-start; flex-wrap: wrap; }
+.employee-files__photo { display: flex; flex-direction: column; align-items: center; gap: 8px; }
+.employee-files__photo img { width: 112px; height: 112px; border-radius: 12px; object-fit: cover; border: 1px solid var(--border, #e2e8f0); }
+.employee-files__nophoto { width: 112px; height: 112px; border-radius: 12px; border: 1px dashed var(--border, #cbd5e1);
+  display: flex; align-items: center; justify-content: center; color: var(--muted, #64748b); font-size: 0.85rem; }
+.employee-files__docs { flex: 1; min-width: 260px; display: flex; flex-direction: column; gap: 10px; }
+.employee-files__head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.employee-files__list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.employee-files__list li { display: flex; align-items: center; gap: 10px; padding: 8px 10px; border: 1px solid var(--border, #e2e8f0); border-radius: 10px; }
+.employee-files__name { flex: 1; display: flex; flex-direction: column; min-width: 0; }
+.employee-files__name strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

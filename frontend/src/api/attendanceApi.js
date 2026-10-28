@@ -11,7 +11,10 @@ import { api, cleanParams as clean } from './client'
  *      record: { attendance_date (the work day), check_in_at, check_out_at, scheduled_duration, total_duration,
  *                permission_duration, working_duration, holiday, status }
  *      working = total − approved permission inside office hours; check-out works at any time until 09:20 AM next morning
+ *      also location_required: check-in / check-out must send the device location (Settings → Require location)
  * POST /attendance/check-in/   -> status            POST /attendance/check-out/  -> status
+ *      body { location: { latitude, longitude, accuracy (metres) } }: the device's GPS fix, kept with the record. Records
+ *      return check_in_location / check_out_location { latitude, longitude, accuracy, address, map_url } or null
  * GET  /attendance/history/    -> own records        GET /attendance/records/   -> everyone's (reports permission)
  * GET  /attendance/dashboard/?date=&employee=&department=&status=&search=&page=   (view_all)
  *      -> { count, results: [{ employee, check_in_at, check_out_at, scheduled_duration, permission_duration,
@@ -19,17 +22,19 @@ import { api, cleanParams as clean } from './client'
  * GET  /attendance/options/    -> { permissions, leave_types, leave_statuses, employee_statuses, day_statuses, report_types,
  *                                   weekdays, departments, employees, users }
  * Employees  GET/POST /attendance/employees/  ·  GET/PATCH/DELETE /attendance/employees/<id>/   (delete keeps history)
+ * Files      GET/POST /attendance/employees/<id>/files/  ·  GET/DELETE .../files/<fid>/   (photo + documents)
  * Leave      GET/POST /attendance/leave/?scope=all&status=  ·  PATCH /attendance/leave/<id>/  ·  POST .../<id>/approve|reject|cancel/
  * Calendar   GET /attendance/calendar/?month=YYYY-MM&employee=   -> { month, employee, days, holidays }
  * Holidays   GET/POST /attendance/holidays/?year=  ·  PATCH/DELETE /attendance/holidays/<id>/   { name, date, description }
  * Reports    GET /attendance/reports/?type=daily|monthly|employee|leave&date_from=&date_to=&employee=&department=&status=&format=
- * Settings   GET/PATCH /attendance/settings/   { open_time, close_time, work_start, work_end, weekly_holiday }
+ * Settings   GET/PATCH /attendance/settings/   { open_time, close_time, work_start, work_end, weekly_holiday, require_location }
  * Every action returns 403 without its permission (Settings → Users).
  */
 export const attendanceApi = {
   getStatus: () => api.get('/attendance/status/'),
-  checkIn: () => api.post('/attendance/check-in/'),
-  checkOut: () => api.post('/attendance/check-out/'),
+  // body: { location: { latitude, longitude, accuracy } } from the device (utils/geolocation.js)
+  checkIn: (body = {}) => api.post('/attendance/check-in/', body),
+  checkOut: (body = {}) => api.post('/attendance/check-out/', body),
   listHistory: (params) => api.get('/attendance/history/', clean(params)),
   getOptions: () => api.get('/attendance/options/'),
   // Super Admin / Management: enter or correct someone's attendance { employee_id, date, check_in, check_out?, note }
@@ -43,6 +48,13 @@ export const attendanceApi = {
   createEmployee: (body) => api.post('/attendance/employees/', body),
   updateEmployee: (id, body) => api.patch(`/attendance/employees/${id}/`, body),
   deleteEmployee: (id) => api.delete(`/attendance/employees/${id}/`),
+
+  // Employee photo and documents (stored on the employee's record)
+  listEmployeeFiles: (id) => api.get(`/attendance/employees/${id}/files/`),
+  uploadEmployeeFile: (id, file, kind) => api.upload(`/attendance/employees/${id}/files/`, file, 'file', { kind }),
+  getEmployeeFile: (id, fid) => api.blob(`/attendance/employees/${id}/files/${fid}/`),
+  downloadEmployeeFile: (id, fid, name) => api.download(`/attendance/employees/${id}/files/${fid}/`, {}, name),
+  deleteEmployeeFile: (id, fid) => api.delete(`/attendance/employees/${id}/files/${fid}/`),
 
   listLeave: (params) => api.get('/attendance/leave/', clean(params)),
   createLeave: (body) => api.post('/attendance/leave/', body),

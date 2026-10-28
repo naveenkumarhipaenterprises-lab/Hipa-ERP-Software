@@ -12,6 +12,7 @@ import Table from '../../../components/common/Table'
 import StatCard from '../../../components/dashboard/StatCard'
 import { usePagedList } from '../../../hooks/usePagedList'
 import { STATUS_TONES, clock, day, list } from '../shared'
+import LocationLink from './LocationLink'
 
 const dash = (v) => v || '—'
 
@@ -26,7 +27,8 @@ function Statuses({ row }) {
 
 /**
  * Everyone's attendance on one day (GET /attendance/dashboard/), for users with the View All permission:
- * summary counts and a filtered, searchable, paginated table. Every figure comes from the server.
+ * summary counts and a filtered, searchable, paginated table with where each person checked in. Every figure
+ * comes from the server.
  */
 export default function AttendanceOverview({ options, refreshKey }) {
   const o = options.data ?? {}
@@ -83,6 +85,8 @@ export default function AttendanceOverview({ options, refreshKey }) {
               { key: 'department', header: 'Department', render: (r) => dash(r.employee.department) },
               { key: 'check_in_at', header: 'Check-In', render: (r) => clock(r.check_in_at) },
               { key: 'check_out_at', header: 'Check-Out', render: (r) => clock(r.check_out_at) },
+              { key: 'check_in_location', header: 'Check-In Location',
+                render: (r) => (r.record_id ? <LocationLink compact location={r.check_in_location} manual={Boolean(r.entered_by)} /> : '—') },
               { key: 'working_duration', header: 'Working Hours', render: (r) => r.working_duration ?? '—' },
               { key: 'permission', header: 'Permission Time', render: (r) => list(r.permission_times).join(', ') || '—' },
               { key: 'status', header: 'Status', render: (r) => <Statuses row={r} /> },
@@ -100,7 +104,10 @@ export default function AttendanceOverview({ options, refreshKey }) {
           <dl className="detail-list">
             {[['Department', dash(viewing.employee.department)], ['Status', <Statuses key="s" row={viewing} />],
               ['Scheduled Working Hours', viewing.scheduled_duration ?? '—'], ['Actual Check-In', clock(viewing.check_in_at)],
-              ['Actual Check-Out', clock(viewing.check_out_at)], ['Total Duration', viewing.total_duration ?? '—'],
+              ['Check-In Location', viewing.record_id ? <LocationLink key="li" location={viewing.check_in_location} manual={Boolean(viewing.entered_by)} /> : '—'],
+              ['Actual Check-Out', clock(viewing.check_out_at)],
+              ['Check-Out Location', viewing.check_out_at ? <LocationLink key="lo" location={viewing.check_out_location} manual={Boolean(viewing.entered_by)} /> : '—'],
+              ['Total Duration', viewing.total_duration ?? '—'],
               ['Approved Permission', list(viewing.permission_times).join(', ') || '—'],
               ['Approved Permission Duration', viewing.permission_duration ?? '—'], ['Actual Working Hours', viewing.working_duration ?? '—']]
               .map(([k, v]) => <Fragment key={k}><dt>{k}</dt><dd>{v}</dd></Fragment>)}

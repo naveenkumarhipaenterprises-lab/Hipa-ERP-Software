@@ -262,6 +262,23 @@ GEMINI_API_KEY = env("GEMINI_API_KEY", "").strip()
 GEMINI_MODEL = env("GEMINI_MODEL", "gemini-3.8-flash").strip() or "gemini-3.8-flash"
 GEMINI_TIMEOUT_SECONDS = int(env("GEMINI_TIMEOUT_SECONDS", "60"))
 
+# --- Database migrations at start-up --------------------------------------------
+# Vercel's build can't reach the database, so on Vercel new migrations are applied when the server starts
+# (apps/core/automigrate.py). Elsewhere run `python manage.py migrate` as usual.
+AUTO_MIGRATE = env_bool("AUTO_MIGRATE", bool(os.environ.get("VERCEL")))
+
+# --- Attendance locations ------------------------------------------------------
+# Check-in / check-out store the device's GPS position; the server looks up the street address from it.
+# "nominatim" = OpenStreetMap's free service (no key; about one lookup a second), "off" = keep coordinates only.
+ATTENDANCE_GEOCODER = env("ATTENDANCE_GEOCODER", "nominatim").strip().lower()
+ATTENDANCE_GEOCODER_URL = env("ATTENDANCE_GEOCODER_URL", "https://nominatim.openstreetmap.org/reverse").strip()
+# Nominatim asks every app to say who it is; an e-mail lets them reach you instead of blocking the server
+ATTENDANCE_GEOCODER_CONTACT = env("ATTENDANCE_GEOCODER_CONTACT", "").strip()
+ATTENDANCE_GEOCODER_TIMEOUT_SECONDS = float(env("ATTENDANCE_GEOCODER_TIMEOUT_SECONDS", "4"))
+# A required location must be exact: a fix rougher than this many metres (e.g. Android's "Approximate
+# location", usually 1-3 km) is refused. GPS is ~5-50 m; desktop Wi-Fi positioning is usually well under 500 m.
+ATTENDANCE_MAX_ACCURACY_METERS = int(env("ATTENDANCE_MAX_ACCURACY_METERS", "500"))
+
 # --- Production hardening ------------------------------------------------------
 if not DEBUG:
     SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")

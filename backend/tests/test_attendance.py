@@ -4,10 +4,12 @@ separate permissions, office hours and approved permission, weekly / office holi
 leave / permission requests, calendar, reports and settings. TEST records only; the clock is fixed.
 (October 2026: the 4th and 11th are Sundays.)
 """
+import json
 from datetime import date, datetime, time
 from unittest import mock
 
-from django.test import TestCase
+from django.core.cache import cache
+from django.test import TestCase, override_settings
 from rest_framework.test import APIClient
 
 from apps.attendance import permissions as perms
@@ -17,6 +19,7 @@ from apps.attendance.models import AttendanceRecord, AttendanceSettings, Employe
 from .helpers import API, client_for, make_user
 
 IST = window.IST
+HERE = {"location": {"latitude": 11.341036, "longitude": 77.717164, "accuracy": 12}}  # the device's GPS fix
 
 
 def at(y, m, d, hh, mm):
@@ -51,6 +54,7 @@ class WindowLoopTests(TestCase):
             self.assertFalse(window.state().is_open)
 
 
+@override_settings(ATTENDANCE_GEOCODER="off")  # no address lookups over the network; LocationTests fakes the service
 class AttendanceBase(TestCase):
     def setUp(self):
         self.admin = make_user("admin")
@@ -76,11 +80,11 @@ class CheckInOutTests(AttendanceBase):
     def test_morning_check_in_and_evening_check_out_make_one_work_day(self):
         _user, api = self.worker("check_in", "check_out")
         self.clock(at(2026, 10, 8, 8, 50))
-        res = api.post(f"{API}/attendance/check-in/", {"check_in_at": "2020-01-01T00:00:00"}, format="json")  # ignored
+        res = api.post(f"{API}/attendance/check-in/", {**HERE, "check_in_at": "2020-01-01T00:00:00"}, format="json")  # time ignored
         self.assertEqual(res.status_code, 201, res.data)
         self.assertTrue(res.data["record"]["check_in_at"].startswith("2026-10-08T08:50"))
         self.assertEqual((res.data["work_date"], res.data["can_check_in"], res.data["can_check_out"]), (date(2026, 10, 8), False, True))  # can check out at any time
-        duplicate = api.post(f"{API}/attendance/check-in/")
+        duplicate = api.post(f"{API}/attendance/check-in/", HERE, format="json")
         self.assertEqual(duplicate.status_code, 200)  # retries return the authoritative current state
         self.assertEqual(duplicate.data["record"]["attendance_date"], date(2026, 10, 8))
         self.clock(at(2026, 10, 8, 12, 0))  # Check-In closed; check-out still possible
@@ -89,21 +93,21 @@ class CheckInOutTests(AttendanceBase):
         self.assertEqual((status["scheduled_duration"], status["office_hours"]), ("08h 30m", "9:00 AM – 5:30 PM"))
         self.clock(at(2026, 10, 8, 17, 20))
         self.assertTrue(api.get(f"{API}/attendance/status/").data["can_check_out"])
-        res = api.post(f"{API}/attendance/check-out/")
+        res = api.post(f"{API}/attendance/check-out/", HERE, format="json")
         self.assertEqual(res.status_code, 200, res.data)
         r = res.data["record"]
         self.assertEqual((r["attendance_date"], r["scheduled_duration"], r["total_duration"], r["permission_duration"],
                           r["working_duration"], r["status"]),
                          (date(2026, 10, 8), "08h 30m", "08h 30m", "00h 00m", "08h 30m", "Attendance completed"))
-        self.assertEqual(api.post(f"{API}/attendance/check-out/").status_code, 400)
+        self.assertEqual(api.post(f"{API}/attendance/check-out/", HERE, format="json").status_code, 400)
         self.assertEqual(AttendanceRecord.objects.count(), 1)
 
     def test_late_check_out_after_midnight_still_ends_that_day(self):
         _user, api = self.worker("check_in", "check_out")
         self.clock(at(2026, 10, 8, 9, 0))
-        api.post(f"{API}/attendance/check-in/")
+        api.post(f"{API}/attendance/check-in/", HERE, format="json")
         self.clock(at(2026, 10, 9, 1, 0))
-        self.assertEqual(api.post(f"{API}/attendance/check-out/").status_code, 200)
+        self.assertEqual(api.post(f"{API}/attendance/check-out/", HERE, format="json").status_code, 200)
         self.assertEqual(AttendanceRecord.objects.get().attendance_date, date(2026, 10, 8))
 
     def test_check_in_times(self):
@@ -112,7 +116,7 @@ class CheckInOutTests(AttendanceBase):
         expected = [((9, 19), 201), ((9, 20), 400), ((10, 0), 400), ((16, 59), 400), ((17, 0), 201)]
         for (hh, mm), code in expected:
             self.clock(at(2026, 10, 8, hh, mm))
-            res = api.post(f"{API}/attendance/check-in/")
+            res = api.post(f"{API}/attendance/check-in/", HERE, format="json")
             self.assertEqual(res.status_code, code, f"{hh:02d}:{mm:02d}")
             if code == 400:
                 self.assertEqual(res.data["detail"], "Check-In is closed. It opens again at 5:00 PM.")
@@ -124,28 +128,28 @@ class CheckInOutTests(AttendanceBase):
     def test_check_out_after_9_20_is_allowed(self):
         _user, api = self.worker("check_in", "check_out")
         self.clock(at(2026, 10, 8, 9, 10))
-        api.post(f"{API}/attendance/check-in/")
+        api.post(f"{API}/attendance/check-in/", HERE, format="json")
         self.clock(at(2026, 10, 8, 9, 25))
-        res = api.post(f"{API}/attendance/check-out/")
+        res = api.post(f"{API}/attendance/check-out/", HERE, format="json")
         self.assertEqual(res.status_code, 200, res.data)
         self.assertEqual(res.data["record"]["total_duration"], "00h 15m")
 
     def test_evening_check_in_can_be_checked_out_the_next_day(self):
         _user, api = self.worker("check_in", "check_out")
         self.clock(at(2026, 10, 8, 18, 0))
-        api.post(f"{API}/attendance/check-in/")
+        api.post(f"{API}/attendance/check-in/", HERE, format="json")
         same_window = api.get(f"{API}/attendance/status/").data
         self.assertEqual((same_window["work_date"], same_window["record"]["attendance_date"], same_window["can_check_in"]),
                          (date(2026, 10, 9), date(2026, 10, 9), False))
         self.clock(at(2026, 10, 9, 14, 0))  # Check-In closed, the record is still open
         self.assertTrue(api.get(f"{API}/attendance/status/").data["can_check_out"])
-        self.assertEqual(api.post(f"{API}/attendance/check-out/").status_code, 200)
+        self.assertEqual(api.post(f"{API}/attendance/check-out/", HERE, format="json").status_code, 200)
         self.assertEqual(AttendanceRecord.objects.get().attendance_date, date(2026, 10, 9))
 
     def test_nobody_is_checked_out_automatically(self):
         _user, api = self.worker("check_in", "check_out")
         self.clock(at(2026, 10, 8, 9, 0))
-        api.post(f"{API}/attendance/check-in/")
+        api.post(f"{API}/attendance/check-in/", HERE, format="json")
         self.clock(at(2026, 10, 9, 12, 0))
         api.get(f"{API}/attendance/status/")
         self.assertIsNone(AttendanceRecord.objects.get().check_out_at)
@@ -154,7 +158,7 @@ class CheckInOutTests(AttendanceBase):
         _user, api = self.worker("check_in")
         self.clock(at(2026, 10, 8, 18, 0))
         self.assertEqual(api.get(f"{API}/attendance/status/").data["check_in_for"], date(2026, 10, 9))
-        self.assertEqual(api.post(f"{API}/attendance/check-in/").status_code, 201)
+        self.assertEqual(api.post(f"{API}/attendance/check-in/", HERE, format="json").status_code, 201)
         self.assertEqual(AttendanceRecord.objects.get().attendance_date, date(2026, 10, 9))
 
     def test_every_active_employee_checks_in_and_out_without_permissions(self):
@@ -164,29 +168,29 @@ class CheckInOutTests(AttendanceBase):
         self.clock(at(2026, 10, 8, 8, 30))
         status = api.get(f"{API}/attendance/status/").data
         self.assertEqual((status["can_check_in"], status["can_check_out"]), (True, False))
-        self.assertEqual(api.post(f"{API}/attendance/check-in/").status_code, 201)
-        self.assertEqual(api.post(f"{API}/attendance/check-in/").status_code, 200)  # duplicate check-in is idempotent
+        self.assertEqual(api.post(f"{API}/attendance/check-in/", HERE, format="json").status_code, 201)
+        self.assertEqual(api.post(f"{API}/attendance/check-in/", HERE, format="json").status_code, 200)  # duplicate check-in is idempotent
         self.assertTrue(api.get(f"{API}/attendance/status/").data["can_check_out"])
         self.clock(at(2026, 10, 8, 18, 0))  # open window: check out
-        self.assertEqual(api.post(f"{API}/attendance/check-out/").status_code, 200)
-        self.assertEqual(api.post(f"{API}/attendance/check-out/").status_code, 400)  # duplicate check-out
+        self.assertEqual(api.post(f"{API}/attendance/check-out/", HERE, format="json").status_code, 200)
+        self.assertEqual(api.post(f"{API}/attendance/check-out/", HERE, format="json").status_code, 400)  # duplicate check-out
         self.assertEqual(AttendanceRecord.objects.count(), 1)
 
     def test_check_out_after_9_20_without_permissions(self):
         _user, api = self.worker(username="plain")
         self.clock(at(2026, 10, 8, 9, 12))
-        api.post(f"{API}/attendance/check-in/")
+        api.post(f"{API}/attendance/check-in/", HERE, format="json")
         self.clock(at(2026, 10, 8, 9, 36))  # Check-In closed; the open record can still be checked out
         status = api.get(f"{API}/attendance/status/").data
         self.assertEqual((status["window"]["is_open"], status["can_check_out"]), (False, True))
-        self.assertEqual(api.post(f"{API}/attendance/check-out/").status_code, 200)
-        self.assertEqual(api.post(f"{API}/attendance/check-in/").status_code, 400)  # Check-In stays closed
+        self.assertEqual(api.post(f"{API}/attendance/check-out/", HERE, format="json").status_code, 200)
+        self.assertEqual(api.post(f"{API}/attendance/check-in/", HERE, format="json").status_code, 400)  # Check-In stays closed
 
     def test_no_open_record_means_no_check_out(self):
         _user, api = self.worker(username="plain")
         self.clock(at(2026, 10, 8, 12, 0))
         self.assertFalse(api.get(f"{API}/attendance/status/").data["can_check_out"])
-        res = api.post(f"{API}/attendance/check-out/")
+        res = api.post(f"{API}/attendance/check-out/", HERE, format="json")
         self.assertEqual((res.status_code, res.data["detail"]), (400, "You have no open check-in to check out."))
 
     def test_nobody_can_check_out_another_employees_record(self):
@@ -202,8 +206,8 @@ class CheckInOutTests(AttendanceBase):
     def test_anonymous_and_inactive_employees_are_refused(self):
         self.clock(at(2026, 10, 8, 8, 30))
         anonymous = APIClient()
-        self.assertEqual(anonymous.post(f"{API}/attendance/check-in/").status_code, 401)
-        self.assertEqual(anonymous.post(f"{API}/attendance/check-out/").status_code, 401)
+        self.assertEqual(anonymous.post(f"{API}/attendance/check-in/", HERE, format="json").status_code, 401)
+        self.assertEqual(anonymous.post(f"{API}/attendance/check-out/", HERE, format="json").status_code, 401)
         user, api = self.worker(username="left")
         AttendanceRecord.objects.create(employee=user.employee, attendance_date=date(2026, 10, 8), check_in_at=at(2026, 10, 8, 8, 0))
         Employee.objects.filter(pk=user.employee.pk).update(status=Employee.Status.INACTIVE)
@@ -225,23 +229,23 @@ class CheckInOutTests(AttendanceBase):
         user = make_user("sales", username="nolink")
         perms.set_granted(user, ["check_in"])
         self.clock(at(2026, 10, 8, 8, 0))
-        res = client_for(user).post(f"{API}/attendance/check-in/")
+        res = client_for(user).post(f"{API}/attendance/check-in/", HERE, format="json")
         self.assertEqual(res.status_code, 400)
         self.assertIn("isn't linked to an active employee", res.data["detail"])
 
     def test_not_checked_out_once_the_check_out_time_is_over(self):
         _user, api = self.worker("check_in", "check_out")
         self.clock(at(2026, 10, 8, 8, 0))
-        api.post(f"{API}/attendance/check-in/")
+        api.post(f"{API}/attendance/check-in/", HERE, format="json")
         self.clock(at(2026, 10, 9, 10, 0))
-        res = api.post(f"{API}/attendance/check-out/")
+        res = api.post(f"{API}/attendance/check-out/", HERE, format="json")
         self.assertEqual((res.status_code, res.data["detail"]), (400, "You have no open check-in to check out."))
         self.assertEqual(api.get(f"{API}/attendance/history/").data["results"][0]["status"], "Not checked out")
 
     def test_super_admin_has_every_permission(self):
         self.employee(user=self.admin, code="TEST-ADM")
         self.clock(at(2026, 10, 8, 8, 0))
-        self.assertEqual(self.admin_api.post(f"{API}/attendance/check-in/").status_code, 201)
+        self.assertEqual(self.admin_api.post(f"{API}/attendance/check-in/", HERE, format="json").status_code, 201)
 
 
 class WorkingHoursTests(AttendanceBase):
@@ -601,3 +605,134 @@ class DashboardTests(AttendanceBase):
         Employee.objects.update(status=Employee.Status.INACTIVE)
         res = self.board()
         self.assertEqual((res.data["count"], res.data["summary"]["total_active"]), (0, 0))
+
+
+class FakeResponse:
+    def __init__(self, body):
+        self.body = body
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *exc):
+        return False
+
+    def read(self, _limit=None):
+        return json.dumps(self.body).encode()
+
+
+@override_settings(ATTENDANCE_GEOCODER="nominatim")
+class LocationTests(AttendanceBase):
+    """Check-in and check-out keep the device's GPS position and its street address, shown wherever attendance is."""
+
+    ADDRESS = "TEST Street, Erode, Tamil Nadu, 638001, India"
+
+    def setUp(self):
+        super().setUp()
+        cache.clear()
+        self.user, self.api = self.worker()
+        self.clock(at(2026, 10, 8, 8, 50))
+        self.lookups = []
+
+        def fake(request, timeout):
+            self.lookups.append(request.full_url)
+            return FakeResponse({"display_name": self.ADDRESS})
+
+        patcher = mock.patch("apps.attendance.location.urllib.request.urlopen", side_effect=fake)
+        patcher.start()
+        self.addCleanup(patcher.stop)
+
+    def test_check_in_and_out_keep_where_the_employee_was(self):
+        res = self.api.post(f"{API}/attendance/check-in/", HERE, format="json")
+        self.assertEqual(res.status_code, 201, res.data)
+        loc = res.data["record"]["check_in_location"]
+        self.assertEqual((loc["latitude"], loc["longitude"], loc["accuracy"], loc["address"]), (11.341036, 77.717164, 12, self.ADDRESS))
+        self.assertEqual(loc["map_url"], "https://www.google.com/maps/search/?api=1&query=11.341036,77.717164")
+        self.assertIn("lat=11.341036", self.lookups[0])
+        self.clock(at(2026, 10, 8, 17, 40))
+        away = {"location": {"latitude": "11.3500", "longitude": "77.7200", "accuracy": 30.6}}
+        out = self.api.post(f"{API}/attendance/check-out/", away, format="json").data["record"]
+        self.assertEqual((out["check_out_location"]["latitude"], out["check_out_location"]["accuracy"]), (11.35, 31))
+        self.assertEqual(out["check_in_location"]["address"], self.ADDRESS)  # the check-in place is kept
+        r = AttendanceRecord.objects.get()
+        self.assertEqual((str(r.check_in_latitude), str(r.check_out_longitude)), ("11.341036", "77.720000"))
+
+    def test_location_is_required_and_must_be_a_real_position(self):
+        for body in ({}, {"location": {}}, {"location": {"latitude": 11.3}}):
+            res = self.api.post(f"{API}/attendance/check-in/", body, format="json")
+            self.assertEqual(res.status_code, 400, body)
+            self.assertIn("allow this app to use it", res.data["detail"])
+        for bad in ({"latitude": 91, "longitude": 77}, {"latitude": 11, "longitude": "east"}, {"latitude": "NaN", "longitude": 77},
+                    {"latitude": 11, "longitude": 77, "accuracy": -5}):
+            self.assertEqual(self.api.post(f"{API}/attendance/check-in/", {"location": bad}, format="json").status_code, 400, bad)
+        self.assertFalse(AttendanceRecord.objects.exists())
+
+    def test_other_problems_are_reported_before_the_location(self):
+        self.clock(at(2026, 10, 8, 12, 0))  # Check-In closed
+        res = self.api.post(f"{API}/attendance/check-in/", {}, format="json")
+        self.assertIn("Check-In is closed", res.data["detail"])
+        self.assertEqual(self.lookups, [])
+
+    def test_location_can_be_made_optional_in_settings(self):
+        res = self.admin_api.patch(f"{API}/attendance/settings/", {"require_location": False}, format="json")
+        self.assertEqual((res.status_code, res.data["require_location"]), (200, False))
+        self.assertFalse(self.api.get(f"{API}/attendance/status/").data["location_required"])
+        res = self.api.post(f"{API}/attendance/check-in/", {}, format="json")
+        self.assertEqual(res.status_code, 201, res.data)
+        self.assertIsNone(res.data["record"]["check_in_location"])
+        self.assertTrue(self.admin_api.patch(f"{API}/attendance/settings/", {"require_location": True}, format="json").data["require_location"])
+
+    def test_an_approximate_location_is_refused(self):
+        for rough in (501, 2000, None):
+            body = {"location": {"latitude": 11.341036, "longitude": 77.717164, "accuracy": rough}}
+            res = self.api.post(f"{API}/attendance/check-in/", body, format="json")
+            self.assertEqual(res.status_code, 400, rough)
+            self.assertIn("approximate", res.data["detail"])
+        self.assertFalse(AttendanceRecord.objects.exists())
+        exact = {"location": {"latitude": 11.341036, "longitude": 77.717164, "accuracy": 500}}  # at the limit: fine
+        self.assertEqual(self.api.post(f"{API}/attendance/check-in/", exact, format="json").status_code, 201)
+
+    def test_a_rough_location_is_kept_when_location_is_optional(self):
+        self.admin_api.patch(f"{API}/attendance/settings/", {"require_location": False}, format="json")
+        body = {"location": {"latitude": 11.341036, "longitude": 77.717164, "accuracy": 2000}}
+        res = self.api.post(f"{API}/attendance/check-in/", body, format="json")
+        self.assertEqual((res.status_code, res.data["record"]["check_in_location"]["accuracy"]), (201, 2000))
+
+    def test_address_lookup_failure_keeps_the_coordinates(self):
+        with mock.patch("apps.attendance.location.urllib.request.urlopen", side_effect=OSError("down")):
+            res = self.api.post(f"{API}/attendance/check-in/", HERE, format="json")
+        self.assertEqual(res.status_code, 201, res.data)
+        loc = res.data["record"]["check_in_location"]
+        self.assertEqual((loc["latitude"], loc["address"]), (11.341036, None))
+
+    @override_settings(ATTENDANCE_GEOCODER="off")
+    def test_address_lookup_can_be_turned_off(self):
+        self.assertEqual(self.api.post(f"{API}/attendance/check-in/", HERE, format="json").status_code, 201)
+        self.assertEqual((self.lookups, AttendanceRecord.objects.get().check_in_address), ([], ""))
+
+    def test_the_same_place_is_looked_up_once(self):
+        self.api.post(f"{API}/attendance/check-in/", HERE, format="json")
+        self.clock(at(2026, 10, 8, 17, 40))
+        self.api.post(f"{API}/attendance/check-out/", HERE, format="json")
+        self.assertEqual(len(self.lookups), 1)
+
+    def test_dashboard_records_and_reports_show_the_location(self):
+        self.api.post(f"{API}/attendance/check-in/", HERE, format="json")
+        row = self.admin_api.get(f"{API}/attendance/dashboard/").data["results"][0]
+        self.assertEqual((row["check_in_location"]["address"], row["check_out_location"]), (self.ADDRESS, None))
+        record = self.admin_api.get(f"{API}/attendance/records/").data["results"][0]
+        self.assertEqual(record["check_in_location"]["accuracy"], 12)
+        self.assertEqual(self.api.get(f"{API}/attendance/history/").data["results"][0]["check_in_location"]["accuracy"], 12)
+        daily = self.admin_api.get(f"{API}/attendance/reports/?type=daily&date_from=2026-10-08&date_to=2026-10-08").data
+        self.assertIn("Check-In Location", [c["header"] for c in daily["table"]["columns"]])
+        self.assertEqual(daily["table"]["rows"][0]["check_in_location"], f"{self.ADDRESS} — 11.341036, 77.717164 (±12 m)")
+        for fmt in ("pdf", "xlsx", "csv"):
+            res = self.admin_api.get(f"{API}/attendance/reports/?type=daily&date_from=2026-10-08&date_to=2026-10-08&format={fmt}")
+            self.assertEqual(res.status_code, 200, fmt)
+
+    def test_manual_entries_have_no_location(self):
+        emp = Employee.objects.get(user=self.user)
+        res = self.admin_api.post(f"{API}/attendance/records/", {"employee_id": emp.pk, "date": "2026-10-07", "check_in": "09:00",
+                                                                 "check_out": "17:00", "note": "TEST"}, format="json")
+        self.assertEqual(res.status_code, 201, res.data)
+        self.assertEqual((res.data["check_in_location"], res.data["check_out_location"]), (None, None))

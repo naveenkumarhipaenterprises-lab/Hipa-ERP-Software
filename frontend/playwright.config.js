@@ -18,6 +18,9 @@ export default defineConfig({
     baseURL: `http://localhost:${PORT}`,
     channel: 'msedge',
     viewport: { width: 1366, height: 900 },
+    // Attendance check-in / check-out sends the device's location; every test's browser shares this one
+    geolocation: { latitude: 11.341036, longitude: 77.717164, accuracy: 12 },
+    permissions: ['geolocation'],
     trace: 'retain-on-failure',
   },
   webServer: {
