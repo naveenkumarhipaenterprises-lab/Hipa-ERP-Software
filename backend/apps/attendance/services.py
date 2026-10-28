@@ -191,7 +191,9 @@ def check_in(user, data=None):
             record.save()
             return record
     except IntegrityError:
-        raise ValidationError({"detail": taken})
+        if AttendanceRecord.objects.filter(employee=emp, attendance_date=w.checkin_date).exists():
+            raise ValidationError({"detail": taken})
+        raise
 
 
 @transaction.atomic
