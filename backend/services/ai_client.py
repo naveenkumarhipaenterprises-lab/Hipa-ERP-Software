@@ -86,38 +86,15 @@ def complete(system, messages, max_tokens=8192):  # Gemini 3 models count their 
         # Plain question/answer: no tools, so the SDK's automatic function calling is off
         automatic_function_calling=types.AutomaticFunctionCallingConfig(disable=True),
     )
-    models_to_try = [settings.GEMINI_MODEL]
-    for fallback in ("gemini-3.5-flash", "gemini-3.6-flash", "gemini-3.5-flash-lite"):
-        if fallback not in models_to_try:
-            models_to_try.append(fallback)
-
-    response = None
-    last_exc = None
-
-    for model_name in models_to_try:
-        try:
-            with _client() as client:
-                response = client.models.generate_content(model=model_name, contents=contents, config=config)
-                if response:
-                    break
-        except (errors.ServerError, errors.APIError) as exc:
-            code = getattr(exc, "code", None)
-            text = f"{getattr(exc, 'status', '')} {getattr(exc, 'message', '')}".upper()
-            if code in (401, 403, 429) or "API_KEY" in text or "RESOURCE_EXHAUSTED" in text:
-                log.error("Gemini API error %s: %s", getattr(exc, "code", "?"), getattr(exc, "message", exc))
-                raise _error_for(exc) from exc
-            log.warning("Gemini model %s failed (%s); trying fallback", model_name, exc)
-            last_exc = exc
-        except Exception as exc:  # network errors, timeouts
-            log.warning("Gemini model %s request failed (%s); trying fallback", model_name, exc)
-            last_exc = exc
-
-    if not response:
-        if isinstance(last_exc, errors.APIError):
-            log.error("All Gemini models failed. Last error %s: %s", getattr(last_exc, "code", "?"), getattr(last_exc, "message", last_exc))
-            raise _error_for(last_exc) from last_exc
-        log.exception("All Gemini model requests failed")
-        raise AIEngineError("The AI engine could not be reached. Check the internet connection and try again.") from last_exc
+    try:
+        with _client() as client:
+            response = client.models.generate_content(model=settings.GEMINI_MODEL, contents=contents, config=config)
+    except errors.APIError as exc:
+        log.error("Gemini API error %s: %s", getattr(exc, "code", "?"), getattr(exc, "message", exc))
+        raise _error_for(exc) from exc
+    except Exception as exc:  # network errors, timeouts
+        log.exception("Gemini request failed")
+        raise AIEngineError("The AI engine could not be reached. Check the internet connection and try again.") from exc
 
     text = (response.text or "").strip()
     if not text:

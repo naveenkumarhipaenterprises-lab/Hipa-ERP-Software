@@ -124,18 +124,14 @@ def status_payload(user):
     w = window.state(settings=s)
     emp = employee_of(user)
     today = w.at.date()
-    # During the overnight check-in window, an evening check-in belongs to the
-    # following work day. Use that same date for both the duplicate check and
-    # the record shown in the Today's Attendance card.
-    work_date = w.checkin_date if w.is_open else today
     flags = perms.flags(user)
     to_close = services.open_record(emp, w) if emp else None
     taken = bool(emp and w.is_open and AttendanceRecord.objects.filter(employee=emp, attendance_date=w.checkin_date).exists())
     can_in = bool(w.is_open and emp and not taken)  # no permission needed: own attendance only
     can_out = bool(to_close)
-    # The work day to show: the open record, otherwise the active work date.
-    record = to_close or (AttendanceRecord.objects.filter(employee=emp, attendance_date=work_date).first() if emp else None)
-    work_date = record.attendance_date if record else work_date
+    # The work day to show: the one still open, otherwise today's
+    record = to_close or (AttendanceRecord.objects.filter(employee=emp, attendance_date=today).first() if emp else None)
+    work_date = record.attendance_date if record else today
     sched = schedule_for([work_date], s)
     office_start, office_end = sched.office_hours(work_date)
     return {
@@ -163,20 +159,7 @@ class StatusView(AttendanceView):
 
 class CheckInView(AttendanceView):
     def post(self, request):
-        # The time is the server's; nothing from the request is used
-        try:
-            services.check_in(request.user)
-        except ValidationError as exc:
-            # A double-click, retry, or second browser tab can reach the API
-            # after the first request has already created the record. Return
-            # the authoritative state instead of leaving the UI stale with a
-            # misleading "Not checked in" card.
-            detail = exc.detail.get("detail") if isinstance(exc.detail, dict) else None
-            if isinstance(detail, (list, tuple)):
-                detail = detail[0] if detail else None
-            if isinstance(detail, str) and detail.startswith("You have already checked in"):
-                return Response(status_payload(request.user))
-            raise
+        services.check_in(request.user)  # the time is the server's; nothing from the request is used
         return Response(status_payload(request.user), status=status.HTTP_201_CREATED)
 
 

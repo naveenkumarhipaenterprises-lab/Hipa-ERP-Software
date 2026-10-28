@@ -80,9 +80,7 @@ class CheckInOutTests(AttendanceBase):
         self.assertEqual(res.status_code, 201, res.data)
         self.assertTrue(res.data["record"]["check_in_at"].startswith("2026-10-08T08:50"))
         self.assertEqual((res.data["work_date"], res.data["can_check_in"], res.data["can_check_out"]), (date(2026, 10, 8), False, True))  # can check out at any time
-        duplicate = api.post(f"{API}/attendance/check-in/")
-        self.assertEqual(duplicate.status_code, 200)  # retries return the authoritative current state
-        self.assertEqual(duplicate.data["record"]["attendance_date"], date(2026, 10, 8))
+        self.assertEqual(api.post(f"{API}/attendance/check-in/").status_code, 400)  # once per work day
         self.clock(at(2026, 10, 8, 12, 0))  # Check-In closed; check-out still possible
         status = api.get(f"{API}/attendance/status/").data
         self.assertEqual((status["record"]["status"], status["can_check_in"], status["can_check_out"]), ("Checked in", False, True))
@@ -134,9 +132,6 @@ class CheckInOutTests(AttendanceBase):
         _user, api = self.worker("check_in", "check_out")
         self.clock(at(2026, 10, 8, 18, 0))
         api.post(f"{API}/attendance/check-in/")
-        same_window = api.get(f"{API}/attendance/status/").data
-        self.assertEqual((same_window["work_date"], same_window["record"]["attendance_date"], same_window["can_check_in"]),
-                         (date(2026, 10, 9), date(2026, 10, 9), False))
         self.clock(at(2026, 10, 9, 14, 0))  # Check-In closed, the record is still open
         self.assertTrue(api.get(f"{API}/attendance/status/").data["can_check_out"])
         self.assertEqual(api.post(f"{API}/attendance/check-out/").status_code, 200)
@@ -165,7 +160,7 @@ class CheckInOutTests(AttendanceBase):
         status = api.get(f"{API}/attendance/status/").data
         self.assertEqual((status["can_check_in"], status["can_check_out"]), (True, False))
         self.assertEqual(api.post(f"{API}/attendance/check-in/").status_code, 201)
-        self.assertEqual(api.post(f"{API}/attendance/check-in/").status_code, 200)  # duplicate check-in is idempotent
+        self.assertEqual(api.post(f"{API}/attendance/check-in/").status_code, 400)  # duplicate check-in
         self.assertTrue(api.get(f"{API}/attendance/status/").data["can_check_out"])
         self.clock(at(2026, 10, 8, 18, 0))  # open window: check out
         self.assertEqual(api.post(f"{API}/attendance/check-out/").status_code, 200)
